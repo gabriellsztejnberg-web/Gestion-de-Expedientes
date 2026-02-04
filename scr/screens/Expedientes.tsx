@@ -39,8 +39,7 @@ export const Expedientes: React.FC = () => {
   const [editingExp, setEditingExp] = useState<Partial<Case> | null>(null);
   const [movData, setMovData] = useState({ tipo: 'Planilla', detalle: '', destino: '' });
 
-  const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Gabriel","role":"jefe"}');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
 
   useEffect(() => {
     const q = query(collection(db, 'expedientes'));
@@ -174,12 +173,11 @@ export const Expedientes: React.FC = () => {
     const isNew = !editingExp?.id;
     const ts = getFullTimestamp();
     
-    // Si es carga manual nueva, va directo al buzón sin nombre de cargador
     const caseData = {
       numero: (editingExp?.numero || '').trim().toUpperCase(),
       empresa: (editingExp?.empresa || '').trim(),
       plan: editingExp?.plan || '',
-      tramite: editingExp?.tramite || 'Renovación',
+      tramite: editingExp?.tramite || 'Iniciación',
       ordenanza: editingExp?.ordenanza || '',
       categoria: editingExp?.categoria || '',
       instancia: editingExp?.instancia || 'analisis',
@@ -242,7 +240,7 @@ export const Expedientes: React.FC = () => {
               <h1 className="text-slate-900 dark:text-white text-2xl font-black uppercase tracking-tight">Expedientes Cloud</h1>
               <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest">Base de Datos DPAM en Tiempo Real</p>
             </div>
-            <button onClick={() => { setEditingExp({}); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-sm hover:bg-blue-600 transition-all">
+            <button onClick={() => { setEditingExp({ tramite: 'Iniciación' }); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-sm hover:bg-blue-600 transition-all">
               <span className="material-symbols-outlined text-[18px]">add_circle</span>
               <span>Cargar Nuevo GDE</span>
             </button>
@@ -295,7 +293,6 @@ export const Expedientes: React.FC = () => {
                   const isPase = c.instancia === 'pase';
                   const isGuarda = c.instancia === 'guarda';
                   
-                  // Permisos: Dueño del expediente, buzón o rango de Jefe
                   const canMove = isOwner || isBuzon || isJefe;
                   const canAdmin = isJefe;
 
@@ -329,7 +326,7 @@ export const Expedientes: React.FC = () => {
                       </td>
                     </tr>
                   );
-                }) : <tr><td colSpan={6} className="py-20 text-center text-slate-400 italic">No se encontraron expedientes en esta categoría.</td></tr>}
+                }) : <tr><td colSpan={6} className="py-20 text-center text-slate-400 italic">No se encontraron expedientes.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -355,11 +352,14 @@ export const Expedientes: React.FC = () => {
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Trámite</label>
-                <select className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingExp?.tramite || 'Renovación'} onChange={e => setEditingExp({...editingExp, tramite: e.target.value})}>
+                <select className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingExp?.tramite || 'Iniciación'} onChange={e => setEditingExp({...editingExp, tramite: e.target.value})}>
+                  <option value="Iniciación">Iniciación</option>
                   <option value="Renovación">Renovación</option>
-                  <option value="Adecuación">Adecuación</option>
-                  <option value="Nuevo Plan">Nuevo Plan</option>
-                  <option value="Otro">Otro</option>
+                  <option value="Convalidación anual">Convalidación anual</option>
+                  <option value="Actualización">Actualización</option>
+                  <option value="Convalidación/Actualización">Convalidación/Actualización</option>
+                  <option value="Cambio de Categoria">Cambio de Categoria</option>
+                  <option value="Otros">Otros</option>
                 </select>
               </div>
               <div>
@@ -404,7 +404,7 @@ export const Expedientes: React.FC = () => {
               )}
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Detalle / Motivo</label>
-                <textarea required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-24" value={movData.detalle} onChange={e => setMovData({...movData, detalle: e.target.value})} placeholder="Explique brevemente el movimiento..."></textarea>
+                <textarea required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-24" value={movData.detalle} onChange={e => setMovData({...movData, detalle: e.target.value})} placeholder="Breve explicación..."></textarea>
               </div>
               <button type="submit" className="w-full py-3 bg-slate-900 text-white text-xs font-black uppercase rounded shadow-lg hover:bg-slate-800 transition-all">Confirmar Movimiento</button>
             </form>
@@ -432,7 +432,6 @@ export const Expedientes: React.FC = () => {
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Por: {e.usuario}</p>
                 </div>
               ))}
-              {events.filter(e => e.expedienteId === editingExp?.id).length === 0 && <p className="text-center py-10 text-slate-400 italic">No hay registros históricos.</p>}
             </div>
           </div>
         </div>
