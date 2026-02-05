@@ -45,10 +45,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage }) => {
     { id: 'dashboard', icon: 'dashboard', label: 'Tablero', path: '/dashboard' },
     { id: 'expedientes', icon: 'inventory_2', label: 'Expedientes', path: '/expedientes' },
     { id: 'reportes', icon: 'description', label: 'Reportes DPAM', path: '/reportes' },
-    { id: 'timeline', icon: 'history', label: 'Historial Gral', path: '/timeline' },
+    { id: 'timeline', icon: 'checklist_rtl', label: 'Tareas / Pendientes', path: '/timeline' },
   ];
 
-  if (currentUser.role === 'jefe') {
+  // Validación de rol ultra-flexible para evitar bloqueos
+  const role = (currentUser.role || '').toLowerCase();
+  const isJefe = role === 'jefe' || role === 'admin' || role === 'administrator';
+
+  if (isJefe) {
     navItems.push({ id: 'users', icon: 'badge', label: 'Personal DPAM', path: '/users' });
   }
 
@@ -78,16 +82,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage }) => {
           {navItems.map((item) => (
             <Link key={item.id} to={item.path} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${activePage === item.id ? 'bg-primary/10 text-primary dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
               <span className="material-symbols-outlined">{item.icon}</span>
-              <p className="text-sm font-bold">{item.label}</p>
+              <p className="text-sm font-bold uppercase tracking-tighter">{item.label}</p>
             </Link>
           ))}
           <button onClick={() => setIsPasswordModalOpen(true)} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mt-2 text-left">
             <span className="material-symbols-outlined">key</span>
-            <p className="text-sm font-bold">Cambiar Mi Clave</p>
+            <p className="text-sm font-bold uppercase tracking-tighter">Cambiar Mi Clave</p>
           </button>
           <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors mt-2 text-left">
             <span className="material-symbols-outlined">logout</span>
-            <p className="text-sm font-bold">Cerrar Sesión</p>
+            <p className="text-sm font-bold uppercase tracking-tighter">Cerrar Sesión</p>
           </button>
         </nav>
         <div className="p-4 mt-auto border-t border-slate-200 dark:border-slate-800">
