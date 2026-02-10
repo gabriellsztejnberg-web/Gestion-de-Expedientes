@@ -219,10 +219,11 @@ export const Reports: React.FC = () => {
         </main>
 
         {/* VISTA DE IMPRESIÓN: TABLA FORMAL (SÁBANA) */}
-        <div className="hidden print:block absolute inset-0 bg-white z-50 overflow-y-auto">
-            <div className="p-8 max-w-full mx-auto w-full">
+        {/* Cambiado de absolute inset-0 a una estructura normal de flujo para permitir paginación automática */}
+        <div className="hidden print:block w-full h-auto bg-white">
+            <div className="p-8 w-full">
             
-            <div className="border-b-4 border-slate-900 pb-6 mb-8 flex justify-between items-end">
+            <div className="border-b-4 border-slate-900 pb-4 mb-4 flex justify-between items-end">
               <div>
                 <h1 className="text-xl font-black uppercase tracking-widest text-slate-900">DPAM - DIVISIÓN PLANES</h1>
                 <p className="text-slate-500 font-bold text-[10px] uppercase tracking-tighter italic">Registro Unificado de Gestión en la Nube</p>
@@ -233,40 +234,46 @@ export const Reports: React.FC = () => {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse border border-slate-300 text-[10px]">
-                <thead className="bg-slate-100">
+            <div className="w-full">
+              <table className="w-full border-collapse border border-slate-300 text-[9px] table-fixed">
+                <colgroup>
+                  <col className="w-[15%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[45%]" />
+                </colgroup>
+                <thead className="bg-slate-100 break-inside-avoid">
                   <tr>
-                    <th className="border border-slate-300 p-2 uppercase font-black text-left w-32">GDE / Exp.</th>
-                    <th className="border border-slate-300 p-2 uppercase font-black text-left">Empresa / Titular</th>
-                    <th className="border border-slate-300 p-2 uppercase font-black text-left">Trámite (Ord./Anexo)</th>
-                    <th className="border border-slate-300 p-2 uppercase font-black text-left">Resumen de Actividad</th>
+                    <th className="border border-slate-300 p-1.5 uppercase font-black text-left">GDE / Exp.</th>
+                    <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Empresa / Titular</th>
+                    <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Trámite (Ord./Anexo)</th>
+                    <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Resumen de Actividad</th>
                   </tr>
                 </thead>
                 <tbody>
                   {lineasReporte.length > 0 ? lineasReporte.map((linea, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50">
-                      <td className="border border-slate-300 p-2 font-bold font-mono uppercase break-all">{linea.numero}</td>
-                      <td className="border border-slate-300 p-2 font-black uppercase text-slate-900">{linea.empresa}</td>
-                      <td className="border border-slate-300 p-2 uppercase leading-tight">
+                    <tr key={idx} className="break-inside-avoid page-break-inside-avoid">
+                      <td className="border border-slate-300 p-1.5 font-bold font-mono uppercase break-words align-top">{linea.numero}</td>
+                      <td className="border border-slate-300 p-1.5 font-black uppercase text-slate-900 break-words align-top">{linea.empresa}</td>
+                      <td className="border border-slate-300 p-1.5 uppercase leading-tight align-top">
                         <div className="font-bold">{linea.tramite}</div>
                         <div className="text-slate-500 text-[8px] font-bold">ORD: {linea.ordenanza} | ANEXO: {linea.anexo}</div>
                       </td>
-                      <td className="border border-slate-300 p-2 text-slate-700 whitespace-pre-wrap leading-tight italic">
+                      <td className="border border-slate-300 p-1.5 text-slate-700 whitespace-pre-wrap leading-tight italic align-top">
                         {linea.resumen}
                         <div className="mt-1 text-[7px] text-slate-400 font-black uppercase">Responsable(s): {linea.responsables}</div>
                       </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={4} className="border border-slate-300 p-12 text-center text-slate-400 uppercase font-bold italic">No se registraron movimientos en la fecha seleccionada.</td>
+                      <td colSpan={4} className="border border-slate-300 p-8 text-center text-slate-400 uppercase font-bold italic">No se registraron movimientos en la fecha seleccionada.</td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
 
-            <div className="flex justify-between mt-32 pt-10 px-8 break-inside-avoid">
+            <div className="flex justify-between mt-12 pt-8 px-8 break-inside-avoid page-break-inside-avoid">
               <div className="text-center w-56 border-t border-slate-400 pt-2">
                 <p className="text-[9px] font-black uppercase">Firma Operador</p>
               </div>
