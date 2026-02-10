@@ -312,9 +312,17 @@ export const Expedientes: React.FC = () => {
                   // Lógica del contador de días
                   const daysDiff = getDaysDiff(c.ultimaModificacion);
                   let daysColor = "text-slate-400";
-                  if (daysDiff > 20) daysColor = "text-red-500 font-bold";
-                  else if (daysDiff > 10) daysColor = "text-yellow-600 font-bold";
-                  else daysColor = "text-green-600 font-bold";
+                  let daysLabel = "";
+
+                  if (isPase || isGuarda) {
+                    daysColor = "text-slate-300"; // Neutral para expedientes fuera de gestión activa
+                    daysLabel = isPase ? "Fuera de Oficina" : "En Archivo";
+                  } else {
+                    if (daysDiff > 20) daysColor = "text-red-500 font-bold";
+                    else if (daysDiff > 10) daysColor = "text-yellow-600 font-bold";
+                    else daysColor = "text-green-600 font-bold";
+                    daysLabel = daysDiff === 0 ? 'Hoy' : `Hace ${daysDiff} días`;
+                  }
 
                   return (
                     <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
@@ -339,7 +347,7 @@ export const Expedientes: React.FC = () => {
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-col">
-                          <span className={`text-[10px] uppercase ${daysColor}`}>{daysDiff === 0 ? 'Hoy' : `Hace ${daysDiff} días`}</span>
+                          <span className={`text-[10px] uppercase ${daysColor}`}>{daysLabel}</span>
                           <span className="text-[9px] text-slate-400">{new Date(c.ultimaModificacion).toLocaleDateString()}</span>
                         </div>
                       </td>
