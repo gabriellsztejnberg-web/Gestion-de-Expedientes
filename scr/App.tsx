@@ -7,6 +7,8 @@ import { Expedientes } from './screens/Expedientes';
 import { Reports } from './screens/Reports';
 import { Timeline } from './screens/Timeline';
 import { Users } from './screens/Users';
+import { Auditores } from './screens/Auditores';
+import { Inspecciones } from './screens/Inspecciones';
 
 const App: React.FC = () => {
   return (
@@ -15,6 +17,8 @@ const App: React.FC = () => {
         <Route path="/" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/expedientes" element={<Expedientes />} />
+        <Route path="/auditores" element={<Auditores />} />
+        <Route path="/inspecciones" element={<Inspecciones />} />
         <Route path="/reportes" element={<Reports />} />
         <Route path="/timeline" element={<Timeline />} />
         <Route path="/users" element={<Users />} />
