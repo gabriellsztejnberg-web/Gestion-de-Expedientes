@@ -101,3 +101,4 @@ export interface Inspeccion {
   registradoPor: string; // Usuario del sistema que cargó el dato
   registradoEn: string; // ISO String
 }
+
