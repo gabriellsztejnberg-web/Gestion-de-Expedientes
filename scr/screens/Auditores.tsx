@@ -24,7 +24,25 @@ export const Auditores: React.FC = () => {
   useEffect(() => {
     const q = query(collection(db, 'auditores'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Auditor));
+      // SANITIZACIÓN DE DATOS: Aseguramos que cada campo tenga el tipo correcto para evitar crashes
+      const docs = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { 
+          id: doc.id, 
+          nombre: typeof data.nombre === 'string' ? data.nombre : 'SIN NOMBRE',
+          dni: data.dni ? String(data.dni) : '',
+          disposicionHabilitacion: data.disposicionHabilitacion || 'PENDIENTE',
+          zonaTrabajo: data.zonaTrabajo || '',
+          cursos: Array.isArray(data.cursos) ? data.cursos : [],
+          // Aseguramos que stats exista y tenga números
+          stats: {
+            totalHistorico: Number(data.stats?.totalHistorico || 0),
+            anualActual: Number(data.stats?.anualActual || 0),
+            anioReferencia: Number(data.stats?.anioReferencia || new Date().getFullYear())
+          },
+          ultimaActualizacion: data.ultimaActualizacion || new Date().toISOString()
+        } as Auditor;
+      });
       setAuditores(docs);
     });
     return () => unsubscribe();
@@ -84,7 +102,6 @@ export const Auditores: React.FC = () => {
     });
   };
 
-  // Función segura para actualizar estadísticas sin romper la app
   const updateStats = (field: keyof EstadisticasAuditor, value: number) => {
     const currentStats = editingAuditor.stats || { totalHistorico: 0, anualActual: 0, anioReferencia: new Date().getFullYear() };
     setEditingAuditor({
@@ -100,7 +117,6 @@ export const Auditores: React.FC = () => {
     navigator.clipboard.writeText(text);
   };
 
-  // Filtrado SEGURO para evitar crash si faltan campos
   const filteredAuditores = auditores.filter(a => 
     (a.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
     (a.zonaTrabajo || '').toLowerCase().includes(searchTerm.toLowerCase())
@@ -157,7 +173,7 @@ export const Auditores: React.FC = () => {
                     </td>
                     <td className="px-4 py-4">
                         <span className="bg-green-50 text-green-700 px-2 py-1 rounded text-[10px] font-black uppercase border border-green-100">
-                           {a.disposicionHabilitacion || 'PENDIENTE'}
+                           {a.disposicionHabilitacion}
                         </span>
                     </td>
                     <td className="px-4 py-4 font-medium text-slate-600 dark:text-slate-300 uppercase text-[11px]">{a.zonaTrabajo || '-'}</td>
@@ -166,8 +182,8 @@ export const Auditores: React.FC = () => {
                     </td>
                     <td className="px-4 py-4 text-center">
                         <div className="flex flex-col items-center">
-                           <span className="text-xs font-black text-slate-900 dark:text-white">{a.stats?.totalHistorico || 0}</span>
-                           <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Anual: {a.stats?.anualActual || 0}</span>
+                           <span className="text-xs font-black text-slate-900 dark:text-white">{a.stats.totalHistorico}</span>
+                           <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Anual: {a.stats.anualActual}</span>
                         </div>
                     </td>
                     <td className="px-4 py-4 text-right">
