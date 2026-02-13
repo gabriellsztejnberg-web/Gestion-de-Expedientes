@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { 
@@ -26,6 +27,7 @@ const INSTANCIAS: Instancia[] = [
 type TabId = 'grupal' | 'individual' | 'usuarios' | 'pases' | 'guarda';
 
 export const Expedientes: React.FC = () => {
+  const navigate = useNavigate();
   const [cases, setCases] = useState<Case[]>([]);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [activeTab, setActiveTab] = useState<TabId>('grupal');
@@ -121,6 +123,11 @@ export const Expedientes: React.FC = () => {
     } catch (e) {
       alert("Error al intentar eliminar.");
     }
+  };
+
+  const handleCreateInspection = (c: Case) => {
+      // Navegamos a la pantalla de inspecciones con el estado pre-cargado
+      navigate('/inspecciones', { state: { prefill: c } });
   };
 
   const handleRegistrarMovimiento = async (e: React.FormEvent) => {
@@ -389,8 +396,9 @@ export const Expedientes: React.FC = () => {
                       </td>
                       <td className="px-4 py-4 text-right">
                         <div className="flex justify-end gap-2">
+                          <button onClick={() => handleCreateInspection(c)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all" title="Cargar Inspección"><span className="material-symbols-outlined text-[16px]">assignment_add</span><span className="font-bold uppercase text-[9px]">Cargar Insp.</span></button>
                           {isBuzon && !isPase && !isGuarda && <button onClick={() => handleAcquire(c.id)} className="bg-primary hover:bg-blue-600 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all"><span className="material-symbols-outlined text-[16px]">person_add</span><span className="font-bold uppercase text-[9px]">Tomar</span></button>}
-                          {canMove && <button onClick={() => { setEditingExp(c); setIsMovimientoModalOpen(true); }} className="bg-slate-800 hover:bg-slate-700 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all"><span className="material-symbols-outlined text-[16px]">sync_alt</span><span className="font-bold uppercase text-[9px]">Actividad / Tarea</span></button>}
+                          {canMove && <button onClick={() => { setEditingExp(c); setIsMovimientoModalOpen(true); }} className="bg-slate-800 hover:bg-slate-700 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all"><span className="material-symbols-outlined text-[16px]">sync_alt</span><span className="font-bold uppercase text-[9px]">Actividad</span></button>}
                           
                           {canAdmin && (
                             <div className="flex gap-1 border-l pl-2 border-slate-200 dark:border-slate-700">
@@ -519,11 +527,3 @@ export const Expedientes: React.FC = () => {
                   <p className="text-sm text-slate-700 dark:text-slate-300 mb-1 font-medium">{e.texto}</p>
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Por: {e.usuario}</p>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
