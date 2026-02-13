@@ -82,6 +82,11 @@ export const Expedientes: React.FC = () => {
     return diffDays;
   };
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    // Podríamos poner un toast aquí, pero por simplicidad visual lo dejaremos directo
+  };
+
   const addHistoryEntry = async (caseId: string, texto: string, actionType: string, isPending: boolean = false) => {
     try {
       await addDoc(collection(db, 'movimientos'), {
@@ -169,12 +174,14 @@ export const Expedientes: React.FC = () => {
       }
 
       const caseRef = doc(db, 'expedientes', editingExp.id);
+      
+      // Aquí SÍ actualizamos ultimaModificacion porque es un movimiento real
       await updateDoc(caseRef, {
         instancia: nuevoEstado,
         asignadoA: nuevoAsignado,
         asignadoANombre: nuevoAsignadoNombre,
         destinoExterno: nuevoDestino,
-        ultimaModificacion: new Date().toISOString()
+        ultimaModificacion: new Date().toISOString() 
       });
 
       await addHistoryEntry(editingExp.id, textoNovedad, movData.tipo);
@@ -188,9 +195,11 @@ export const Expedientes: React.FC = () => {
     e.preventDefault();
     const isNew = !editingExp?.id;
     const ts = getFullTimestamp();
+    const numeroGDE = (editingExp?.numero || '').trim().toUpperCase();
     
-    const caseData = {
-      numero: (editingExp?.numero || '').trim().toUpperCase(),
+    // Objeto base de datos
+    const caseData: any = {
+      numero: numeroGDE,
       empresa: (editingExp?.empresa || '').trim(),
       plan: editingExp?.plan || '',
       tramite: editingExp?.tramite || 'Iniciación',
@@ -200,23 +209,29 @@ export const Expedientes: React.FC = () => {
       asignadoA: isNew ? 'buzon' : (editingExp?.asignadoA || 'buzon'),
       asignadoANombre: isNew ? 'Buzón Grupal' : (editingExp?.asignadoANombre || 'Buzón Grupal'),
       observaciones: editingExp?.observaciones || '',
-      creadoEn: editingExp?.creadoEn || new Date().toISOString(),
-      ultimaModificacion: new Date().toISOString(),
       isInternal: true
     };
 
     try {
       if (isNew) {
-        if (cases.some(c => c.numero.toUpperCase() === caseData.numero.toUpperCase())) {
-          alert("Error: El número de GDE ya existe.");
+        // VALIDACIÓN DE DUPLICADOS
+        if (cases.some(c => c.numero.toUpperCase() === numeroGDE)) {
+          alert("Error: El número de GDE ya existe en el sistema. No se puede duplicar.");
           return;
         }
+
+        // Si es nuevo, asignamos fechas de creación y modificación inicial
+        caseData.creadoEn = new Date().toISOString();
+        caseData.ultimaModificacion = new Date().toISOString();
+
         const docRef = await addDoc(collection(db, 'expedientes'), caseData);
         await addHistoryEntry(docRef.id, `Carga manual inicial al buzón grupal. ${ts}.`, 'Carga');
       } else {
+        // Si es edición, NO actualizamos 'ultimaModificacion' para no resetear el contador de días
+        // Solo actualizamos los campos administrativos
         const caseRef = doc(db, 'expedientes', editingExp!.id!);
         await updateDoc(caseRef, caseData);
-        await addHistoryEntry(editingExp!.id!, `Edición administrativa de datos generales. ${ts}.`, 'Edición');
+        await addHistoryEntry(editingExp!.id!, `Edición administrativa de datos generales (sin cambio de estado). ${ts}.`, 'Edición');
       }
       setIsModalOpen(false);
     } catch (err) {
@@ -236,8 +251,17 @@ export const Expedientes: React.FC = () => {
       (activeTab === 'guarda' && isGuarda);
 
     if (!matchesTab) return false;
+
+    // Filtro avanzado multi-campo
     const lower = searchTerm.toLowerCase();
-    return c.numero.toLowerCase().includes(lower) || c.empresa.toLowerCase().includes(lower);
+    const searchMatch = 
+        c.numero.toLowerCase().includes(lower) || 
+        c.empresa.toLowerCase().includes(lower) ||
+        (c.asignadoANombre || '').toLowerCase().includes(lower) ||
+        (c.tramite || '').toLowerCase().includes(lower) ||
+        (c.ordenanza || '').toLowerCase().includes(lower);
+
+    return searchMatch;
   });
 
   return (
@@ -280,7 +304,7 @@ export const Expedientes: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 rounded-lg p-3 border border-slate-200 dark:border-slate-800 mb-6 shrink-0 shadow-sm">
             <div className="relative flex items-center">
               <span className="absolute left-3 text-slate-400 material-symbols-outlined text-[20px]">search</span>
-              <input className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary" placeholder="Buscar por GDE o empresa..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
+              <input className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary" placeholder="Buscar por GDE, Empresa, Usuario, Trámite..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
             </div>
           </div>
 
@@ -327,12 +351,24 @@ export const Expedientes: React.FC = () => {
                   return (
                     <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="px-4 py-4"><span className={`inline-block px-2 py-0.5 rounded-full font-black uppercase text-[9px] border ${inst.color}`}>{inst.label}</span></td>
-                      <td className="px-4 py-4 font-bold text-slate-700 dark:text-slate-300">
-                        <button onClick={() => { setEditingExp(c); setIsHistorialModalOpen(true); }} className="hover:text-primary hover:underline text-left uppercase">{c.numero}</button>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => { setEditingExp(c); setIsHistorialModalOpen(true); }} className="font-bold text-slate-700 dark:text-slate-300 hover:text-primary hover:underline text-left uppercase">
+                                {c.numero}
+                            </button>
+                            <button onClick={() => copyToClipboard(c.numero)} className="text-slate-300 hover:text-primary transition-colors" title="Copiar GDE">
+                                <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                            </button>
+                        </div>
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-col gap-0.5">
-                          <span className="font-black text-slate-900 dark:text-white uppercase tracking-tighter text-[11px] leading-tight">{c.empresa}</span>
+                          <div className="flex items-center gap-2">
+                             <span className="font-black text-slate-900 dark:text-white uppercase tracking-tighter text-[11px] leading-tight">{c.empresa}</span>
+                             <button onClick={() => copyToClipboard(c.empresa)} className="text-slate-300 hover:text-primary transition-colors" title="Copiar Empresa">
+                                <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                            </button>
+                          </div>
                           <span className="text-[9px] text-slate-500 font-bold uppercase leading-none italic">
                             {c.tramite} {c.ordenanza ? ` | ORD: ${c.ordenanza}` : ''} {c.categoria ? ` | ANEXO: ${c.categoria}` : ''}
                           </span>
