@@ -44,6 +44,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage }) => {
   const navItems = [
     { id: 'dashboard', icon: 'dashboard', label: 'Tablero', path: '/dashboard' },
     { id: 'expedientes', icon: 'inventory_2', label: 'Expedientes', path: '/expedientes' },
+    { id: 'inspecciones', icon: 'assignment', label: 'Inspecciones', path: '/inspecciones' },
+    { id: 'auditores', icon: 'engineering', label: 'Auditores Habilitados', path: '/auditores' },
     { id: 'reportes', icon: 'description', label: 'Reportes DPAM', path: '/reportes' },
     { id: 'timeline', icon: 'checklist_rtl', label: 'Tareas / Pendientes', path: '/timeline' },
   ];
