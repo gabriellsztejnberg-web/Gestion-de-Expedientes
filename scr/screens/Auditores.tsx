@@ -11,7 +11,7 @@ import {
   query, 
   deleteDoc 
 } from 'firebase/firestore';
-import { Auditor, Curso } from '../types';
+import { Auditor, Curso, EstadisticasAuditor } from '../types';
 
 export const Auditores: React.FC = () => {
   const [auditores, setAuditores] = useState<Auditor[]>([]);
@@ -84,13 +84,26 @@ export const Auditores: React.FC = () => {
     });
   };
 
+  // Función segura para actualizar estadísticas sin romper la app
+  const updateStats = (field: keyof EstadisticasAuditor, value: number) => {
+    const currentStats = editingAuditor.stats || { totalHistorico: 0, anualActual: 0, anioReferencia: new Date().getFullYear() };
+    setEditingAuditor({
+        ...editingAuditor,
+        stats: {
+            ...currentStats,
+            [field]: value
+        }
+    });
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
 
+  // Filtrado SEGURO para evitar crash si faltan campos
   const filteredAuditores = auditores.filter(a => 
-    a.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    a.zonaTrabajo.toLowerCase().includes(searchTerm.toLowerCase())
+    (a.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (a.zonaTrabajo || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -147,7 +160,7 @@ export const Auditores: React.FC = () => {
                            {a.disposicionHabilitacion || 'PENDIENTE'}
                         </span>
                     </td>
-                    <td className="px-4 py-4 font-medium text-slate-600 dark:text-slate-300 uppercase text-[11px]">{a.zonaTrabajo}</td>
+                    <td className="px-4 py-4 font-medium text-slate-600 dark:text-slate-300 uppercase text-[11px]">{a.zonaTrabajo || '-'}</td>
                     <td className="px-4 py-4 text-center">
                         <span className="text-slate-500 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-[10px]">{(a.cursos || []).length} Registrados</span>
                     </td>
@@ -246,17 +259,17 @@ export const Auditores: React.FC = () => {
                      <div className="grid grid-cols-2 gap-6">
                         <div className="p-6 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-900/50 text-center">
                            <h4 className="text-[10px] font-black uppercase text-blue-800 dark:text-blue-300 mb-2">Total Histórico</h4>
-                           <input type="number" className="text-3xl font-black text-center w-full bg-transparent outline-none text-blue-900 dark:text-white" value={editingAuditor.stats?.totalHistorico || 0} onChange={e => setEditingAuditor({...editingAuditor, stats: { ...editingAuditor.stats!, totalHistorico: parseInt(e.target.value) || 0 }})} />
+                           <input type="number" min="0" className="text-3xl font-black text-center w-full bg-transparent outline-none text-blue-900 dark:text-white" value={editingAuditor.stats?.totalHistorico || 0} onChange={e => updateStats('totalHistorico', parseInt(e.target.value))} />
                            <p className="text-[9px] text-blue-600 dark:text-blue-400 mt-2">Inspecciones Totales</p>
                         </div>
                         <div className="p-6 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-900/50 text-center">
                            <h4 className="text-[10px] font-black uppercase text-green-800 dark:text-green-300 mb-2">Año Actual ({new Date().getFullYear()})</h4>
-                           <input type="number" className="text-3xl font-black text-center w-full bg-transparent outline-none text-green-900 dark:text-white" value={editingAuditor.stats?.anualActual || 0} onChange={e => setEditingAuditor({...editingAuditor, stats: { ...editingAuditor.stats!, anualActual: parseInt(e.target.value) || 0 }})} />
+                           <input type="number" min="0" className="text-3xl font-black text-center w-full bg-transparent outline-none text-green-900 dark:text-white" value={editingAuditor.stats?.anualActual || 0} onChange={e => updateStats('anualActual', parseInt(e.target.value))} />
                            <p className="text-[9px] text-green-600 dark:text-green-400 mt-2">Inspecciones del Periodo</p>
                         </div>
                      </div>
                      <p className="text-xs text-slate-500 text-center italic">
-                        Nota: Estos contadores son referenciales para el legajo del auditor.
+                        Nota: Puede corregir manualmente estos contadores si existe un desfasaje con la documentación física.
                      </p>
                   </div>
                )}
