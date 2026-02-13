@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { 
@@ -75,7 +75,6 @@ export const Expedientes: React.FC = () => {
     return now.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
-  // Función para calcular días transcurridos
   const getDaysDiff = (dateString: string) => {
     const now = new Date();
     const last = new Date(dateString);
@@ -86,7 +85,6 @@ export const Expedientes: React.FC = () => {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    // Podríamos poner un toast aquí, pero por simplicidad visual lo dejaremos directo
   };
 
   const addHistoryEntry = async (caseId: string, texto: string, actionType: string, isPending: boolean = false) => {
@@ -126,7 +124,6 @@ export const Expedientes: React.FC = () => {
   };
 
   const handleCreateInspection = (c: Case) => {
-      // Navegamos a la pantalla de inspecciones con el estado pre-cargado
       navigate('/inspecciones', { state: { prefill: c } });
   };
 
@@ -182,7 +179,6 @@ export const Expedientes: React.FC = () => {
 
       const caseRef = doc(db, 'expedientes', editingExp.id);
       
-      // Aquí SÍ actualizamos ultimaModificacion porque es un movimiento real
       await updateDoc(caseRef, {
         instancia: nuevoEstado,
         asignadoA: nuevoAsignado,
@@ -204,7 +200,6 @@ export const Expedientes: React.FC = () => {
     const ts = getFullTimestamp();
     const numeroGDE = (editingExp?.numero || '').trim().toUpperCase();
     
-    // Objeto base de datos
     const caseData: any = {
       numero: numeroGDE,
       empresa: (editingExp?.empresa || '').trim(),
@@ -221,21 +216,17 @@ export const Expedientes: React.FC = () => {
 
     try {
       if (isNew) {
-        // VALIDACIÓN DE DUPLICADOS
         if (cases.some(c => c.numero.toUpperCase() === numeroGDE)) {
           alert("Error: El número de GDE ya existe en el sistema. No se puede duplicar.");
           return;
         }
 
-        // Si es nuevo, asignamos fechas de creación y modificación inicial
         caseData.creadoEn = new Date().toISOString();
         caseData.ultimaModificacion = new Date().toISOString();
 
         const docRef = await addDoc(collection(db, 'expedientes'), caseData);
         await addHistoryEntry(docRef.id, `Carga manual inicial al buzón grupal. ${ts}.`, 'Carga');
       } else {
-        // Si es edición, NO actualizamos 'ultimaModificacion' para no resetear el contador de días
-        // Solo actualizamos los campos administrativos
         const caseRef = doc(db, 'expedientes', editingExp!.id!);
         await updateDoc(caseRef, caseData);
         await addHistoryEntry(editingExp!.id!, `Edición administrativa de datos generales (sin cambio de estado). ${ts}.`, 'Edición');
@@ -259,7 +250,6 @@ export const Expedientes: React.FC = () => {
 
     if (!matchesTab) return false;
 
-    // Filtro avanzado multi-campo
     const lower = searchTerm.toLowerCase();
     const searchMatch = 
         c.numero.toLowerCase().includes(lower) || 
@@ -340,13 +330,12 @@ export const Expedientes: React.FC = () => {
                   const canMove = isOwner || isBuzon || isJefe;
                   const canAdmin = isJefe;
                   
-                  // Lógica del contador de días
                   const daysDiff = getDaysDiff(c.ultimaModificacion);
                   let daysColor = "text-slate-400";
                   let daysLabel = "";
 
                   if (isPase || isGuarda) {
-                    daysColor = "text-slate-300"; // Neutral para expedientes fuera de gestión activa
+                    daysColor = "text-slate-300"; 
                     daysLabel = isPase ? "Fuera de Oficina" : "En Archivo";
                   } else {
                     if (daysDiff > 20) daysColor = "text-red-500 font-bold";
@@ -527,3 +516,11 @@ export const Expedientes: React.FC = () => {
                   <p className="text-sm text-slate-700 dark:text-slate-300 mb-1 font-medium">{e.texto}</p>
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Por: {e.usuario}</p>
                 </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
