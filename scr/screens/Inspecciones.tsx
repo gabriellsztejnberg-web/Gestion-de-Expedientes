@@ -32,7 +32,15 @@ export const Inspecciones: React.FC = () => {
   const [isHistorialModalOpen, setIsHistorialModalOpen] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<Inspeccion | null>(null);
 
-  const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
+  // Obtención segura del usuario
+  const getUser = () => {
+    try {
+      return JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
+    } catch {
+      return { id:"temp", name:"Usuario", role:"operador" };
+    }
+  };
+  const currentUser: User = getUser();
 
   useEffect(() => {
     // Si venimos redirigidos desde Expedientes, abrimos el modal pre-cargado
@@ -277,6 +285,16 @@ export const Inspecciones: React.FC = () => {
       default: return 'bg-slate-100 text-slate-500 border-slate-200';
     }
   };
+  
+  // Renderizado seguro de fecha
+  const formatDateSafe = (dateStr: string) => {
+      try {
+          if(!dateStr) return "-";
+          return new Date(dateStr).toLocaleDateString();
+      } catch {
+          return "-";
+      }
+  }
 
   // Filtrar eventos para el modal de historial
   const historyEvents = historyTarget 
@@ -344,7 +362,7 @@ export const Inspecciones: React.FC = () => {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredInspecciones.length > 0 ? filteredInspecciones.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                    <td className="px-4 py-4 font-mono text-slate-500">{new Date(item.fecha).toLocaleDateString()}</td>
+                    <td className="px-4 py-4 font-mono text-slate-500">{formatDateSafe(item.fecha)}</td>
                     <td className="px-4 py-4">
                         <div className="flex flex-col">
                             <span className="font-black text-slate-900 dark:text-white uppercase text-xs">{item.expedienteNumero || 'S/EXP'}</span>
