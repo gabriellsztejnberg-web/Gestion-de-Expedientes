@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { Sidebar } from '../components/Sidebar';
 
 // --- DATA SOURCE (SIMULATED JSON) ---
 const INITIAL_DATA = {
-    "anexo_16": Array.from({length: 150}, (_, i) => ({ "“PLAN DE EMERGENCIA DE EMPRESAS A CARGO DE INSTALACIONES DE MANIPULACIÓN DE HIDROCARBUROS... (SNPP)”": i + 1 })),
+    "anexo_16": Array.from({length: 15}, (_, i) => ({ "“PLAN DE EMERGENCIA DE EMPRESAS A CARGO DE INSTALACIONES DE MANIPULACIÓN DE HIDROCARBUROS... (SNPP)”": i + 1 })),
     "anexo_17": [
         { "Nº": 1, "DEPEN": "CRIV", "EMPRESAS": "TERMAP S.A (CALETA CORDOVA)", "DISPOSICION": "DIFC-2024-60-APN-DPAM#PNA", "VENC": "2029-09-19", "1º  CONV ANUAL": "2025-09-05", "2º  CONV ANUAL": "2026", "3º  CONV ANUAL": "2027", "4º  CONV ANUAL": "2028" },
         { "Nº": 2, "DEPEN": "OLVA", "EMPRESAS": "TERMAP S.A (CALETA OLIVIA)", "DISPOSICION": "DIFC-2024-57-APN-DPAM#PNA", "VENC": "2029-09-18", "1º  CONV ANUAL": "2025-09-04", "2º  CONV ANUAL": "2026", "3º  CONV ANUAL": "2027", "4º  CONV ANUAL": "2028" },
@@ -17,21 +17,9 @@ const INITIAL_DATA = {
         { "Nº": 4, "DEPEND": "CABA", "NOMBRE DE LA EMPRESA": "COMERCIAL DELTA S.A ", "DISP.": "DI-2024-76-APN-DPAM#PNA", "VENC": "2029-11-04", "1º CONV": "2026-02-13", "2º CONV": "2026", "3º CONV": "2027", "4º CONV": "2028" },
         { "Nº": 5, "DEPEND": "CABA", "NOMBRE DE LA EMPRESA": "COMPAÑÍA NAVIERA ARGENTINA S.A.", "DISP.": "DISFC-2025-30-APN-DPAM#PNA", "VENC": "2030-05-15", "1º CONV": "2026", "2º CONV": "2027", "3º CONV": "2028", "4º CONV": "2029" },
         { "Nº": 6, "DEPEND": "SNIC", "NOMBRE DE LA EMPRESA": "ECO PARANA  S.R.L", "DISP.": "DI-2022-81208296-APN-DPAM#PNA", "VENC": "2027-07-22", "1º CONV": "2023", "2º CONV": "2024", "3º CONV": "2025", "4º CONV": "2026" },
-        { "Nº": 7, "DEPEND": "CABA", "NOMBRE DE LA EMPRESA": "EMPRESA NAVIERA PETROLERA ATLANTICA S.A (ENPASA)", "DISP.": "DI-2021-37-APN-DPAM#PNA", "VENC": "2026-04-07", "1º CONV": "2022-05-04", "2º CONV": "2023-05-31", "3º CONV": "2024-06-11", "4º CONV": "2025-07-03" },
-        { "Nº": 8, "DEPEND": "ROSA", "NOMBRE DE LA EMPRESA": "GIER SERVICIOS AMBIENTALES S.R.L.", "DISP.": "DI-2021-76-APN-DPAM#PNA", "VENC": "2026-06-25", "1º CONV": "2022-05-30", "2º CONV": "2023", "3º CONV": "2024-05-02", "4º CONV": "2025-11-19" },
-        { "Nº": 9, "DEPEND": "BBLA", "NOMBRE DE LA EMPRESA": "HYDRA ARGENTINA S.A", "DISP.": "DI-2021-22-APN-DPAM#PNA", "VENC": "2026-03-01", "1º CONV": "2022", "2º CONV": "2023", "3º CONV": "2024-03-27", "4º CONV": "2025" },
-        { "Nº": 10, "DEPEND": "BBLA", "NOMBRE DE LA EMPRESA": "ILDEMAR S.A", "DISP.": "DI-2021-63-APN-DPAM#PNA", "VENC": "2026-06-25", "1º CONV": "2022-06-25", "2º CONV": "2023", "3º CONV": "2024-05-02", "4º CONV": "2025-06-17" },
-        { "Nº": 11, "DEPEND": "CABA", "NOMBRE DE LA EMPRESA": "INVERSIONES MARITIMAS UNIVERSALES S.A. (IMUSA)", "DISP.": "DISFC-2025-22-APN-DPAM#PNA", "VENC": "2030-03-25", "1º CONV": "2026", "2º CONV": "2027", "3º CONV": "2028", "4º CONV": "2029" },
-        { "Nº": 12, "DEPEND": "CABA", "NOMBRE DE LA EMPRESA": "MARITIMA MARUBA", "DISP.": "DISFC-2022-56-APN-DPAM#PNA", "VENC": "2027-11-01", "1º CONV": "2023-11-09", "2º CONV": "2024-11-28", "3º CONV": "2025", "4º CONV": "2026" },
-        { "Nº": 13, "DEPEND": "TIGR", "NOMBRE DE LA EMPRESA": "MARPOR S.A.", "DISP.": "DISFC-2023-21-APN-DPAM#PNA", "VENC": "2028-01-26", "1º CONV": "2024", "2º CONV": "2025", "3º CONV": "2026", "4º CONV": "2027" },
-        { "Nº": 14, "DEPEND": "CABA", "NOMBRE DE LA EMPRESA": "NATIONAL SHIPPING S.A.", "DISP.": "DI-2026-14-APN-DPAM#PNA", "VENC": "2031-01-15", "1º CONV": "2027", "2º CONV": "2028", "3º CONV": "2029", "4º CONV": "2030" },
-        { "Nº": 15, "DEPEND": "CABA", "NOMBRE DE LA EMPRESA": "NAVIERA CRUZ DEL SUR S.A.", "DISP.": "DI-2025-9-APN-DPAM#PNA", "VENC": "2030-02-03", "1º CONV": "2026-02-10", "2º CONV": "2027", "3º CONV": "2028", "4º CONV": "2029" },
-        { "Nº": 16, "DEPEND": "ROSA", "NOMBRE DE LA EMPRESA": "NORMAN HERMANOS S.A.", "DISP.": "DISFC-2023-12-APN-DPAM#PNA", "VENC": "2028-01-20", "1º CONV": "2024-01-19", "2º CONV": "2025-01-17", "3º CONV": "2026", "4º CONV": "2027" },
-        { "Nº": 17, "DEPEND": "TIGR", "NOMBRE DE LA EMPRESA": "RIOCOM S.A.", "DISP.": "DI-2022-62-APN-DPAM#PNA", "VENC": "2027-07-19", "1º CONV": "2023", "2º CONV": "2024", "3º CONV": "2025", "4º CONV": "2026" },
-        { "Nº": 18, "DEPEND": "CABA", "NOMBRE DE LA EMPRESA": "TRANS-ONA S.A.M.C.I.F.", "DISP.": "DI-2022-11-APN-DPAM#PNA", "VENC": "2027-01-10", "1º CONV": "2023-07-18", "2º CONV": "2024", "3º CONV": "2025", "4º CONV": "2026" },
-        { "Nº": 19, "DEPEND": "SLOR", "NOMBRE DE LA EMPRESA": "UABL S.A.", "DISP.": "DISFC-2023-34-APN-DPAM#PNA", "VENC": "2028-03-16", "1º CONV": "2024-03-20", "2º CONV": "2025-03-17", "3º CONV": "2026", "4º CONV": "2027" }
+        { "Nº": 7, "DEPEND": "CABA", "NOMBRE DE LA EMPRESA": "EMPRESA NAVIERA PETROLERA ATLANTICA S.A (ENPASA)", "DISP.": "DI-2021-37-APN-DPAM#PNA", "VENC": "2026-04-07", "1º CONV": "2022-05-04", "2º CONV": "2023-05-31", "3º CONV": "2024-06-11", "4º CONV": "2025-07-03" }
     ],
-    "anexo_19": Array.from({length: 72}, (_, i) => ({ "PLANES DE EMERGENCIA POR PARTE DE EMPRESAS A CARGO DE PUERTOS": i + 1 })),
+    "anexo_19": Array.from({length: 15}, (_, i) => ({ "PLANES DE EMERGENCIA POR PARTE DE EMPRESAS A CARGO DE PUERTOS": i + 1 })),
     "anexo_20": [
         { "Nº": 1, "DEPEN": "RGAL", "EMPRESAS": "PETROLERA SANTA MARIA S.A. ", "DISPOSICION": "DI-2021-86-APN-DPAM#PNA", "HASTA": "2026-08-24", "1º INSP. ANUAL": "2022-10-12", "2º INSP. ANUAL": "11/10/2023", "3º INSP. ANUAL": "2024-11-06", "4º INSP. ANUAL": "2025-11-07" },
         { "Nº": 2, "DEPEN": "CRIV", "EMPRESAS": "TOTAL AUSTRAL S.A.", "DISPOSICION": "DI-2021-132-APN-DPAM#PNA", "HASTA": "2026-11-18", "1º INSP. ANUAL": "2022-12-15", "2º INSP. ANUAL": "2023-11-09", "3º INSP. ANUAL": "2024-10-17", "4º INSP. ANUAL": "2025-11-27" }
@@ -41,6 +29,7 @@ const INITIAL_DATA = {
 // --- TYPES ---
 interface NormalizedRecord {
   id: string; // generated
+  originalIndex: number;
   nro: number;
   dependencia: string;
   empresa: string;
@@ -58,6 +47,7 @@ interface NormalizedRecord {
 type AnexoKey = 'anexo_16' | 'anexo_17' | 'anexo_18' | 'anexo_19' | 'anexo_20';
 
 export const Planes: React.FC = () => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<AnexoKey>('anexo_18');
   const [data, setData] = useState<any>(INITIAL_DATA);
   const [searchTerm, setSearchTerm] = useState('');
@@ -76,9 +66,10 @@ export const Planes: React.FC = () => {
       // Mapeo flexible según las claves variables del JSON
       return {
         id: `${anexo}-${idx}`,
+        originalIndex: idx,
         nro: item["Nº"] || idx + 1,
         dependencia: item["DEPEN"] || item["DEPEND"] || "S/D",
-        empresa: item["EMPRESAS"] || item["NOMBRE DE LA EMPRESA"] || "DESCONOCIDO",
+        empresa: item["EMPRESAS"] || item["NOMBRE DE LA EMPRESA"] || "SIN NOMBRE",
         disposicion: item["DISPOSICION"] || item["DISP."] || "-",
         vencimiento: item["VENC"] || item["HASTA"] || "-",
         inspecciones: {
@@ -116,7 +107,7 @@ export const Planes: React.FC = () => {
   const handleEditClick = (record: NormalizedRecord, fieldKey: string, currentValue: string) => {
       setEditingItem({
           recordId: record.id,
-          field: fieldKey, // Ej: 'vencimiento' o 'inspecciones.year1'
+          field: fieldKey, 
           value: currentValue
       });
       setIsEditModalOpen(true);
@@ -131,16 +122,38 @@ export const Planes: React.FC = () => {
       const index = parseInt(editingItem.recordId.split('-')[1]);
       
       if (rawList[index]) {
-          // Determinar la clave original en el JSON sucio
           const rawItem = rawList[index];
           let targetKey = "";
 
-          // Mapeo inverso sucio pero efectivo para este prototipo
-          if (editingItem.field === 'vencimiento') targetKey = rawItem["VENC"] !== undefined ? "VENC" : "HASTA";
+          // Lógica Heurística Inversa para encontrar la clave correcta en el JSON sucio
+          if (editingItem.field === 'dependencia') targetKey = rawItem["DEPEN"] !== undefined ? "DEPEN" : "DEPEND";
+          else if (editingItem.field === 'empresa') targetKey = rawItem["EMPRESAS"] !== undefined ? "EMPRESAS" : "NOMBRE DE LA EMPRESA";
+          else if (editingItem.field === 'disposicion') targetKey = rawItem["DISPOSICION"] !== undefined ? "DISPOSICION" : "DISP.";
+          else if (editingItem.field === 'vencimiento') targetKey = rawItem["VENC"] !== undefined ? "VENC" : "HASTA";
           else if (editingItem.field === 'inspecciones.year1') targetKey = rawItem["1º CONV"] !== undefined ? "1º CONV" : (rawItem["1º  CONV ANUAL"] !== undefined ? "1º  CONV ANUAL" : "1º INSP. ANUAL");
           else if (editingItem.field === 'inspecciones.year2') targetKey = rawItem["2º CONV"] !== undefined ? "2º CONV" : (rawItem["2º  CONV ANUAL"] !== undefined ? "2º  CONV ANUAL" : "2º INSP. ANUAL");
           else if (editingItem.field === 'inspecciones.year3') targetKey = rawItem["3º CONV"] !== undefined ? "3º CONV" : (rawItem["3º  CONV ANUAL"] !== undefined ? "3º  CONV ANUAL" : "3º INSP. ANUAL");
           else if (editingItem.field === 'inspecciones.year4') targetKey = rawItem["4º CONV"] !== undefined ? "4º CONV" : (rawItem["4º  CONV ANUAL"] !== undefined ? "4º  CONV ANUAL" : "4º INSP. ANUAL");
+
+          // Si no existe la key (ej: nuevo registro), asignamos una por defecto basada en el Anexo
+          if (!targetKey) {
+             if (activeTab === 'anexo_17') {
+                if (editingItem.field === 'empresa') targetKey = 'EMPRESAS';
+                if (editingItem.field === 'dependencia') targetKey = 'DEPEN';
+                if (editingItem.field === 'disposicion') targetKey = 'DISPOSICION';
+                if (editingItem.field === 'vencimiento') targetKey = 'VENC';
+             } else if (activeTab === 'anexo_18') {
+                if (editingItem.field === 'empresa') targetKey = 'NOMBRE DE LA EMPRESA';
+                if (editingItem.field === 'dependencia') targetKey = 'DEPEND';
+                if (editingItem.field === 'disposicion') targetKey = 'DISP.';
+                if (editingItem.field === 'vencimiento') targetKey = 'VENC';
+             } else {
+                if (editingItem.field === 'empresa') targetKey = 'EMPRESAS';
+                if (editingItem.field === 'dependencia') targetKey = 'DEPEN';
+                if (editingItem.field === 'disposicion') targetKey = 'DISPOSICION';
+                if (editingItem.field === 'vencimiento') targetKey = 'HASTA';
+             }
+          }
 
           if (targetKey) {
               rawList[index][targetKey] = editingItem.value;
@@ -149,6 +162,91 @@ export const Planes: React.FC = () => {
       }
       setIsEditModalOpen(false);
       setEditingItem(null);
+  };
+
+  const handleDeleteRow = (idx: number) => {
+      if(!confirm("¿Eliminar esta fila y sus datos asociados?")) return;
+      const newData = JSON.parse(JSON.stringify(data));
+      newData[activeTab].splice(idx, 1);
+      setData(newData);
+  };
+
+  const handleAddRow = () => {
+      const newData = JSON.parse(JSON.stringify(data));
+      // Template vacío según anexo
+      let newRow = {};
+      if (activeTab === 'anexo_17') {
+         newRow = { "Nº": newData[activeTab].length + 1, "DEPEN": "NUEVO", "EMPRESAS": "NUEVA EMPRESA", "DISPOSICION": "-", "VENC": "-", "1º  CONV ANUAL": "-", "2º  CONV ANUAL": "-", "3º  CONV ANUAL": "-", "4º  CONV ANUAL": "-" };
+      } else if (activeTab === 'anexo_18') {
+         newRow = { "Nº": newData[activeTab].length + 1, "DEPEND": "NUEVO", "NOMBRE DE LA EMPRESA": "NUEVA EMPRESA", "DISP.": "-", "VENC": "-", "1º CONV": "-", "2º CONV": "-", "3º CONV": "-", "4º CONV": "-" };
+      } else {
+         newRow = { "Nº": newData[activeTab].length + 1, "DEPEN": "NUEVO", "EMPRESAS": "NUEVA EMPRESA", "DISPOSICION": "-", "HASTA": "-", "1º INSP. ANUAL": "-", "2º INSP. ANUAL": "-", "3º INSP. ANUAL": "-", "4º INSP. ANUAL": "-" };
+      }
+      newData[activeTab].push(newRow);
+      setData(newData);
+  };
+
+  // --- CSV IMPORT LOGIC ---
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+          const text = evt.target?.result as string;
+          if (!text) return;
+          
+          try {
+             // Simple CSV Parser
+             const lines = text.split('\n').filter(l => l.trim() !== '');
+             const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+             
+             const newRows = lines.slice(1).map((line, idx) => {
+                 // Split por comas pero ignorando comas dentro de comillas (regex básica)
+                 const values = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+                 const cleanValues = values.map(v => v.replace(/^"|"$/g, '').trim());
+                 
+                 const rowObj: any = {};
+                 headers.forEach((h, i) => {
+                     rowObj[h] = cleanValues[i] || "";
+                 });
+                 // Asegurar ID o Nº
+                 if(!rowObj["Nº"]) rowObj["Nº"] = idx + 1;
+                 
+                 return rowObj;
+             });
+
+             const newData = JSON.parse(JSON.stringify(data));
+             newData[activeTab] = newRows;
+             setData(newData);
+             alert(`Carga Masiva Exitosa: Se importaron ${newRows.length} registros en ${activeTab.toUpperCase()}.`);
+
+          } catch (err) {
+              alert("Error al procesar el archivo CSV. Asegúrese de que el formato sea correcto (separado por comas).");
+              console.error(err);
+          }
+      };
+      reader.readAsText(file);
+      // Reset input
+      e.target.value = '';
+  };
+
+  const downloadTemplate = () => {
+      const records = normalizeData(activeTab);
+      if(records.length === 0) return alert("No hay datos para generar plantilla.");
+      
+      // Get raw keys from first item of current tab data to ensure structure
+      const rawFirstItem = data[activeTab][0];
+      const headers = Object.keys(rawFirstItem).join(',');
+      
+      const csvContent = "data:text/csv;charset=utf-8," + headers + "\n";
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `plantilla_${activeTab}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
   };
 
   // --- RENDER LOGIC ---
@@ -181,6 +279,17 @@ export const Planes: React.FC = () => {
                     <h1 className="text-slate-900 dark:text-white text-2xl font-black uppercase tracking-tight">Seguimiento de Planes</h1>
                     <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest text-primary italic">Control de Vencimientos y Convalidaciones</p>
                 </div>
+                {!isSimpleList && (
+                    <div className="flex gap-2">
+                        <input type="file" accept=".csv" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
+                        <button onClick={() => downloadTemplate()} className="bg-slate-200 text-slate-700 px-3 py-2 rounded flex items-center gap-2 hover:bg-slate-300 transition-colors text-xs font-black uppercase">
+                           <span className="material-symbols-outlined text-[16px]">download</span> Plantilla
+                        </button>
+                        <button onClick={() => fileInputRef.current?.click()} className="bg-slate-800 text-white px-3 py-2 rounded flex items-center gap-2 hover:bg-slate-700 transition-colors text-xs font-black uppercase shadow-lg">
+                           <span className="material-symbols-outlined text-[16px]">upload_file</span> Carga Masiva (CSV)
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* TABS NAVEGACIÓN */}
@@ -239,6 +348,9 @@ export const Planes: React.FC = () => {
                             <option value="">Todas las Jurisdicciones</option>
                             {uniqueJur.map(j => <option key={j} value={j}>{j}</option>)}
                         </select>
+                        <button onClick={handleAddRow} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-green-700 transition-colors text-xs font-black uppercase shadow-lg">
+                           <span className="material-symbols-outlined text-[18px]">add</span> Nuevo
+                        </button>
                     </div>
 
                     {/* TABLA INTELIGENTE */}
@@ -246,27 +358,46 @@ export const Planes: React.FC = () => {
                         <table className="w-full text-left border-collapse text-xs">
                             <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm">
                                 <tr className="border-b border-slate-200 dark:border-slate-700">
-                                    <th className="px-3 py-3 font-black uppercase text-slate-500 w-10 text-center">#</th>
+                                    <th className="px-2 py-3 font-black uppercase text-slate-500 w-8 text-center">#</th>
                                     <th className="px-3 py-3 font-black uppercase text-slate-500 w-20">Juris.</th>
                                     <th className="px-3 py-3 font-black uppercase text-slate-500">Empresa / Razón Social</th>
                                     <th className="px-3 py-3 font-black uppercase text-slate-500 w-40">Disposición</th>
                                     <th className="px-3 py-3 font-black uppercase text-slate-500 w-28 text-center">Vencimiento</th>
-                                    <th className="px-1 py-3 font-black uppercase text-slate-400 text-[10px] text-center w-24">1º Insp</th>
-                                    <th className="px-1 py-3 font-black uppercase text-slate-400 text-[10px] text-center w-24">2º Insp</th>
-                                    <th className="px-1 py-3 font-black uppercase text-slate-400 text-[10px] text-center w-24">3º Insp</th>
-                                    <th className="px-1 py-3 font-black uppercase text-slate-400 text-[10px] text-center w-24">4º Insp</th>
+                                    <th className="px-1 py-3 font-black uppercase text-slate-400 text-[10px] text-center w-20">1º Insp</th>
+                                    <th className="px-1 py-3 font-black uppercase text-slate-400 text-[10px] text-center w-20">2º Insp</th>
+                                    <th className="px-1 py-3 font-black uppercase text-slate-400 text-[10px] text-center w-20">3º Insp</th>
+                                    <th className="px-1 py-3 font-black uppercase text-slate-400 text-[10px] text-center w-20">4º Insp</th>
+                                    <th className="px-1 py-3 font-black uppercase text-slate-500 text-center w-10">Acción</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                 {filteredRecords.map((r) => (
-                                    <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                                        <td className="px-3 py-3 text-center font-mono text-slate-400">{r.nro}</td>
-                                        <td className="px-3 py-3 font-bold text-primary">{r.dependencia}</td>
-                                        <td className="px-3 py-3 font-black text-slate-900 dark:text-white uppercase">
-                                            {r.empresa}
-                                            {r.observaciones && <p className="text-[9px] text-slate-400 font-normal italic mt-0.5">{r.observaciones}</p>}
+                                    <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group">
+                                        <td className="px-2 py-3 text-center font-mono text-slate-400">{r.nro}</td>
+                                        <td className="px-3 py-3">
+                                            <button 
+                                                onClick={() => handleEditClick(r, 'dependencia', r.dependencia)}
+                                                className="w-full text-left font-bold text-primary hover:underline"
+                                            >
+                                                {r.dependencia}
+                                            </button>
                                         </td>
-                                        <td className="px-3 py-3 text-[10px] font-mono uppercase">{r.disposicion}</td>
+                                        <td className="px-3 py-3">
+                                            <button 
+                                                onClick={() => handleEditClick(r, 'empresa', r.empresa)}
+                                                className="w-full text-left font-black text-slate-900 dark:text-white uppercase hover:text-primary transition-colors"
+                                            >
+                                                {r.empresa}
+                                            </button>
+                                        </td>
+                                        <td className="px-3 py-3 text-[10px] font-mono uppercase">
+                                            <button 
+                                                onClick={() => handleEditClick(r, 'disposicion', r.disposicion)}
+                                                className="w-full text-left hover:bg-slate-100 dark:hover:bg-slate-700 px-1 py-0.5 rounded"
+                                            >
+                                                {r.disposicion}
+                                            </button>
+                                        </td>
                                         
                                         {/* SEMÁFORO DE VENCIMIENTO */}
                                         <td className="px-3 py-3 text-center">
@@ -289,9 +420,20 @@ export const Planes: React.FC = () => {
                                                 </button>
                                             </td>
                                         ))}
+
+                                        {/* BOTÓN ELIMINAR */}
+                                        <td className="px-1 py-3 text-center">
+                                            <button 
+                                                onClick={() => handleDeleteRow(r.originalIndex)}
+                                                className="text-slate-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                title="Eliminar Fila"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))}
-                                {filteredRecords.length === 0 && <tr><td colSpan={9} className="py-20 text-center text-slate-400 italic">No se encontraron empresas.</td></tr>}
+                                {filteredRecords.length === 0 && <tr><td colSpan={10} className="py-20 text-center text-slate-400 italic">No se encontraron empresas.</td></tr>}
                             </tbody>
                         </table>
                     </div>
@@ -325,22 +467,26 @@ export const Planes: React.FC = () => {
          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
                 <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
-                   <span className="text-xs font-black uppercase tracking-widest">Actualizar Fecha</span>
+                   <span className="text-xs font-black uppercase tracking-widest">Editar Campo</span>
                    <button onClick={() => setIsEditModalOpen(false)}><span className="material-symbols-outlined">close</span></button>
                 </div>
                 <div className="p-6">
-                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Nuevo Valor (Fecha o Texto)</label>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Nuevo Valor</label>
                     <input 
                         className="w-full px-3 py-3 text-lg font-bold border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase text-center" 
                         value={editingItem.value} 
                         onChange={e => setEditingItem({...editingItem, value: e.target.value})}
                         autoFocus
                     />
-                    <div className="flex gap-2 mt-2 justify-center">
-                       <button onClick={() => setEditingItem({...editingItem, value: new Date().toISOString().split('T')[0]})} className="text-[10px] bg-slate-100 px-2 py-1 rounded hover:bg-slate-200">Hoy</button>
-                       <button onClick={() => setEditingItem({...editingItem, value: new Date().getFullYear().toString()})} className="text-[10px] bg-slate-100 px-2 py-1 rounded hover:bg-slate-200">Año Actual</button>
-                    </div>
                     
+                    {/* Accesos rápidos para fechas */}
+                    {(editingItem.field.includes('vencimiento') || editingItem.field.includes('inspecciones')) && (
+                        <div className="flex gap-2 mt-2 justify-center">
+                           <button onClick={() => setEditingItem({...editingItem, value: new Date().toISOString().split('T')[0]})} className="text-[10px] bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-600">Hoy</button>
+                           <button onClick={() => setEditingItem({...editingItem, value: new Date().getFullYear().toString()})} className="text-[10px] bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-600">Año Actual</button>
+                        </div>
+                    )}
+
                     <button onClick={saveEdit} className="w-full mt-6 py-3 bg-primary text-white text-xs font-black uppercase rounded shadow-lg hover:bg-blue-600">Guardar Cambios</button>
                 </div>
             </div>
