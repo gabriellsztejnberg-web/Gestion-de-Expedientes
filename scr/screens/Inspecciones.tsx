@@ -10,29 +10,19 @@ export const Inspecciones: React.FC = () => {
   const location = useLocation();
   const [inspecciones, setInspecciones] = useState<Inspeccion[]>([]);
   const [auditores, setAuditores] = useState<Auditor[]>([]);
-  const [movimientos, setMovimientos] = useState<TimelineEvent[]>([]); // Para el historial
-  
+  const [movimientos, setMovimientos] = useState<TimelineEvent[]>([]); 
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Modal Principal (Crear/Editar)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingInsp, setEditingInsp] = useState<Partial<Inspeccion>>({});
-  
-  // Modal Subsanar (Levantar Pendientes)
   const [isSubsanarModalOpen, setIsSubsanarModalOpen] = useState(false);
   const [subsanarTarget, setSubsanarTarget] = useState<Inspeccion | null>(null);
   const [certSubsanacion, setCertSubsanacion] = useState('');
   const [planillaSubsanacion, setPlanillaSubsanacion] = useState(''); 
-  
-  // Nuevo: Control de auditor en subsanación
   const [isSameAuditor, setIsSameAuditor] = useState(true);
   const [subsanarAuditorId, setSubsanarAuditorId] = useState('');
-
-  // Modal Historial
   const [isHistorialModalOpen, setIsHistorialModalOpen] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<Inspeccion | null>(null);
 
-  // Obtención segura del usuario
   const getUser = () => {
     try {
       return JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
@@ -43,7 +33,6 @@ export const Inspecciones: React.FC = () => {
   const currentUser: User = getUser();
 
   useEffect(() => {
-    // Si venimos redirigidos desde Expedientes, abrimos el modal pre-cargado
     if (location.state?.prefill) {
       const prefillCase = location.state.prefill as Case;
       setEditingInsp({
@@ -63,7 +52,36 @@ export const Inspecciones: React.FC = () => {
   useEffect(() => {
     const qInsp = query(collection(db, 'inspecciones'), orderBy('fecha', 'desc'));
     const unsubscribeInsp = onSnapshot(qInsp, (snapshot) => {
-      setInspecciones(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Inspeccion)));
+      // SANITIZACIÓN ROBUSTA: Previene crashes si vienen objetos extraños de Firestore
+      const docs = snapshot.docs.map(doc => {
+          const data = doc.data();
+          let fechaStr = "";
+          // Manejo de Timestamps de Firestore u objetos fecha
+          if (data.fecha && typeof data.fecha.toDate === 'function') {
+              fechaStr = data.fecha.toDate().toISOString().split('T')[0];
+          } else if (typeof data.fecha === 'string') {
+              fechaStr = data.fecha;
+          } else {
+              fechaStr = new Date().toISOString().split('T')[0];
+          }
+
+          return { 
+              id: doc.id, 
+              ...data,
+              fecha: fechaStr,
+              expedienteNumero: String(data.expedienteNumero || ''),
+              auditorNombre: String(data.auditorNombre || ''),
+              ubicacion: String(data.ubicacion || ''),
+              jurisdiccion: String(data.jurisdiccion || ''),
+              tipo: String(data.tipo || 'INICIAL'),
+              resultado: String(data.resultado || 'CON PENDIENTES'),
+              // Convertir explícitamente a String para evitar que React intente renderizar objetos
+              nroInforme: data.nroInforme ? String(data.nroInforme) : undefined,
+              nroCertificado: data.nroCertificado ? String(data.nroCertificado) : undefined,
+              nroDisposicion: data.nroDisposicion ? String(data.nroDisposicion) : undefined,
+          } as Inspeccion;
+      });
+      setInspecciones(docs);
     });
 
     const qAud = query(collection(db, 'auditores'));
@@ -71,7 +89,6 @@ export const Inspecciones: React.FC = () => {
       setAuditores(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Auditor)));
     });
 
-    // Cargamos movimientos para el historial
     const qMovs = query(collection(db, 'movimientos'), orderBy('fecha', 'desc'));
     const unsubscribeMovs = onSnapshot(qMovs, (snapshot) => {
       setMovimientos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TimelineEvent)));
@@ -99,7 +116,6 @@ export const Inspecciones: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     const auditorSeleccionado = auditores.find(a => a.id === editingInsp.auditorId);
     let finalExpedienteId = editingInsp.expedienteId;
     const finalNumero = (editingInsp.expedienteNumero || 'S/EXP').toUpperCase().trim();
@@ -138,7 +154,6 @@ export const Inspecciones: React.FC = () => {
         docId = docRef.id;
         accionTexto = "Nueva Inspección Registrada";
         
-        // Actualizar estadísticas del auditor
         if (auditorSeleccionado && auditorSeleccionado.id) {
            try {
              const auditorRef = doc(db, 'auditores', auditorSeleccionado.id);
@@ -154,19 +169,18 @@ export const Inspecciones: React.FC = () => {
                await updateDoc(auditorRef, { stats: newStats });
              }
            } catch (statError) {
-             console.error("Error actualizando estadísticas del auditor:", statError);
+             console.error("Error actualizando estadísticas:", statError);
            }
         }
       }
 
-      // Generar Movimiento en Historial (vinculado a expediente Y a inspección)
       if (finalExpedienteId || docId) {
           await addDoc(collection(db, 'movimientos'), {
              usuario: currentUser.name,
              fecha: new Date().toISOString(),
              texto: `${accionTexto}: ${dataToSave.resultado} en ${dataToSave.ubicacion}. ${dataToSave.observaciones ? 'Obs: ' + dataToSave.observaciones : ''}`,
-             expedienteId: finalExpedienteId || 'SIN_EXPEDIENTE', // Para que no falle el tipo
-             inspeccionId: docId, // VINCLUACIÓN CLAVE
+             expedienteId: finalExpedienteId || 'SIN_EXPEDIENTE',
+             inspeccionId: docId,
              tipoAccion: 'Inspección',
              isPending: dataToSave.resultado === 'CON PENDIENTES'
           });
@@ -188,7 +202,7 @@ export const Inspecciones: React.FC = () => {
     setSubsanarTarget(insp);
     setCertSubsanacion('');
     setPlanillaSubsanacion('');
-    setIsSameAuditor(true); // Resetear a por defecto
+    setIsSameAuditor(true);
     setSubsanarAuditorId('');
     setIsSubsanarModalOpen(true);
   };
@@ -197,22 +211,17 @@ export const Inspecciones: React.FC = () => {
     e.preventDefault();
     if (!subsanarTarget) return;
 
-    // Determinar nombre del auditor que subsana
     let nombreAuditorResponsable = subsanarTarget.auditorNombre;
-    
     if (!isSameAuditor) {
         if (!subsanarAuditorId) {
-            alert("Por favor seleccione el auditor que realizó el levantamiento.");
+            alert("Seleccione el auditor que realizó el levantamiento.");
             return;
         }
         const auditorNuevo = auditores.find(a => a.id === subsanarAuditorId);
-        if (auditorNuevo) {
-            nombreAuditorResponsable = auditorNuevo.nombre;
-        }
+        if (auditorNuevo) nombreAuditorResponsable = auditorNuevo.nombre;
     }
 
     try {
-      // 1. Actualizar la inspección: Aprobado + Nº Certificado + Planilla + Obs
       const textoAuditor = isSameAuditor ? `(Mismo Inspector: ${nombreAuditorResponsable})` : `(Re-inspección por: ${nombreAuditorResponsable})`;
       const nuevaObs = (subsanarTarget.observaciones || '') + `\n[SUBSANADO: Certificado ${certSubsanacion} / Planilla ${planillaSubsanacion}. ${textoAuditor} - Fecha: ${new Date().toLocaleDateString()}]`;
       
@@ -223,7 +232,6 @@ export const Inspecciones: React.FC = () => {
           observaciones: nuevaObs
       });
 
-      // 2. Registrar en Historial (Movimientos)
       await addDoc(collection(db, 'movimientos'), {
         usuario: currentUser.name,
         fecha: new Date().toISOString(),
@@ -234,21 +242,13 @@ export const Inspecciones: React.FC = () => {
         isPending: false
       });
 
-      // 3. Cerrar tareas viejas pendientes
       if (subsanarTarget.expedienteId) {
-          const qPend = query(
-            collection(db, 'movimientos'), 
-            where('expedienteId', '==', subsanarTarget.expedienteId),
-            where('isPending', '==', true)
-          );
+          const qPend = query(collection(db, 'movimientos'), where('expedienteId', '==', subsanarTarget.expedienteId), where('isPending', '==', true));
           const snapPend = await getDocs(qPend);
           snapPend.forEach(async (d) => {
             const data = d.data() as TimelineEvent;
             if (data.texto.includes('INSPECCIÓN CON PENDIENTES') || data.inspeccionId === subsanarTarget.id) {
-                await updateDoc(doc(db, 'movimientos', d.id), { 
-                  isPending: false,
-                  texto: data.texto + " [SUBSANADO]"
-                });
+                await updateDoc(doc(db, 'movimientos', d.id), { isPending: false, texto: data.texto + " [SUBSANADO]" });
             }
           });
       }
@@ -257,7 +257,6 @@ export const Inspecciones: React.FC = () => {
       setSubsanarTarget(null);
       setCertSubsanacion('');
       setPlanillaSubsanacion('');
-
     } catch (error) {
       console.error(error);
       alert("Error al procesar la subsanación.");
@@ -286,17 +285,17 @@ export const Inspecciones: React.FC = () => {
     }
   };
   
-  // Renderizado seguro de fecha
   const formatDateSafe = (dateStr: string) => {
       try {
           if(!dateStr) return "-";
-          return new Date(dateStr).toLocaleDateString();
+          // Validación extra: verificar si es una fecha válida
+          const d = new Date(dateStr);
+          return isNaN(d.getTime()) ? "-" : d.toLocaleDateString();
       } catch {
           return "-";
       }
   }
 
-  // Filtrar eventos para el modal de historial
   const historyEvents = historyTarget 
       ? movimientos.filter(m => m.inspeccionId === historyTarget.id || (historyTarget.expedienteId && m.expedienteId === historyTarget.expedienteId && m.tipoAccion === 'Inspección'))
       : [];
@@ -338,7 +337,6 @@ export const Inspecciones: React.FC = () => {
              </div>
           </div>
 
-          {/* SEARCH */}
           <div className="bg-white dark:bg-slate-900 rounded-lg p-3 border border-slate-200 dark:border-slate-800 mb-6 shrink-0 shadow-sm">
             <div className="relative flex items-center">
               <span className="absolute left-3 text-slate-400 material-symbols-outlined text-[20px]">search</span>
@@ -346,7 +344,6 @@ export const Inspecciones: React.FC = () => {
             </div>
           </div>
 
-          {/* TABLE */}
           <div className="flex-1 overflow-auto bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm">
             <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm">
@@ -413,7 +410,6 @@ export const Inspecciones: React.FC = () => {
         </main>
       </div>
 
-      {/* MODAL PRINCIPAL (Crear/Editar) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
