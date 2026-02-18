@@ -11,7 +11,8 @@ import {
   doc, 
   query, 
   deleteDoc,
-  orderBy
+  orderBy,
+  getDocs
 } from 'firebase/firestore';
 import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail } from '../types';
 
@@ -31,6 +32,7 @@ export const Expedientes: React.FC = () => {
   const navigate = useNavigate();
   const [cases, setCases] = useState<Case[]>([]);
   const [mails, setMails] = useState<Mail[]>([]);
+  const [users, setUsers] = useState<User[]>([]); 
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [activeTab, setActiveTab] = useState<TabId>('grupal');
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,9 +51,11 @@ export const Expedientes: React.FC = () => {
   const [replyText, setReplyText] = useState('');
 
   const [editingExp, setEditingExp] = useState<Partial<Case> | null>(null);
-  const [movData, setMovData] = useState({ tipo: 'Planilla', detalle: '', destino: '', isTask: false });
+  // Default tipo changed to be empty so user chooses explicitly
+  const [movData, setMovData] = useState({ tipo: '', detalle: '', destino: '', isTask: false });
 
   const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
+  const isJefe = (currentUser.role || '').toLowerCase() === 'jefe' || (currentUser.role || '').toLowerCase() === 'admin';
 
   useEffect(() => {
     const q = query(collection(db, 'expedientes'));
@@ -67,6 +71,15 @@ export const Expedientes: React.FC = () => {
       }
     );
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+        const qUsers = query(collection(db, 'usuarios'));
+        const snap = await getDocs(qUsers);
+        setUsers(snap.docs.map(d => ({id: d.id, ...d.data()} as User)));
+    };
+    fetchUsers();
   }, []);
 
   useEffect(() => {
@@ -124,7 +137,6 @@ export const Expedientes: React.FC = () => {
   };
 
   // --- MAIL LOGIC ---
-
   const handleRegisterMail = async (e: React.FormEvent) => {
       e.preventDefault();
       try {
@@ -137,10 +149,7 @@ export const Expedientes: React.FC = () => {
               registradoPor: currentUser.name
           };
           await addDoc(collection(db, 'mails'), mailData);
-          
-          // Registrar en historial general (usando un ID ficticio para mails generales)
           await addHistoryEntry('MAILS_GENERAL', `Ingreso Mail de: ${mailData.remitente}. Asunto: ${mailData.asunto}`, 'Comunicación', true);
-
           setIsMailModalOpen(false);
           setNewMail({});
       } catch (err) {
@@ -158,12 +167,8 @@ export const Expedientes: React.FC = () => {
               fechaRespuesta: new Date().toISOString(),
               respondidoPor: currentUser.name
           };
-          
           await updateDoc(doc(db, 'mails', currentMail.id), replyData);
-
-          // Registrar en historial general
           await addHistoryEntry('MAILS_GENERAL', `Respuesta a Mail de ${currentMail.remitente}: ${replyText}`, 'Comunicación');
-
           setIsReplyMailModalOpen(false);
           setReplyText('');
           setCurrentMail(null);
@@ -176,7 +181,6 @@ export const Expedientes: React.FC = () => {
       if(!confirm("¿Eliminar este registro de mail?")) return;
       await deleteDoc(doc(db, 'mails', id));
   };
-
 
   const handleAcquire = async (caseId: string) => {
     const ts = getFullTimestamp();
@@ -206,28 +210,64 @@ export const Expedientes: React.FC = () => {
   const handleRegistrarMovimiento = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingExp || !editingExp.id) return;
+    if (!movData.tipo) {
+        alert("Seleccione un tipo de actividad.");
+        return;
+    }
 
     let nuevoEstado = editingExp.instancia as InstanciaId;
     let nuevoAsignado = editingExp.asignadoA || 'buzon';
     let nuevoAsignadoNombre = editingExp.asignadoANombre || 'Buzón Grupal';
     let textoNovedad = "";
     let nuevoDestino = editingExp.destinoExterno || "";
+    let esTareaAutomatica = false; 
 
     const ts = getFullTimestamp();
 
     if (movData.tipo === 'Tarea') {
       textoNovedad = `[PENDIENTE]: ${movData.detalle}`;
-      await addHistoryEntry(editingExp.id, textoNovedad, 'Tarea', true);
+      esTareaAutomatica = true;
     } else {
       switch(movData.tipo) {
-        case 'Planilla':
-          textoNovedad = `Se cargó planilla de análisis: ${movData.detalle}. ${ts}.`;
+        case 'PlanillaOK':
           nuevoEstado = 'analisis'; 
+          textoNovedad = `Se cargó PLANILLA SATISFACTORIA. ${movData.detalle}. ${ts}.`;
+          esTareaAutomatica = false;
           break;
+          
+        case 'PlanillaObs':
+          // REQUERIMIENTO: Si es observada, queda pendiente a la espera de subsanación
+          nuevoEstado = 'obs';
+          textoNovedad = `Se cargó PLANILLA CON OBSERVACIONES. Expediente a la espera de subsanación. Detalle: ${movData.detalle}. ${ts}.`;
+          esTareaAutomatica = true; 
+          break;
+
+        case 'Encuesta':
+          // REQUERIMIENTO: Encuesta subida = pendiente a la espera de respuesta o análisis
+          nuevoEstado = 'p_insp';
+          textoNovedad = `Se subió ENCUESTA. A la espera de respuesta/análisis. Detalle: ${movData.detalle}. ${ts}.`;
+          esTareaAutomatica = true;
+          break;
+
+        case 'Conclusiones':
+          // REQUERIMIENTO: Resultado de Conclusiones = Pendiente hasta firma del jefe
+          nuevoEstado = 'p_dispo';
+          textoNovedad = `Se generó RESULTADO DE CONCLUSIONES. Enviado a FIRMA del Jefe. Detalle: ${movData.detalle}. ${ts}.`;
+          esTareaAutomatica = true;
+          break;
+
+        case 'Firma':
+          // REQUERIMIENTO: Firma por otra persona o jefe = Pendiente
+          nuevoEstado = 'p_dispo';
+          textoNovedad = `Enviado a FIRMA / VISADO (General). Documento: ${movData.detalle}. ${ts}.`;
+          esTareaAutomatica = true;
+          break;
+
         case 'Notificacion':
           textoNovedad = `Se notificó a empresa. Comentario: ${movData.detalle}. ${ts}.`;
           nuevoEstado = 'notificacion';
           break;
+
         case 'Pase':
           textoNovedad = `PASE EXTERNO a: ${movData.destino.toUpperCase()}. Motivo: ${movData.detalle}. ${ts}.`;
           nuevoEstado = 'pase'; 
@@ -235,6 +275,7 @@ export const Expedientes: React.FC = () => {
           nuevoAsignadoNombre = 'Fuera de Oficina';
           nuevoDestino = movData.destino;
           break;
+
         case 'Guarda':
           textoNovedad = `Enviado a GUARDA TEMPORAL. Motivo: ${movData.detalle}. ${ts}.`;
           nuevoEstado = 'guarda';
@@ -242,6 +283,7 @@ export const Expedientes: React.FC = () => {
           nuevoAsignadoNombre = 'Archivo';
           nuevoDestino = "";
           break;
+
         case 'Retorno':
           textoNovedad = `Retorno a oficina (Ingreso de expediente). ${movData.detalle}. ${ts}.`;
           nuevoEstado = 'analisis';
@@ -249,6 +291,7 @@ export const Expedientes: React.FC = () => {
           nuevoAsignadoNombre = 'Buzón Grupal';
           nuevoDestino = "";
           break;
+          
         default:
           textoNovedad = `Movimiento registrado: ${movData.detalle}. ${ts}.`;
       }
@@ -263,11 +306,11 @@ export const Expedientes: React.FC = () => {
         ultimaModificacion: new Date().toISOString() 
       });
 
-      await addHistoryEntry(editingExp.id, textoNovedad, movData.tipo);
+      await addHistoryEntry(editingExp.id, textoNovedad, movData.tipo, esTareaAutomatica);
     }
     
     setIsMovimientoModalOpen(false);
-    setMovData({ tipo: 'Planilla', detalle: '', destino: '', isTask: false });
+    setMovData({ tipo: '', detalle: '', destino: '', isTask: false });
   };
 
   const handleSaveExp = async (e: React.FormEvent) => {
@@ -276,6 +319,33 @@ export const Expedientes: React.FC = () => {
     const ts = getFullTimestamp();
     const numeroGDE = (editingExp?.numero || '').trim().toUpperCase();
     
+    let assignedId = 'buzon';
+    let assignedName = 'Buzón Grupal';
+
+    if (isNew) {
+        if (isJefe && editingExp?.asignadoA && editingExp.asignadoA !== 'buzon') {
+            const selectedUser = users.find(u => u.id === editingExp.asignadoA);
+            if (selectedUser) {
+                assignedId = selectedUser.id;
+                assignedName = selectedUser.name;
+            }
+        }
+    } else {
+        assignedId = editingExp?.asignadoA || 'buzon';
+        assignedName = editingExp?.asignadoANombre || 'Buzón Grupal';
+        
+        if (isJefe && editingExp?.asignadoA && editingExp.asignadoA !== 'buzon') {
+             const selectedUser = users.find(u => u.id === editingExp.asignadoA);
+             if (selectedUser) {
+                 assignedId = selectedUser.id;
+                 assignedName = selectedUser.name;
+             }
+        } else if (isJefe && editingExp?.asignadoA === 'buzon') {
+             assignedId = 'buzon';
+             assignedName = 'Buzón Grupal';
+        }
+    }
+
     const caseData: any = {
       numero: numeroGDE,
       empresa: (editingExp?.empresa || '').trim(),
@@ -284,8 +354,8 @@ export const Expedientes: React.FC = () => {
       ordenanza: editingExp?.ordenanza || '',
       categoria: editingExp?.categoria || '',
       instancia: editingExp?.instancia || 'analisis',
-      asignadoA: isNew ? 'buzon' : (editingExp?.asignadoA || 'buzon'),
-      asignadoANombre: isNew ? 'Buzón Grupal' : (editingExp?.asignadoANombre || 'Buzón Grupal'),
+      asignadoA: assignedId,
+      asignadoANombre: assignedName,
       observaciones: editingExp?.observaciones || '',
       isInternal: true
     };
@@ -301,11 +371,15 @@ export const Expedientes: React.FC = () => {
         caseData.ultimaModificacion = new Date().toISOString();
 
         const docRef = await addDoc(collection(db, 'expedientes'), caseData);
-        await addHistoryEntry(docRef.id, `Carga manual inicial al buzón grupal. ${ts}.`, 'Carga');
+        await addHistoryEntry(docRef.id, `Carga manual inicial. Asignado a: ${assignedName}. ${ts}.`, 'Carga');
       } else {
         const caseRef = doc(db, 'expedientes', editingExp!.id!);
         await updateDoc(caseRef, caseData);
-        await addHistoryEntry(editingExp!.id!, `Edición administrativa de datos generales (sin cambio de estado). ${ts}.`, 'Edición');
+        if (assignedId !== (cases.find(c=>c.id === editingExp!.id!)?.asignadoA)) {
+             await addHistoryEntry(editingExp!.id!, `Reasignado por Jefatura a: ${assignedName}. ${ts}.`, 'Reasignación');
+        } else {
+             await addHistoryEntry(editingExp!.id!, `Edición administrativa de datos generales. ${ts}.`, 'Edición');
+        }
       }
       setIsModalOpen(false);
     } catch (err) {
@@ -365,7 +439,7 @@ export const Expedientes: React.FC = () => {
                         <span>Registrar Mail</span>
                     </button>
                 )}
-                <button onClick={() => { setEditingExp({ tramite: 'Iniciación' }); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
+                <button onClick={() => { setEditingExp({ tramite: 'Iniciación', asignadoA: 'buzon' }); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
                 <span className="material-symbols-outlined text-[18px]">add_circle</span>
                 <span>Nuevo GDE</span>
                 </button>
@@ -397,7 +471,6 @@ export const Expedientes: React.FC = () => {
 
           <div className="flex-1 overflow-auto bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm">
             
-            {/* TABLA DE EXPEDIENTES (DEFAULT) */}
             {activeTab !== 'mails' && (
             <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm">
@@ -414,8 +487,6 @@ export const Expedientes: React.FC = () => {
                 {filteredCases.length > 0 ? filteredCases.map((c) => {
                   const inst = INSTANCIAS.find(i => i.id === c.instancia) || INSTANCIAS[0];
                   const isOwner = c.asignadoA === currentUser.id;
-                  const role = (currentUser.role || '').toLowerCase();
-                  const isJefe = role === 'jefe' || role === 'admin';
                   const isBuzon = c.asignadoA === 'buzon';
                   const isPase = c.instancia === 'pase';
                   const isGuarda = c.instancia === 'guarda';
@@ -588,6 +659,19 @@ export const Expedientes: React.FC = () => {
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Anexo / Categoría</label>
                 <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingExp?.categoria || ''} onChange={e => setEditingExp({...editingExp, categoria: e.target.value})} placeholder="Ej: II" />
               </div>
+              
+              {isJefe && (
+                  <div className="col-span-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-900/50">
+                      <label className="block text-[10px] font-black uppercase text-blue-700 dark:text-blue-300 mb-1">Asignar Responsable (Solo Jefes)</label>
+                      <select className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold" value={editingExp?.asignadoA || 'buzon'} onChange={e => setEditingExp({...editingExp, asignadoA: e.target.value})}>
+                          <option value="buzon">-- DEJAR EN BUZÓN GRUPAL --</option>
+                          {users.map(u => (
+                              <option key={u.id} value={u.id}>{u.name.toUpperCase()} ({u.role})</option>
+                          ))}
+                      </select>
+                  </div>
+              )}
+
               <div className="col-span-2">
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Observaciones Iniciales</label>
                 <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-20" value={editingExp?.observaciones || ''} onChange={e => setEditingExp({...editingExp, observaciones: e.target.value})}></textarea>
@@ -661,11 +745,18 @@ export const Expedientes: React.FC = () => {
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Tipo de Actividad</label>
                 <select className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold" value={movData.tipo} onChange={e => setMovData({...movData, tipo: e.target.value})}>
+                  <option value="">-- SELECCIONE ACTIVIDAD --</option>
+                  <optgroup label="Análisis y Resultado">
+                    <option value="PlanillaOK">Planilla (Satisfactoria)</option>
+                    <option value="PlanillaObs">⚠️ Planilla (Observada)</option>
+                    <option value="Encuesta">⚠️ Encuesta / Inspección (Carga)</option>
+                    <option value="Conclusiones">⚠️ Resultado de Conclusiones (A Firma)</option>
+                  </optgroup>
                   <optgroup label="Seguimiento / Pendientes">
+                    <option value="Firma">⚠️ A Firma / Visado (General)</option>
                     <option value="Tarea">⚠️ Crear Tarea Pendiente</option>
                   </optgroup>
-                  <optgroup label="Movimientos de Estado">
-                    <option value="Planilla">Carga de Planilla</option>
+                  <optgroup label="Movimientos Generales">
                     <option value="Notificacion">Notificar Empresa</option>
                     <option value="Pase">Pase a Otra Oficina</option>
                     <option value="Guarda">Guarda Temporal</option>
@@ -683,8 +774,16 @@ export const Expedientes: React.FC = () => {
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Detalle / Nota</label>
                 <textarea required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-24" value={movData.detalle} onChange={e => setMovData({...movData, detalle: e.target.value})} placeholder={movData.tipo === 'Tarea' ? "Qué queda pendiente por hacer?" : "Breve explicación..."}></textarea>
               </div>
-              <button type="submit" className={`w-full py-3 ${movData.tipo === 'Tarea' ? 'bg-orange-600' : 'bg-slate-900'} text-white text-xs font-black uppercase rounded shadow-lg transition-all`}>
-                {movData.tipo === 'Tarea' ? 'Crear Tarea Pendiente' : 'Confirmar Actividad'}
+              
+              {/* Mensajes Informativos según Selección */}
+              {(movData.tipo === 'PlanillaObs' || movData.tipo === 'Encuesta' || movData.tipo === 'Conclusiones' || movData.tipo === 'Firma') && (
+                  <p className="text-[10px] text-orange-600 bg-orange-50 p-2 rounded border border-orange-200">
+                      ℹ️ Esta acción generará automáticamente una <strong>TAREA PENDIENTE</strong> para seguimiento hasta su resolución/firma.
+                  </p>
+              )}
+
+              <button type="submit" className={`w-full py-3 ${(movData.tipo.includes('Obs') || movData.tipo === 'Encuesta' || movData.tipo === 'Conclusiones' || movData.tipo === 'Firma' || movData.tipo === 'Tarea') ? 'bg-orange-600' : 'bg-slate-900'} text-white text-xs font-black uppercase rounded shadow-lg transition-all`}>
+                Confirmar Actividad
               </button>
             </form>
           </div>
@@ -720,4 +819,3 @@ export const Expedientes: React.FC = () => {
     </div>
   );
 };
-
