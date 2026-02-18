@@ -10,9 +10,10 @@ import {
   updateDoc, 
   doc, 
   query, 
-  deleteDoc
+  deleteDoc,
+  orderBy
 } from 'firebase/firestore';
-import { Case, Instancia, InstanciaId, TimelineEvent, User } from '../types';
+import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail } from '../types';
 
 const INSTANCIAS: Instancia[] = [
   { id: 'analisis', label: 'Análisis', color: 'bg-blue-100 text-blue-800 border-blue-200' },
@@ -24,20 +25,29 @@ const INSTANCIAS: Instancia[] = [
   { id: 'guarda', label: 'Guarda', color: 'bg-gray-200 text-gray-600 border-gray-300' }
 ];
 
-type TabId = 'grupal' | 'individual' | 'usuarios' | 'pases' | 'guarda';
+type TabId = 'grupal' | 'individual' | 'usuarios' | 'pases' | 'guarda' | 'mails';
 
 export const Expedientes: React.FC = () => {
   const navigate = useNavigate();
   const [cases, setCases] = useState<Case[]>([]);
+  const [mails, setMails] = useState<Mail[]>([]);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [activeTab, setActiveTab] = useState<TabId>('grupal');
   const [searchTerm, setSearchTerm] = useState('');
   const [cloudError, setCloudError] = useState<string | null>(null);
   
+  // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMovimientoModalOpen, setIsMovimientoModalOpen] = useState(false);
   const [isHistorialModalOpen, setIsHistorialModalOpen] = useState(false);
   
+  // Mail Modals
+  const [isMailModalOpen, setIsMailModalOpen] = useState(false);
+  const [isReplyMailModalOpen, setIsReplyMailModalOpen] = useState(false);
+  const [currentMail, setCurrentMail] = useState<Mail | null>(null);
+  const [newMail, setNewMail] = useState<Partial<Mail>>({});
+  const [replyText, setReplyText] = useState('');
+
   const [editingExp, setEditingExp] = useState<Partial<Case> | null>(null);
   const [movData, setMovData] = useState({ tipo: 'Planilla', detalle: '', destino: '', isTask: false });
 
@@ -54,6 +64,17 @@ export const Expedientes: React.FC = () => {
       (error) => {
         console.error("Firestore Error:", error);
         setCloudError("Error de Conexión: No se pudo sincronizar.");
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'mails'), orderBy('fechaIngreso', 'desc'));
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Mail));
+        setMails(docs);
       }
     );
     return () => unsubscribe();
@@ -101,6 +122,61 @@ export const Expedientes: React.FC = () => {
       console.error(e);
     }
   };
+
+  // --- MAIL LOGIC ---
+
+  const handleRegisterMail = async (e: React.FormEvent) => {
+      e.preventDefault();
+      try {
+          const mailData = {
+              fechaIngreso: new Date().toISOString(),
+              remitente: (newMail.remitente || '').toUpperCase(),
+              asunto: (newMail.asunto || '').toUpperCase(),
+              cuerpo: newMail.cuerpo || '',
+              estado: 'pendiente',
+              registradoPor: currentUser.name
+          };
+          await addDoc(collection(db, 'mails'), mailData);
+          
+          // Registrar en historial general (usando un ID ficticio para mails generales)
+          await addHistoryEntry('MAILS_GENERAL', `Ingreso Mail de: ${mailData.remitente}. Asunto: ${mailData.asunto}`, 'Comunicación', true);
+
+          setIsMailModalOpen(false);
+          setNewMail({});
+      } catch (err) {
+          alert("Error al registrar mail");
+      }
+  };
+
+  const handleReplyMail = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if(!currentMail) return;
+      try {
+          const replyData = {
+              estado: 'respondido',
+              respuesta: replyText,
+              fechaRespuesta: new Date().toISOString(),
+              respondidoPor: currentUser.name
+          };
+          
+          await updateDoc(doc(db, 'mails', currentMail.id), replyData);
+
+          // Registrar en historial general
+          await addHistoryEntry('MAILS_GENERAL', `Respuesta a Mail de ${currentMail.remitente}: ${replyText}`, 'Comunicación');
+
+          setIsReplyMailModalOpen(false);
+          setReplyText('');
+          setCurrentMail(null);
+      } catch (err) {
+          alert("Error al guardar respuesta");
+      }
+  };
+
+  const handleDeleteMail = async (id: string) => {
+      if(!confirm("¿Eliminar este registro de mail?")) return;
+      await deleteDoc(doc(db, 'mails', id));
+  };
+
 
   const handleAcquire = async (caseId: string) => {
     const ts = getFullTimestamp();
@@ -261,6 +337,11 @@ export const Expedientes: React.FC = () => {
     return searchMatch;
   });
 
+  const filteredMails = mails.filter(m => 
+      m.remitente.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      m.asunto.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden font-display">
       <Sidebar activePage="expedientes" />
@@ -277,10 +358,18 @@ export const Expedientes: React.FC = () => {
               <h1 className="text-slate-900 dark:text-white text-2xl font-black uppercase tracking-tight">Expedientes Cloud</h1>
               <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest text-primary italic">Sábana Informativa DPAM</p>
             </div>
-            <button onClick={() => { setEditingExp({ tramite: 'Iniciación' }); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
-              <span className="material-symbols-outlined text-[18px]">add_circle</span>
-              <span>Nuevo GDE</span>
-            </button>
+            <div className="flex gap-2">
+                {activeTab === 'mails' && (
+                     <button onClick={() => setIsMailModalOpen(true)} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-purple-600 text-white text-xs font-black uppercase shadow-lg hover:bg-purple-700 transition-all">
+                        <span className="material-symbols-outlined text-[18px]">mail</span>
+                        <span>Registrar Mail</span>
+                    </button>
+                )}
+                <button onClick={() => { setEditingExp({ tramite: 'Iniciación' }); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
+                <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                <span>Nuevo GDE</span>
+                </button>
+            </div>
           </div>
 
           <div className="flex border-b border-slate-200 dark:border-slate-800 mb-6 gap-2 shrink-0 overflow-x-auto no-scrollbar">
@@ -288,6 +377,7 @@ export const Expedientes: React.FC = () => {
               { id: 'grupal', label: 'Buzón Grupal', icon: 'groups' },
               { id: 'individual', label: 'Mis Tareas', icon: 'person_check' },
               { id: 'usuarios', label: 'Por Usuario', icon: 'badge' },
+              { id: 'mails', label: 'Mails / Comunicaciones', icon: 'mail' },
               { id: 'pases', label: 'Pases Externos', icon: 'outbound' },
               { id: 'guarda', label: 'Guarda Temporal', icon: 'archive' }
             ].map(tab => (
@@ -301,11 +391,14 @@ export const Expedientes: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 rounded-lg p-3 border border-slate-200 dark:border-slate-800 mb-6 shrink-0 shadow-sm">
             <div className="relative flex items-center">
               <span className="absolute left-3 text-slate-400 material-symbols-outlined text-[20px]">search</span>
-              <input className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary" placeholder="Buscar por GDE, Empresa, Usuario, Trámite..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
+              <input className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary" placeholder={activeTab === 'mails' ? "Buscar remitente o asunto..." : "Buscar por GDE, Empresa, Usuario, Trámite..."} value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
             </div>
           </div>
 
           <div className="flex-1 overflow-auto bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm">
+            
+            {/* TABLA DE EXPEDIENTES (DEFAULT) */}
+            {activeTab !== 'mails' && (
             <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm">
                 <tr className="border-b border-slate-200 dark:border-slate-700">
@@ -402,11 +495,63 @@ export const Expedientes: React.FC = () => {
                 }) : <tr><td colSpan={6} className="py-20 text-center text-slate-400 italic">No hay expedientes cargados.</td></tr>}
               </tbody>
             </table>
+            )}
+
+            {/* TABLA DE MAILS */}
+            {activeTab === 'mails' && (
+                <table className="w-full text-left border-collapse text-xs">
+                    <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm">
+                        <tr className="border-b border-slate-200 dark:border-slate-700">
+                            <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Fecha</th>
+                            <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Remitente</th>
+                            <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Asunto / Detalle</th>
+                            <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Estado</th>
+                            <th className="px-4 py-3 text-right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {filteredMails.length > 0 ? filteredMails.map(m => (
+                            <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                <td className="px-4 py-4 font-mono text-slate-500">{new Date(m.fechaIngreso).toLocaleDateString()}</td>
+                                <td className="px-4 py-4 font-black uppercase text-slate-900 dark:text-white">{m.remitente}</td>
+                                <td className="px-4 py-4">
+                                    <div className="flex flex-col">
+                                        <span className="uppercase font-bold text-slate-700 dark:text-slate-300">{m.asunto}</span>
+                                        {m.cuerpo && <span className="text-[10px] text-slate-500 italic truncate max-w-xs">{m.cuerpo}</span>}
+                                    </div>
+                                </td>
+                                <td className="px-4 py-4">
+                                    <span className={`px-2 py-1 rounded-full font-black uppercase text-[9px] border ${m.estado === 'pendiente' ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-green-100 text-green-700 border-green-200'}`}>
+                                        {m.estado}
+                                    </span>
+                                </td>
+                                <td className="px-4 py-4 text-right">
+                                    <div className="flex justify-end gap-2">
+                                        {m.estado === 'pendiente' && (
+                                            <button onClick={() => { setCurrentMail(m); setIsReplyMailModalOpen(true); }} className="bg-purple-600 hover:bg-purple-700 text-white px-2 py-1.5 rounded flex items-center gap-1 shadow-sm transition-all" title="Responder">
+                                                <span className="material-symbols-outlined text-[16px]">reply</span>
+                                                <span className="font-bold uppercase text-[9px]">Responder</span>
+                                            </button>
+                                        )}
+                                        {m.estado === 'respondido' && (
+                                            <span className="text-[9px] text-slate-400 font-bold uppercase italic mr-2">Respondido por: {m.respondidoPor}</span>
+                                        )}
+                                        <button onClick={() => handleDeleteMail(m.id)} className="text-slate-300 hover:text-red-500 p-1"><span className="material-symbols-outlined text-[18px]">delete</span></button>
+                                    </div>
+                                </td>
+                            </tr>
+                        )) : (
+                            <tr><td colSpan={5} className="py-20 text-center text-slate-400 italic">No hay correos registrados.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            )}
+
           </div>
         </main>
       </div>
 
-      {/* MODAL EDICIÓN/CARGA */}
+      {/* MODAL EDICIÓN/CARGA EXPEDIENTE */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
@@ -448,6 +593,57 @@ export const Expedientes: React.FC = () => {
                 <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-20" value={editingExp?.observaciones || ''} onChange={e => setEditingExp({...editingExp, observaciones: e.target.value})}></textarea>
               </div>
               <button type="submit" className="col-span-2 py-3 bg-primary text-white text-xs font-black uppercase rounded shadow-lg hover:bg-blue-600 transition-all">Sincronizar Datos</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REGISTRAR MAIL */}
+      {isMailModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800">
+            <div className="bg-purple-600 text-white px-6 py-4 flex justify-between items-center">
+              <span className="text-xs font-black uppercase tracking-widest">Registrar Mail Entrante</span>
+              <button onClick={() => setIsMailModalOpen(false)}><span className="material-symbols-outlined">close</span></button>
+            </div>
+            <form onSubmit={handleRegisterMail} className="p-6 space-y-4">
+                <div>
+                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Remitente</label>
+                   <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={newMail.remitente || ''} onChange={e => setNewMail({...newMail, remitente: e.target.value})} placeholder="Ej: JUAN PEREZ" />
+                </div>
+                <div>
+                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Asunto</label>
+                   <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={newMail.asunto || ''} onChange={e => setNewMail({...newMail, asunto: e.target.value})} />
+                </div>
+                <div>
+                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Contenido / Notas</label>
+                   <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-24" value={newMail.cuerpo || ''} onChange={e => setNewMail({...newMail, cuerpo: e.target.value})} placeholder="Resumen del correo..."></textarea>
+                </div>
+                <button type="submit" className="w-full py-3 bg-purple-600 text-white text-xs font-black uppercase rounded shadow-lg hover:bg-purple-700 transition-all">Registrar Mail</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RESPONDER MAIL */}
+      {isReplyMailModalOpen && currentMail && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800">
+            <div className="bg-slate-800 text-white px-6 py-4 flex justify-between items-center">
+              <span className="text-xs font-black uppercase tracking-widest">Responder / Cerrar Mail</span>
+              <button onClick={() => setIsReplyMailModalOpen(false)}><span className="material-symbols-outlined">close</span></button>
+            </div>
+            <form onSubmit={handleReplyMail} className="p-6 space-y-4">
+                <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded text-xs text-slate-600 dark:text-slate-300 mb-4">
+                    <p className="font-bold">MAIL ORIGINAL:</p>
+                    <p>De: {currentMail.remitente}</p>
+                    <p>Asunto: {currentMail.asunto}</p>
+                </div>
+                <div>
+                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Detalle de la Respuesta Enviada</label>
+                   <textarea required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-32" value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="Se respondió indicando que..."></textarea>
+                </div>
+                <button type="submit" className="w-full py-3 bg-green-600 text-white text-xs font-black uppercase rounded shadow-lg hover:bg-green-700 transition-all">Registrar Respuesta y Cerrar</button>
             </form>
           </div>
         </div>
@@ -524,3 +720,4 @@ export const Expedientes: React.FC = () => {
     </div>
   );
 };
+
