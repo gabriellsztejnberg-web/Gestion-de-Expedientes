@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, query, getDocs, orderBy } from 'firebase/firestore';
-import { TimelineEvent, Case } from '../types';
+import { TimelineEvent, Case, Mail } from '../types';
 
 export const Reports: React.FC = () => {
   // Ajuste para inicializar siempre con la fecha local correcta del día
@@ -14,6 +14,7 @@ export const Reports: React.FC = () => {
   });
 
   const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [mails, setMails] = useState<Mail[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -32,6 +33,17 @@ export const Reports: React.FC = () => {
         return eventDateLocal === selectedDate;
       });
       setEvents(dayEvents);
+
+      // Fetch Mails
+      const qMails = query(collection(db, 'mails'), orderBy('fechaIngreso', 'asc'));
+      const snapshotMails = await getDocs(qMails);
+      const allMails = snapshotMails.docs.map(d => ({ id: d.id, ...d.data() } as Mail));
+      const dayMails = allMails.filter(m => {
+          const ingreso = new Date(m.fechaIngreso).toLocaleDateString() === new Date(selectedDate + 'T00:00:00').toLocaleDateString();
+          const respuesta = m.fechaRespuesta ? new Date(m.fechaRespuesta).toLocaleDateString() === new Date(selectedDate + 'T00:00:00').toLocaleDateString() : false;
+          return ingreso || respuesta;
+      });
+      setMails(dayMails);
 
       const qCases = query(collection(db, 'expedientes'));
       const snapshotCases = await getDocs(qCases);
@@ -83,6 +95,7 @@ export const Reports: React.FC = () => {
   // Datos para la tabla formal de impresión
   const expedienteIdsUnicos = Array.from(new Set(events.map(e => e.expedienteId)));
   const lineasReporte = expedienteIdsUnicos.map(id => {
+    if (id === 'MAILS_GENERAL' || id === 'SIN_EXPEDIENTE') return null; // Filtramos los que no son expedientes puros para la tabla principal
     const exp = cases.find(c => c.id === id);
     const eventosExp = events.filter(e => e.expedienteId === id);
     const resumen = eventosExp.map(e => e.texto).join(' | ');
@@ -96,7 +109,7 @@ export const Reports: React.FC = () => {
       resumen: resumen,
       responsables: Array.from(new Set(eventosExp.map(e => e.usuario))).join(', ')
     };
-  });
+  }).filter(Boolean);
 
   return (
     <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden">
@@ -127,7 +140,7 @@ export const Reports: React.FC = () => {
         <main className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-[#0d141b] print:hidden">
           
           {/* Tarjetas de Resumen Superior */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex justify-between items-center relative overflow-hidden">
                <div className="absolute right-0 top-0 h-full w-1 bg-green-500"></div>
                <div>
@@ -156,6 +169,16 @@ export const Reports: React.FC = () => {
                   <p className="text-[9px] text-purple-600 font-bold mt-1">Movimientos y decretos</p>
                </div>
                <span className="material-symbols-outlined text-purple-100 text-5xl">description</span>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex justify-between items-center relative overflow-hidden">
+               <div className="absolute right-0 top-0 h-full w-1 bg-orange-500"></div>
+               <div>
+                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Mails Gestionados</p>
+                  <h3 className="text-4xl font-black text-slate-900 dark:text-white">{mails.length}</h3>
+                  <p className="text-[9px] text-orange-600 font-bold mt-1">Ingresos / Respuestas</p>
+               </div>
+               <span className="material-symbols-outlined text-orange-100 text-5xl">mail</span>
             </div>
           </div>
 
@@ -253,25 +276,71 @@ export const Reports: React.FC = () => {
                 <tbody>
                   {lineasReporte.length > 0 ? lineasReporte.map((linea, idx) => (
                     <tr key={idx} className="break-inside-avoid page-break-inside-avoid">
-                      <td className="border border-slate-300 p-1.5 font-bold font-mono uppercase break-words align-top">{linea.numero}</td>
-                      <td className="border border-slate-300 p-1.5 font-black uppercase text-slate-900 break-words align-top">{linea.empresa}</td>
+                      <td className="border border-slate-300 p-1.5 font-bold font-mono uppercase break-words align-top">{linea!.numero}</td>
+                      <td className="border border-slate-300 p-1.5 font-black uppercase text-slate-900 break-words align-top">{linea!.empresa}</td>
                       <td className="border border-slate-300 p-1.5 uppercase leading-tight align-top">
-                        <div className="font-bold">{linea.tramite}</div>
-                        <div className="text-slate-500 text-[8px] font-bold">ORD: {linea.ordenanza} | ANEXO: {linea.anexo}</div>
+                        <div className="font-bold">{linea!.tramite}</div>
+                        <div className="text-slate-500 text-[8px] font-bold">ORD: {linea!.ordenanza} | ANEXO: {linea!.anexo}</div>
                       </td>
                       <td className="border border-slate-300 p-1.5 text-slate-700 whitespace-pre-wrap leading-tight italic align-top">
-                        {linea.resumen}
-                        <div className="mt-1 text-[7px] text-slate-400 font-black uppercase">Responsable(s): {linea.responsables}</div>
+                        {linea!.resumen}
+                        <div className="mt-1 text-[7px] text-slate-400 font-black uppercase">Responsable(s): {linea!.responsables}</div>
                       </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={4} className="border border-slate-300 p-8 text-center text-slate-400 uppercase font-bold italic">No se registraron movimientos en la fecha seleccionada.</td>
+                      <td colSpan={4} className="border border-slate-300 p-8 text-center text-slate-400 uppercase font-bold italic">No se registraron movimientos de expedientes.</td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
+
+            {/* TABLA DE MAILS EN IMPRESION */}
+            {mails.length > 0 && (
+                <div className="mt-8 break-inside-avoid">
+                    <h3 className="text-sm font-black uppercase border-b-2 border-slate-300 mb-2 pb-1">Comunicaciones / Correos Electrónicos</h3>
+                    <table className="w-full border-collapse border border-slate-300 text-[9px] table-fixed">
+                        <colgroup>
+                            <col className="w-[20%]" />
+                            <col className="w-[50%]" />
+                            <col className="w-[30%]" />
+                        </colgroup>
+                        <thead className="bg-slate-100">
+                            <tr>
+                                <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Remitente</th>
+                                <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Detalle</th>
+                                <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Estado / Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {mails.map(m => (
+                                <tr key={m.id}>
+                                    <td className="border border-slate-300 p-1.5 font-black uppercase">{m.remitente}</td>
+                                    <td className="border border-slate-300 p-1.5 uppercase">
+                                        <span className="font-bold block">AS: {m.asunto}</span>
+                                        {m.fechaRespuesta ? (
+                                            <span className="text-slate-500 italic">RTA: {m.respuesta}</span>
+                                        ) : (
+                                            <span className="text-slate-400 italic">{m.cuerpo}</span>
+                                        )}
+                                    </td>
+                                    <td className="border border-slate-300 p-1.5 uppercase text-center">
+                                        {m.fechaRespuesta ? (
+                                            <div>
+                                                <span className="font-bold text-green-700">RESPONDIDO</span>
+                                                <div className="text-[7px]">Por: {m.respondidoPor}</div>
+                                            </div>
+                                        ) : (
+                                            <span className="font-bold text-orange-600">INGRESO (PENDIENTE)</span>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
 
             <div className="flex justify-between mt-12 pt-8 px-8 break-inside-avoid page-break-inside-avoid">
               <div className="text-center w-56 border-t border-slate-400 pt-2">
