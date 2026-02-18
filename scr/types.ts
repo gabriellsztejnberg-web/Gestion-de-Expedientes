@@ -29,6 +29,19 @@ export interface Case {
   isInternal: boolean;
 }
 
+export interface Mail {
+  id: string;
+  fechaIngreso: string; // ISO
+  remitente: string;
+  asunto: string;
+  cuerpo?: string;
+  estado: 'pendiente' | 'respondido';
+  respuesta?: string;
+  fechaRespuesta?: string;
+  respondidoPor?: string;
+  registradoPor: string;
+}
+
 export interface TimelineEvent {
   id: string;
   usuario: string;
