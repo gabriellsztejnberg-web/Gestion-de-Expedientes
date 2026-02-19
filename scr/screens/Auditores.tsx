@@ -12,6 +12,7 @@ import {
   deleteDoc 
 } from 'firebase/firestore';
 import { Auditor, Curso, EstadisticasAuditor } from '../types';
+import { analyzeAuditorProfile } from '../services/geminiService'; // Importamos IA
 
 export const Auditores: React.FC = () => {
   const [auditores, setAuditores] = useState<Auditor[]>([]);
@@ -20,11 +21,15 @@ export const Auditores: React.FC = () => {
   const [editingAuditor, setEditingAuditor] = useState<Partial<Auditor>>({});
   const [activeTab, setActiveTab] = useState<'general' | 'academicos' | 'stats'>('general');
   const [newCurso, setNewCurso] = useState<Partial<Curso>>({});
+  
+  // Estado para perfil IA
+  const [aiProfile, setAiProfile] = useState<string>('');
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, 'auditores'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      // SANITIZACIÓN DE DATOS: Aseguramos que cada campo tenga el tipo correcto para evitar crashes
+      // SANITIZACIÓN DE DATOS
       const docs = snapshot.docs.map(doc => {
         const data = doc.data();
         return { 
@@ -34,7 +39,6 @@ export const Auditores: React.FC = () => {
           disposicionHabilitacion: data.disposicionHabilitacion || 'PENDIENTE',
           zonaTrabajo: data.zonaTrabajo || '',
           cursos: Array.isArray(data.cursos) ? data.cursos : [],
-          // Aseguramos que stats exista y tenga números
           stats: {
             totalHistorico: Number(data.stats?.totalHistorico || 0),
             anualActual: Number(data.stats?.anualActual || 0),
@@ -69,6 +73,7 @@ export const Auditores: React.FC = () => {
       setIsModalOpen(false);
       setEditingAuditor({});
       setActiveTab('general');
+      setAiProfile(''); // Reset AI
     } catch (error) {
       alert("Error al guardar datos.");
     }
@@ -112,6 +117,15 @@ export const Auditores: React.FC = () => {
         }
     });
   };
+  
+  // --- IA PROFILE ---
+  const handleGenerateAiProfile = async () => {
+      if (!editingAuditor.nombre) return;
+      setIsAiLoading(true);
+      const profile = await analyzeAuditorProfile(editingAuditor);
+      setAiProfile(profile);
+      setIsAiLoading(false);
+  };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -132,7 +146,7 @@ export const Auditores: React.FC = () => {
               <h1 className="text-slate-900 dark:text-white text-2xl font-black uppercase tracking-tight">Registro de Auditores</h1>
               <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest text-primary italic">Planes de Emergencia - Habilitados</p>
             </div>
-            <button onClick={() => { setEditingAuditor({ cursos: [], stats: { totalHistorico: 0, anualActual: 0, anioReferencia: new Date().getFullYear() } }); setActiveTab('general'); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
+            <button onClick={() => { setEditingAuditor({ cursos: [], stats: { totalHistorico: 0, anualActual: 0, anioReferencia: new Date().getFullYear() } }); setActiveTab('general'); setAiProfile(''); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
               <span className="material-symbols-outlined text-[18px]">person_add</span>
               <span>Nuevo Auditor</span>
             </button>
@@ -188,7 +202,7 @@ export const Auditores: React.FC = () => {
                     </td>
                     <td className="px-4 py-4 text-right">
                         <div className="flex justify-end gap-2">
-                           <button onClick={() => { setEditingAuditor(a); setActiveTab('general'); setIsModalOpen(true); }} className="text-slate-400 hover:text-primary p-1"><span className="material-symbols-outlined text-[18px]">edit_note</span></button>
+                           <button onClick={() => { setEditingAuditor(a); setActiveTab('general'); setAiProfile(''); setIsModalOpen(true); }} className="text-slate-400 hover:text-primary p-1"><span className="material-symbols-outlined text-[18px]">edit_note</span></button>
                            <button onClick={() => handleDelete(a.id)} className="text-slate-400 hover:text-red-500 p-1"><span className="material-symbols-outlined text-[18px]">delete_forever</span></button>
                         </div>
                     </td>
@@ -219,6 +233,26 @@ export const Auditores: React.FC = () => {
             <div className="p-6 overflow-y-auto flex-1">
                {activeTab === 'general' && (
                   <form id="auditorForm" onSubmit={handleSave} className="space-y-4">
+                     {/* Perfil IA */}
+                     <div className="bg-gradient-to-r from-purple-50 to-white dark:from-purple-900/10 dark:to-slate-900 p-4 rounded border border-purple-100 dark:border-purple-900/30 mb-4">
+                        <div className="flex justify-between items-start mb-2">
+                           <h4 className="text-[10px] font-black uppercase text-purple-700 dark:text-purple-400 flex items-center gap-1">
+                               <span className="material-symbols-outlined text-[14px]">psychology</span> Perfil Profesional (IA)
+                           </h4>
+                           <button 
+                                type="button" 
+                                onClick={handleGenerateAiProfile} 
+                                disabled={isAiLoading || !editingAuditor.nombre}
+                                className="text-[9px] bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700 transition-colors flex items-center gap-1"
+                           >
+                               {isAiLoading ? 'Analizando...' : 'Generar Análisis'}
+                           </button>
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-300 italic leading-relaxed">
+                            {aiProfile || "Haga clic en 'Generar Análisis' para obtener una reseña basada en la actividad y cursos de este inspector."}
+                        </p>
+                     </div>
+
                      <div>
                         <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nombre Completo</label>
                         <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={editingAuditor.nombre || ''} onChange={e => setEditingAuditor({...editingAuditor, nombre: e.target.value})} placeholder="APELLIDO, Nombre" />
