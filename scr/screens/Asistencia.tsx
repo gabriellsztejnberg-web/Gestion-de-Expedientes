@@ -171,6 +171,29 @@ export const Asistencia: React.FC = () => {
       await handleUpdateCell(currentUser.id, todayStr, type, timeStr);
   };
 
+  // NUEVA FUNCIÓN: Limpiar día específico (volver a normal)
+  const handleClearDay = async (userId: string, date: string) => {
+      if(!confirm("¿Desea eliminar esta novedad y volver a horario normal?")) return;
+      
+      const logId = `${userId}_${date}`;
+      const userOwner = users.find(u => u.id === userId);
+
+      // Pisamos con un log "limpio"
+      const cleanData: AttendanceLog = {
+          id: logId,
+          userId: userId,
+          userName: userOwner?.name || 'Desconocido',
+          userRole: userOwner?.role === 'jefe' ? 'JER' : 'OP',
+          date: date,
+          entry: '', 
+          exit: '',
+          type: 'normal',
+          notes: '',
+          totalHours: '00:00'
+      };
+      await setDoc(doc(db, 'asistencia', logId), cleanData);
+  };
+
   const handleSaveNovedad = async (e: React.FormEvent) => {
       e.preventDefault();
       
@@ -180,8 +203,6 @@ export const Asistencia: React.FC = () => {
       
       // Loop por dias
       for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          // Skip weekends if needed? Usually licenses cover weekends but hours are only counted on working days logic (weekDates).
-          // Guardamos en DB para todos los días del rango.
           const dateStr = d.toISOString().split('T')[0];
           
           let targetUsers: User[] = [];
@@ -199,8 +220,8 @@ export const Asistencia: React.FC = () => {
               const logId = `${u.id}_${dateStr}`;
               const docRef = doc(db, 'asistencia', logId);
               
-              // No sobreescribimos horas si ya existian, salvo que sea feriado que pisa todo
-              // O simplificamos: La novedad PISA el estado.
+              const isReset = novedadData.type === 'normal';
+
               const data = {
                   id: logId,
                   userId: u.id,
@@ -208,11 +229,20 @@ export const Asistencia: React.FC = () => {
                   userRole: u.role === 'jefe' ? 'JER' : 'OP',
                   date: dateStr,
                   type: novedadData.type,
-                  notes: novedadData.notes,
-                  // Si es Feriado/Comision/Licencia no necesita entrada/salida para sumar horas
-                  totalHours: '07:00' // Visualmente mostramos 7hs
+                  notes: isReset ? '' : (novedadData.notes || ''),
+                  // Si es reset (normal) o ausente, 0 horas. Si es especial, 7 horas.
+                  totalHours: (isReset || novedadData.type === 'ausente') ? '00:00' : '07:00',
+                  // Si es reset, limpiamos entrada/salida para evitar inconsistencias visuales
+                  entry: isReset ? '' : undefined,
+                  exit: isReset ? '' : undefined
               };
-              batch.set(docRef, data, { merge: true });
+
+              // Si es reset, usamos set para pisar todo. Si no, merge para mantener info si hubiese
+              if (isReset) {
+                  batch.set(docRef, { ...data, entry: '', exit: '' });
+              } else {
+                  batch.set(docRef, data, { merge: true });
+              }
           });
       }
 
@@ -248,7 +278,6 @@ export const Asistencia: React.FC = () => {
   const weekStartDisplay = formatShortDate(weekDates[0]);
   const weekEndDisplay = formatShortDate(weekDates[4]);
   
-  // Check if current week is in the past
   const isPastWeek = new Date(weekDates[4]) < new Date();
 
   return (
@@ -378,6 +407,15 @@ export const Asistencia: React.FC = () => {
                                             <span>{type.replace('_', ' ')}</span>
                                             {!isAbsent && <span className="text-[7px] opacity-70">(+7 hs)</span>}
                                          </div>
+                                         
+                                         {/* BOTÓN LIMPIAR / CORREGIR */}
+                                         <button 
+                                            onClick={(e) => { e.stopPropagation(); handleClearDay(u.id, date); }}
+                                            className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 bg-white/60 hover:bg-white text-slate-600 rounded-full p-0.5 transition-all shadow-sm"
+                                            title="Limpiar / Volver a Normal"
+                                         >
+                                            <span className="material-symbols-outlined text-[12px]">close</span>
+                                         </button>
                                      </td>
                                    );
                                 }
@@ -466,6 +504,8 @@ export const Asistencia: React.FC = () => {
                              <option value="feriado">Feriado / Asueto (+7hs)</option>
                              <option value="franco">Franco Compensatorio (+7hs)</option>
                              <option value="ausente">Ausente / Falta (0hs)</option>
+                             <option disabled>──────────</option>
+                             <option value="normal">VOLVER A NORMAL / LIMPIAR</option>
                          </select>
                      </div>
 
