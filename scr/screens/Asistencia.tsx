@@ -15,7 +15,18 @@ import { User, AttendanceLog, AttendanceType } from '../types';
 
 // CONFIGURACIÓN
 const WEEKLY_BASE_HOURS = 35;
-const HOURS_PER_DAY_TARGET = 7; // Usado para descontar objetivo en feriados
+const HOURS_PER_DAY_TARGET = 7; // Usado para descontar objetivo en feriados/licencias
+
+// Tipos que NO suman horas trabajadas, pero REDUCEN el objetivo semanal para no deber horas.
+const TARGET_REDUCING_TYPES: AttendanceType[] = [
+    'feriado', 
+    'franco',
+    'licencia_anual', 
+    'licencia_ord', 
+    'licencia_extra', 
+    'licencia_med', 
+    'licencia_personal'
+];
 
 export const Asistencia: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -109,13 +120,14 @@ export const Asistencia: React.FC = () => {
       return minutesToTime(diff);
   };
 
-  // Calcula el objetivo de la semana para un usuario (resta feriados)
+  // Calcula el objetivo de la semana para un usuario
+  // REGLA: Feriados y Licencias bajan el objetivo (35hs - 7hs por cada evento)
   const calculateWeeklyTargetMins = (userId: string) => {
       let targetMins = WEEKLY_BASE_HOURS * 60;
       weekDates.forEach(date => {
           const logId = `${userId}_${date}`;
           const log = logs[logId];
-          if (log && log.type === 'feriado') {
+          if (log && TARGET_REDUCING_TYPES.includes(log.type)) {
               targetMins -= (HOURS_PER_DAY_TARGET * 60);
           }
       });
@@ -133,7 +145,7 @@ export const Asistencia: React.FC = () => {
            if ((log.type === 'normal' || log.type === 'comision') && log.entry && log.exit) {
                totalMins += toMinutes(log.exit) - toMinutes(log.entry);
            }
-           // Las licencias y feriados NO suman horas trabajadas (pero feriado baja el target)
+           // Las licencias y feriados NO suman horas trabajadas
        }
     });
     return totalMins;
@@ -431,9 +443,9 @@ export const Asistencia: React.FC = () => {
 
                                 // Las celdas unificadas son para tipos que NO permiten carga manual (Ausente, Feriado, Licencias)
                                 // Comisión SI permite carga manual, así que se muestra como input normal pero con color diferente si se quiere, o input normal.
-                                // REQ: "Comisión suma el tiempo que ingresa el personal". -> Mostramos inputs.
-
+                                
                                 const showMergedCell = type !== 'normal' && type !== 'comision';
+                                const reducesTarget = TARGET_REDUCING_TYPES.includes(type);
                                 
                                 if (showMergedCell) {
                                    return (
@@ -441,8 +453,8 @@ export const Asistencia: React.FC = () => {
                                          <div className={`w-full h-full min-h-[30px] flex flex-col items-center justify-center font-black uppercase text-[9px] cursor-pointer 
                                             ${getColorForType(type)}`}>
                                             <span>{getLabelForType(type)}</span>
-                                            {/* Si es feriado, mostramos que descuenta obj */}
-                                            {type === 'feriado' && <span className="text-[7px] opacity-70">(-OBJ)</span>}
+                                            {/* Si reduce objetivo, mostramos indicador visual */}
+                                            {reducesTarget && <span className="text-[7px] opacity-70">(-OBJ)</span>}
                                          </div>
                                          <button 
                                             onClick={(e) => { e.stopPropagation(); handleClearDay(u.id, date); }}
@@ -541,16 +553,16 @@ export const Asistencia: React.FC = () => {
                      <div>
                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Tipo de Novedad</label>
                          <select className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold" value={novedadData.type} onChange={e => setNovedadData({...novedadData, type: e.target.value as AttendanceType})}>
-                             <option value="licencia_anual">Licencia Anual (0hs)</option>
-                             <option value="licencia_ord">Licencia Ordinaria (0hs)</option>
-                             <option value="licencia_extra">Licencia Extraordinaria (0hs)</option>
-                             <option value="licencia_med">Licencia Médica (0hs)</option>
-                             <option value="licencia_personal">Asuntos Personales (0hs)</option>
-                             <option value="franco">Franco Compensatorio (0hs)</option>
+                             <option value="licencia_anual">Licencia Anual (Baja Objetivo)</option>
+                             <option value="licencia_ord">Licencia Ordinaria (Baja Objetivo)</option>
+                             <option value="licencia_extra">Licencia Extraordinaria (Baja Objetivo)</option>
+                             <option value="licencia_med">Licencia Médica (Baja Objetivo)</option>
+                             <option value="licencia_personal">Asuntos Personales (Baja Objetivo)</option>
+                             <option value="franco">Franco Compensatorio (Baja Objetivo)</option>
                              <option disabled>──────────</option>
                              <option value="comision">Comisión de Servicio (Suma Hs)</option>
                              <option value="feriado">Feriado / Asueto (Baja Objetivo)</option>
-                             <option value="ausente">Ausente / Falta (0hs)</option>
+                             <option value="ausente">Ausente / Falta (Debe Hs)</option>
                              <option disabled>──────────</option>
                              <option value="normal">VOLVER A NORMAL / LIMPIAR</option>
                          </select>
@@ -586,3 +598,4 @@ export const Asistencia: React.FC = () => {
     </div>
   );
 };
+
