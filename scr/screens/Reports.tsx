@@ -1,8 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, query, getDocs, orderBy } from 'firebase/firestore';
 import { TimelineEvent, Case, Mail } from '../types';
+import { summarizeReportRow } from '../services/geminiService'; // Importamos servicio IA
 
 export const Reports: React.FC = () => {
   // Ajuste para inicializar siempre con la fecha local correcta del día
@@ -16,9 +18,14 @@ export const Reports: React.FC = () => {
   const [mails, setMails] = useState<Mail[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(false);
+  
+  // Estado para los resúmenes de IA { expedienteId: resumen_generado }
+  const [aiSummaries, setAiSummaries] = useState<Record<string, string>>({});
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
+    setAiSummaries({}); // Reseteamos al cambiar fecha
     try {
       const qEvents = query(collection(db, 'movimientos'), orderBy('fecha', 'asc'));
       const snapshotEvents = await getDocs(qEvents);
@@ -93,34 +100,68 @@ export const Reports: React.FC = () => {
 
   // Datos para la tabla formal de impresión
   const expedienteIdsUnicos = Array.from(new Set(events.map(e => e.expedienteId)));
-  const lineasReporte = expedienteIdsUnicos.map(id => {
-    if (id === 'MAILS_GENERAL' || id === 'SIN_EXPEDIENTE') return null; // Filtramos los que no son expedientes puros para la tabla principal
+
+  type ReportLine = {
+    id: string;
+    numero: string;
+    empresa: string;
+    tramite: string;
+    ordenanza: string;
+    anexo: string;
+    resumenOriginal: string;
+    responsables: string;
+  };
+
+  const lineasReporte = expedienteIdsUnicos.map((id: string): ReportLine | null => {
+    if (id === 'MAILS_GENERAL' || id === 'SIN_EXPEDIENTE') return null;
     const exp = cases.find(c => c.id === id);
     const eventosExp = events.filter(e => e.expedienteId === id);
-    const resumen = eventosExp.map(e => e.texto).join(' | ');
+    // Unimos los textos crudos
+    const resumenCrudo = eventosExp.map(e => e.texto).join(' | ');
 
     return {
+      id: id,
       numero: exp?.numero || 'N/A',
       empresa: exp?.empresa || 'S/D',
       tramite: exp?.tramite || 'N/A',
       ordenanza: exp?.ordenanza || '-',
       anexo: exp?.categoria || '-',
-      resumen: resumen,
+      resumenOriginal: resumenCrudo,
       responsables: Array.from(new Set(eventosExp.map(e => e.usuario))).join(', ')
     };
-  }).filter(Boolean);
+  }).filter((item): item is ReportLine => item !== null);
+
+  // --- LOGICA IA: GENERAR RESUMENES EN LOTE ---
+  const handleGenerateAiReports = async () => {
+      if (lineasReporte.length === 0) return;
+      if (!confirm("Esto enviará los datos a Gemini IA para resumir la actividad de cada expediente en una frase narrativa. ¿Continuar?")) return;
+      
+      setIsAiProcessing(true);
+      const newSummaries = { ...aiSummaries };
+
+      // Procesamos secuencialmente para no saturar
+      for (const linea of lineasReporte) {
+          if (!linea) continue;
+          // Solo procesar si no tiene resumen ya (o si queremos forzar, podriamos quitar este if)
+          if (!newSummaries[linea.id]) {
+              const resumenIa = await summarizeReportRow(linea.numero, linea.empresa, linea.resumenOriginal);
+              newSummaries[linea.id] = resumenIa;
+              // Actualizamos estado progresivamente para feedback visual
+              setAiSummaries({ ...newSummaries });
+          }
+      }
+      setIsAiProcessing(false);
+  };
 
   return (
-    // FIX: Se agregan clases print:h-auto print:overflow-visible para permitir paginación múltiple
     <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden print:h-auto print:overflow-visible print:block">
-      {/* Sidebar oculta al imprimir */}
       <div className="print:hidden h-full">
          <Sidebar activePage="reportes" />
       </div>
       
       <div className="flex-1 flex flex-col h-full overflow-hidden relative print:h-auto print:overflow-visible print:block">
         
-        {/* Header - Visible solo en pantalla */}
+        {/* Header */}
         <header className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1a2632] px-6 py-4 no-print shrink-0 print:hidden">
           <div className="flex flex-col">
             <h2 className="text-[#0d141b] dark:text-white text-lg font-black uppercase tracking-tight">Gestión Diaria de Actividad</h2>
@@ -133,14 +174,28 @@ export const Reports: React.FC = () => {
               value={selectedDate} 
               onChange={(e) => setSelectedDate(e.target.value)}
             />
+            
+            {/* BOTÓN IA */}
+            <button 
+                onClick={handleGenerateAiReports} 
+                disabled={isAiProcessing || lineasReporte.length === 0}
+                className={`px-5 py-2.5 rounded-lg flex items-center gap-2 shadow-lg transition-all active:scale-95 text-xs font-black uppercase 
+                    ${isAiProcessing ? 'bg-purple-100 text-purple-400 cursor-wait' : 'bg-purple-600 text-white hover:bg-purple-700'}`}
+            >
+                <span className={`material-symbols-outlined text-[18px] ${isAiProcessing ? 'animate-spin' : ''}`}>
+                    {isAiProcessing ? 'sync' : 'auto_awesome'}
+                </span>
+                {isAiProcessing ? 'Procesando...' : 'Mejorar con IA'}
+            </button>
+
             <button onClick={() => window.print()} className="bg-slate-900 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 hover:bg-slate-800 shadow-lg transition-all active:scale-95 text-xs font-black uppercase">
               <span className="material-symbols-outlined text-[18px]">print</span>
-              Imprimir Parte Oficial
+              Imprimir
             </button>
           </div>
         </header>
 
-        {/* VISTA DE PANTALLA: DASHBOARD MODERNO */}
+        {/* VISTA DE PANTALLA: DASHBOARD MODERNO (Solo visualización) */}
         <main className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-[#0d141b] print:hidden">
           
           {/* Tarjetas de Resumen Superior */}
@@ -188,7 +243,6 @@ export const Reports: React.FC = () => {
 
           {/* Columnas de Detalle */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full min-h-0">
-            
             {/* Columna Ingresos */}
             <div className="flex flex-col h-full bg-slate-100 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800">
                <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-800 rounded-t-xl">
@@ -230,23 +284,10 @@ export const Reports: React.FC = () => {
                   {gestionEvents.length > 0 ? gestionEvents.map(e => renderCard(e, 'bg-purple-500')) : <p className="text-center text-[10px] text-slate-400 italic mt-10">Sin movimientos internos.</p>}
                </div>
             </div>
-
-          </div>
-          
-          {/* Alerta Footer */}
-          <div className="mt-8 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800/30 rounded-lg p-4 flex items-center gap-4">
-             <div className="bg-yellow-100 dark:bg-yellow-900/30 p-2 rounded text-yellow-600">
-                <span className="material-symbols-outlined">warning</span>
-             </div>
-             <div>
-                <h4 className="text-xs font-black uppercase text-yellow-800 dark:text-yellow-500">Reporte Preliminar</h4>
-                <p className="text-[10px] text-yellow-700 dark:text-yellow-600">Recuerde generar la impresión física para la firma al finalizar la jornada laboral. La vista actual es solo informativa.</p>
-             </div>
           </div>
         </main>
 
         {/* VISTA DE IMPRESIÓN: TABLA FORMAL (SÁBANA) */}
-        {/* FIX: Contenedor optimizado para impresión con overflow-visible */}
         <div className="hidden print:block w-full h-auto bg-white print:overflow-visible text-black">
             <div className="p-8 w-full">
             
@@ -257,12 +298,11 @@ export const Reports: React.FC = () => {
               </div>
               <div className="text-right">
                 <p className="font-black text-lg uppercase leading-none mb-1">PARTE DIARIO DE MOVIMIENTOS</p>
-                <p className="text-slate-600 font-mono text-sm uppercase">{new Date().toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                <p className="text-slate-600 font-mono text-sm uppercase">{new Date(selectedDate).toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p>
               </div>
             </div>
 
             <div className="w-full">
-              {/* FIX: break-inside-auto en la tabla general, pero avoid en filas */}
               <table className="w-full border-collapse border border-slate-300 text-[9px] table-fixed print:border-slate-400">
                 <colgroup>
                   <col className="w-[15%]" />
@@ -275,21 +315,29 @@ export const Reports: React.FC = () => {
                     <th className="border border-slate-300 p-1.5 uppercase font-black text-left">GDE / Exp.</th>
                     <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Empresa / Titular</th>
                     <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Trámite (Ord./Anexo)</th>
-                    <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Resumen de Actividad</th>
+                    <th className="border border-slate-300 p-1.5 uppercase font-black text-left flex items-center gap-1">
+                        Resumen de Actividad
+                        {Object.keys(aiSummaries).length > 0 && <span className="text-[7px] bg-purple-100 text-purple-700 px-1 rounded border border-purple-200">✨ IA ACTIVADA</span>}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {lineasReporte.length > 0 ? lineasReporte.map((linea, idx) => (
                     <tr key={idx} className="break-inside-avoid page-break-inside-avoid">
-                      <td className="border border-slate-300 p-1.5 font-bold font-mono uppercase break-words align-top">{linea!.numero}</td>
-                      <td className="border border-slate-300 p-1.5 font-black uppercase text-slate-900 break-words align-top">{linea!.empresa}</td>
+                      <td className="border border-slate-300 p-1.5 font-bold font-mono uppercase break-words align-top">{linea.numero}</td>
+                      <td className="border border-slate-300 p-1.5 font-black uppercase text-slate-900 break-words align-top">{linea.empresa}</td>
                       <td className="border border-slate-300 p-1.5 uppercase leading-tight align-top">
-                        <div className="font-bold">{linea!.tramite}</div>
-                        <div className="text-slate-500 text-[8px] font-bold">ORD: {linea!.ordenanza} | ANEXO: {linea!.anexo}</div>
+                        <div className="font-bold">{linea.tramite}</div>
+                        <div className="text-slate-500 text-[8px] font-bold">ORD: {linea.ordenanza} | ANEXO: {linea.anexo}</div>
                       </td>
-                      <td className="border border-slate-300 p-1.5 text-slate-700 whitespace-pre-wrap leading-tight italic align-top">
-                        {linea!.resumen}
-                        <div className="mt-1 text-[7px] text-slate-400 font-black uppercase">Responsable(s): {linea!.responsables}</div>
+                      <td className="border border-slate-300 p-1.5 text-slate-700 whitespace-pre-wrap leading-tight align-top">
+                        {/* AQUI SE MUESTRA EL RESUMEN IA SI EXISTE, SINO EL ORIGINAL */}
+                        {aiSummaries[linea.id] ? (
+                            <span className="font-serif text-slate-900">{aiSummaries[linea.id]}</span>
+                        ) : (
+                            <span className="italic text-slate-500">{linea.resumenOriginal}</span>
+                        )}
+                        <div className="mt-1 text-[7px] text-slate-400 font-black uppercase">Responsable(s): {linea.responsables}</div>
                       </td>
                     </tr>
                   )) : (
