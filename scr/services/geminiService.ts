@@ -2,7 +2,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 const getAIClient = () => {
-  // Clave API configurada directamente
+  // Clave API proporcionada por el usuario
   const apiKey = "AIzaSyAIqTkZLbil5Fgrc3OSmj-qB1Ljm3iodSs";
   
   if (!apiKey) {
@@ -11,9 +11,10 @@ const getAIClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-// CAMBIO DE MODELO:
-// "gemini-1.5-flash" es el modelo global estable. Soluciona el error 404 de región.
-const MODEL_NAME = "gemini-1.5-flash"; 
+// SELECCIÓN DE MODELO:
+// Usamos "gemini-2.0-flash" que es la versión de producción actual, estable y disponible en LATAM.
+// Si este fallara en el futuro, se podría alternar a "gemini-3-flash-preview".
+const MODEL_NAME = "gemini-2.0-flash"; 
 
 // Función genérica para consultoría legal o administrativa
 export const getLegalAdvice = async (prompt: string) => {
@@ -30,9 +31,7 @@ export const getLegalAdvice = async (prompt: string) => {
     return response.text || "No se pudo generar una respuesta.";
   } catch (error: any) {
     console.error("Gemini Error:", error);
-    if (error.message && error.message.includes("429")) return "⚠️ Cuota diaria de IA excedida. Intente más tarde.";
-    if (error.message && error.message.includes("404")) return "⚠️ Error: El modelo seleccionado no está disponible temporalmente.";
-    return `Error IA: ${error.message || "Conexión fallida"}`;
+    return formatGeminiError(error);
   }
 };
 
@@ -57,7 +56,7 @@ export const draftTechnicalReport = async (rawNotes: string, context: string) =>
     return response.text?.trim() || rawNotes;
   } catch (error: any) {
     console.error("Gemini Error (Draft):", error);
-    return rawNotes + ` (Error IA: ${error.message})`;
+    return rawNotes + `\n[Error de IA: ${formatGeminiError(error)}]`;
   }
 };
 
@@ -90,7 +89,7 @@ export const analyzeExpedienteHistory = async (caseData: any, events: any[]) => 
     return response.text?.trim() || "No se pudo analizar el historial.";
   } catch (error: any) {
     console.error("Gemini Error (Analyze):", error);
-    return `Error al conectar con IA: ${error.message}`;
+    return `Error al conectar con IA: ${formatGeminiError(error)}`;
   }
 };
 
@@ -184,15 +183,7 @@ export const askDatabase = async (question: string, contextData: string) => {
       return response.text?.trim() || "No pude procesar la respuesta.";
     } catch (error: any) {
       console.error("Gemini Error (Chat):", error);
-      if (error.message === "MISSING_API_KEY") return "⚠️ SISTEMA: Falta configurar la API KEY.";
-      
-      // Manejo específico de errores comunes
-      if (error.message?.includes('429')) return "⚠️ Error 429: Cuota de IA excedida por hoy. Intenta más tarde.";
-      if (error.message?.includes('400')) return "⚠️ Error 400: Solicitud inválida.";
-      if (error.message?.includes('404')) return "⚠️ Error 404: Modelo no disponible. Se intentará reconectar...";
-      if (error.message?.includes('500') || error.message?.includes('503')) return "⚠️ Error de Servidor Google (503). Reintente en unos segundos.";
-
-      return `Error técnico: ${error.message}`;
+      return `⚠️ ${formatGeminiError(error)}`;
     }
   };
 
@@ -200,3 +191,13 @@ export const summarizeTimeline = async (events: any[]) => {
   const prompt = `Resume la siguiente línea de tiempo de actividad legal en 2 oraciones: ${JSON.stringify(events)}`;
   return await getLegalAdvice(prompt);
 };
+
+// Helper para limpiar mensajes de error
+function formatGeminiError(error: any): string {
+    const msg = error.message || "";
+    if (msg.includes("429")) return "Cuota diaria excedida. Intente mañana.";
+    if (msg.includes("404")) return "Modelo no disponible o clave incorrecta.";
+    if (msg.includes("400")) return "Solicitud inválida.";
+    if (msg.includes("500") || msg.includes("503")) return "Servidor de Google ocupado.";
+    return "Error de conexión.";
+}
