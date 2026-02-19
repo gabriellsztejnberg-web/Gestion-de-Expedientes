@@ -8,8 +8,7 @@ import {
   query, 
   where,
   setDoc,
-  doc,
-  getDocs
+  doc
 } from 'firebase/firestore';
 import { User, AttendanceLog, AttendanceType } from '../types';
 
@@ -24,10 +23,11 @@ export const Asistencia: React.FC = () => {
 
   // Helper para obtener el lunes de la semana actual
   function getMonday(d: Date) {
-    d = new Date(d);
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1); 
-    return new Date(d.setDate(diff));
+    const monday = new Date(d);
+    monday.setDate(diff);
+    return monday;
   }
 
   // Generar array de fechas de la semana (Lun-Vie)
@@ -109,7 +109,6 @@ export const Asistencia: React.FC = () => {
        totalHours: '00:00'
      };
      
-     // Si es licencia o feriado, limpiamos horas? No necesariamente, pero podriamos.
      await setDoc(doc(db, 'asistencia', logId), { ...currentData, type });
   };
 
@@ -119,7 +118,7 @@ export const Asistencia: React.FC = () => {
     const toMinutes = (s: string) => {
        const [h, m] = s.split(':').map(Number);
        return h * 60 + m;
-    }
+    };
 
     let totalMins = toMinutes(outT) - toMinutes(inT);
 
@@ -156,12 +155,10 @@ export const Asistencia: React.FC = () => {
      setCurrentWeekStart(newDate);
   };
 
-  const currentTime = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
-
   // Render helpers
   const getDayName = (dateStr: string) => {
      const days = ['DOMINGO', 'LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO'];
-     const d = new Date(dateStr + 'T12:00:00'); // Force noon to avoid timezone shift
+     const d = new Date(dateStr + 'T12:00:00'); 
      return days[d.getDay()];
   };
 
@@ -169,6 +166,12 @@ export const Asistencia: React.FC = () => {
      const [y, m, d] = dateStr.split('-');
      return `${d}/${m}`;
   };
+
+  // Variables para renderizado fuera del JSX para evitar errores de parseo
+  const currentTime = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const displayDate = new Date().toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const weekStartDisplay = formatShortDate(weekDates[0]);
+  const weekEndDisplay = formatShortDate(weekDates[4]);
 
   return (
     <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden font-display">
@@ -179,7 +182,7 @@ export const Asistencia: React.FC = () => {
         <div className="p-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
            <div>
               <h1 className="text-slate-900 dark:text-white text-2xl font-black uppercase tracking-tight">Control de Horario</h1>
-              <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">{new Date().toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">{displayDate}</p>
            </div>
            
            {/* FICHADA PANEL (Solo se muestra para el día actual) */}
@@ -248,7 +251,7 @@ export const Asistencia: React.FC = () => {
            <div className="flex justify-center items-center gap-4 mb-4">
               <button onClick={() => changeWeek(-1)} className="p-2 hover:bg-slate-100 rounded-full"><span className="material-symbols-outlined">chevron_left</span></button>
               <h2 className="text-sm font-black uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700">
-                 SEMANA DEL {formatShortDate(weekDates[0])} AL {formatShortDate(weekDates[4])}
+                 SEMANA DEL {weekStartDisplay} AL {weekEndDisplay}
               </h2>
               <button onClick={() => changeWeek(1)} className="p-2 hover:bg-slate-100 rounded-full"><span className="material-symbols-outlined">chevron_right</span></button>
            </div>
