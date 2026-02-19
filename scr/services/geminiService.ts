@@ -49,11 +49,10 @@ export const draftTechnicalReport = async (rawNotes: string, context: string) =>
   }
 };
 
-// 2. Analista de Historial de Expedientes
+// 2. Analista de Historial de Expedientes (Edición Individual)
 export const analyzeExpedienteHistory = async (caseData: any, events: any[]) => {
   const ai = getAIClient();
   
-  // Filtramos solo los datos relevantes para no saturar el contexto
   const relevantEvents = events.map(e => `${e.fecha}: ${e.tipoAccion} - ${e.texto}`).join('\n');
   
   const prompt = `
@@ -81,6 +80,60 @@ export const analyzeExpedienteHistory = async (caseData: any, events: any[]) => 
   } catch (error) {
     console.error("Gemini Error (Analyze):", error);
     return "Error al conectar con el asistente IA.";
+  }
+};
+
+// 3. Resumidor de Línea de Reporte (Para la Sábana Diaria)
+export const summarizeReportRow = async (numero: string, empresa: string, rawMovements: string) => {
+  const ai = getAIClient();
+  const prompt = `
+    Actúa como un secretario administrativo redactando un parte diario oficial.
+    
+    Expediente: ${numero}
+    Empresa: ${empresa}
+    Lista de Movimientos recientes: "${rawMovements}"
+    
+    Tarea: Resume esta secuencia de movimientos en UNA SOLA frase coherente, cronológica y formal que explique qué pasó con el expediente.
+    Ejemplo entrada: "Carga manual | Pase a legales | Retorno con dictamen"
+    Ejemplo salida: "Se inició por carga manual, fue remitido a Legales y retornó con dictamen jurídico."
+    
+    Mantenlo breve (máximo 25 palabras).
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: { temperature: 0.4 },
+    });
+    return response.text?.trim() || rawMovements;
+  } catch (error) {
+    return rawMovements;
+  }
+};
+
+// 4. Analista de Perfil de Auditor (Inspector)
+export const analyzeAuditorProfile = async (auditorData: any) => {
+  const ai = getAIClient();
+  const prompt = `
+    Analiza el perfil del siguiente Auditor/Inspector de Seguridad:
+    Nombre: ${auditorData.nombre}
+    Zona: ${auditorData.zonaTrabajo}
+    Estadísticas: ${JSON.stringify(auditorData.stats)}
+    Cursos Realizados: ${auditorData.cursos?.map((c:any) => c.nombre).join(', ')}
+    
+    Tarea: Genera una breve "Reseña Profesional" (max 50 palabras) destacando su nivel de actividad (según estadísticas) y su especialización (según los cursos). Indica si es un perfil "Senior", "Junior" o "Especialista" basado en los datos.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: { temperature: 0.6 },
+    });
+    return response.text?.trim() || "No se pudo generar el perfil.";
+  } catch (error) {
+    return "Error en análisis IA.";
   }
 };
 
