@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router';
 import { User } from '../types';
 import { db } from '../firebase';
 import { collection, onSnapshot, limit, query, doc, updateDoc } from 'firebase/firestore';
+import { ChatAssistant } from './ChatAssistant';
 
 interface SidebarProps {
   activePage: string;
@@ -110,6 +111,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage }) => {
           </div>
         </div>
       </aside>
+
+      {/* CHATBOT GLOBAL - INYECTADO AQUÍ PARA QUE APAREZCA EN TODAS LAS PANTALLAS CON SIDEBAR */}
+      <ChatAssistant />
 
       {isPasswordModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
