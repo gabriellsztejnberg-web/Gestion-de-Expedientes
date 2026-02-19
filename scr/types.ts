@@ -117,7 +117,17 @@ export interface Inspeccion {
 
 // --- NUEVOS TIPOS PARA ASISTENCIA ---
 
-export type AttendanceType = 'normal' | 'licencia_ord' | 'licencia_med' | 'comision' | 'feriado' | 'ausente' | 'franco';
+export type AttendanceType = 
+  | 'normal' 
+  | 'comision' 
+  | 'feriado' 
+  | 'ausente' 
+  | 'franco'
+  | 'licencia_anual'
+  | 'licencia_ord' 
+  | 'licencia_extra'
+  | 'licencia_med'
+  | 'licencia_personal';
 
 export interface AttendanceLog {
   id: string; // composite: userId_YYYY-MM-DD
