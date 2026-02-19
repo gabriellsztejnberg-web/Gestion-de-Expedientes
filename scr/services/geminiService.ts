@@ -12,9 +12,9 @@ const getAIClient = () => {
 };
 
 // SELECCIÓN DE MODELO:
-// Usamos "gemini-2.0-flash" que es la versión de producción actual, estable y disponible en LATAM.
-// Si este fallara en el futuro, se podría alternar a "gemini-3-flash-preview".
-const MODEL_NAME = "gemini-2.0-flash"; 
+// "gemini-2.0-flash-exp" es el modelo más reciente y compatible con la librería @google/genai.
+// Soluciona el error 404 del modelo 1.5-flash en endpoints v1beta.
+const MODEL_NAME = "gemini-2.0-flash-exp"; 
 
 // Función genérica para consultoría legal o administrativa
 export const getLegalAdvice = async (prompt: string) => {
@@ -194,10 +194,15 @@ export const summarizeTimeline = async (events: any[]) => {
 
 // Helper para limpiar mensajes de error
 function formatGeminiError(error: any): string {
-    const msg = error.message || "";
+    const msg = (error.message || error.toString() || "").toLowerCase();
+    
     if (msg.includes("429")) return "Cuota diaria excedida. Intente mañana.";
-    if (msg.includes("404")) return "Modelo no disponible o clave incorrecta.";
-    if (msg.includes("400")) return "Solicitud inválida.";
+    if (msg.includes("404")) return "Modelo no encontrado. Contacte soporte.";
+    if (msg.includes("403") || msg.includes("key")) return "Error de Permisos (API Key).";
+    if (msg.includes("400")) return "Error en la solicitud (Datos incorrectos).";
     if (msg.includes("500") || msg.includes("503")) return "Servidor de Google ocupado.";
-    return "Error de conexión.";
+    if (msg.includes("fetch") || msg.includes("network")) return "Error de Red / Sin Internet.";
+    
+    // Si no coincide con nada conocido, mostramos el mensaje original para depurar
+    return `Error: ${msg.substring(0, 50)}...`; 
 }
