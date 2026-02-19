@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
@@ -112,12 +111,17 @@ export const Reports: React.FC = () => {
   }).filter(Boolean);
 
   return (
-    <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden">
-      <Sidebar activePage="reportes" />
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+    // FIX: Se agregan clases print:h-auto print:overflow-visible para permitir paginación múltiple
+    <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden print:h-auto print:overflow-visible print:block">
+      {/* Sidebar oculta al imprimir */}
+      <div className="print:hidden h-full">
+         <Sidebar activePage="reportes" />
+      </div>
+      
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative print:h-auto print:overflow-visible print:block">
         
         {/* Header - Visible solo en pantalla */}
-        <header className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1a2632] px-6 py-4 no-print shrink-0">
+        <header className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1a2632] px-6 py-4 no-print shrink-0 print:hidden">
           <div className="flex flex-col">
             <h2 className="text-[#0d141b] dark:text-white text-lg font-black uppercase tracking-tight">Gestión Diaria de Actividad</h2>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Revisión y firma de movimientos</p>
@@ -242,8 +246,8 @@ export const Reports: React.FC = () => {
         </main>
 
         {/* VISTA DE IMPRESIÓN: TABLA FORMAL (SÁBANA) */}
-        {/* Cambiado de absolute inset-0 a una estructura normal de flujo para permitir paginación automática */}
-        <div className="hidden print:block w-full h-auto bg-white">
+        {/* FIX: Contenedor optimizado para impresión con overflow-visible */}
+        <div className="hidden print:block w-full h-auto bg-white print:overflow-visible text-black">
             <div className="p-8 w-full">
             
             <div className="border-b-4 border-slate-900 pb-4 mb-4 flex justify-between items-end">
@@ -258,14 +262,15 @@ export const Reports: React.FC = () => {
             </div>
 
             <div className="w-full">
-              <table className="w-full border-collapse border border-slate-300 text-[9px] table-fixed">
+              {/* FIX: break-inside-auto en la tabla general, pero avoid en filas */}
+              <table className="w-full border-collapse border border-slate-300 text-[9px] table-fixed print:border-slate-400">
                 <colgroup>
                   <col className="w-[15%]" />
                   <col className="w-[20%]" />
                   <col className="w-[20%]" />
                   <col className="w-[45%]" />
                 </colgroup>
-                <thead className="bg-slate-100 break-inside-avoid">
+                <thead className="bg-slate-100 break-inside-avoid table-header-group">
                   <tr>
                     <th className="border border-slate-300 p-1.5 uppercase font-black text-left">GDE / Exp.</th>
                     <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Empresa / Titular</th>
@@ -298,7 +303,7 @@ export const Reports: React.FC = () => {
 
             {/* TABLA DE MAILS EN IMPRESION */}
             {mails.length > 0 && (
-                <div className="mt-8 break-inside-avoid">
+                <div className="mt-8 break-inside-avoid page-break-inside-avoid">
                     <h3 className="text-sm font-black uppercase border-b-2 border-slate-300 mb-2 pb-1">Comunicaciones / Correos Electrónicos</h3>
                     <table className="w-full border-collapse border border-slate-300 text-[9px] table-fixed">
                         <colgroup>
@@ -306,7 +311,7 @@ export const Reports: React.FC = () => {
                             <col className="w-[50%]" />
                             <col className="w-[30%]" />
                         </colgroup>
-                        <thead className="bg-slate-100">
+                        <thead className="bg-slate-100 table-header-group">
                             <tr>
                                 <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Remitente</th>
                                 <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Detalle</th>
@@ -315,7 +320,7 @@ export const Reports: React.FC = () => {
                         </thead>
                         <tbody>
                             {mails.map(m => (
-                                <tr key={m.id}>
+                                <tr key={m.id} className="break-inside-avoid page-break-inside-avoid">
                                     <td className="border border-slate-300 p-1.5 font-black uppercase">{m.remitente}</td>
                                     <td className="border border-slate-300 p-1.5 uppercase">
                                         <span className="font-bold block">AS: {m.asunto}</span>
