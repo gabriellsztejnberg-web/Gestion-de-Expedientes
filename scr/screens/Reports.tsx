@@ -134,21 +134,28 @@ export const Reports: React.FC = () => {
   // --- LOGICA IA: GENERAR RESUMENES EN LOTE ---
   const handleGenerateAiReports = async () => {
       if (lineasReporte.length === 0) return;
-      if (!confirm("Esto enviará los datos a Gemini IA para resumir la actividad de cada expediente en una frase narrativa. ¿Continuar?")) return;
+      
+      const confirmText = Object.keys(aiSummaries).length > 0 
+        ? "Ya existen resúmenes generados. ¿Desea regenerarlos?"
+        : "Esto enviará los datos a Gemini IA para resumir la actividad. ¿Continuar?";
+      
+      if (!confirm(confirmText)) return;
       
       setIsAiProcessing(true);
+      // Comenzamos con una copia, pero permitimos sobrescribir
       const newSummaries = { ...aiSummaries };
 
       // Procesamos secuencialmente para no saturar
       for (const linea of lineasReporte) {
           if (!linea) continue;
-          // Solo procesar si no tiene resumen ya (o si queremos forzar, podriamos quitar este if)
-          if (!newSummaries[linea.id]) {
-              const resumenIa = await summarizeReportRow(linea.numero, linea.empresa, linea.resumenOriginal);
-              newSummaries[linea.id] = resumenIa;
-              // Actualizamos estado progresivamente para feedback visual
-              setAiSummaries({ ...newSummaries });
-          }
+          
+          // Siempre regeneramos para cumplir con el pedido de cambio de formato (1 a 3 frases)
+          // aunque ya exista un resumen previo.
+          const resumenIa = await summarizeReportRow(linea.numero, linea.empresa, linea.resumenOriginal);
+          newSummaries[linea.id] = resumenIa;
+          
+          // Actualizamos estado progresivamente para feedback visual
+          setAiSummaries({ ...newSummaries });
       }
       setIsAiProcessing(false);
   };
@@ -410,3 +417,4 @@ export const Reports: React.FC = () => {
     </div>
   );
 };
+
