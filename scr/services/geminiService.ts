@@ -1,16 +1,33 @@
 
 import { GoogleGenAI } from "@google/genai";
 
+// --- CONFIGURACIÓN DE API KEY ---
+// 1. Lo ideal es usar variables de entorno (crear archivo .env con API_KEY=tu_clave).
+// 2. Si estás en local y no te funciona el .env, pega tu clave dentro de las comillas abajo.
+const MANUAL_API_KEY = "AIzaSyAIqTkZLbil5Fgrc3OSmj-qB1Ljm3iodSs"; 
+
 const getAIClient = () => {
-  // SE SEGURIZA LA CLAVE API:
-  // Se utiliza la variable de entorno del sistema.
-  // La clave hardcodeada anterior causaba error 403 (Permisos Denegados).
-  const apiKey = process.env.API_KEY;
+  let apiKey = "";
+
+  // Intentamos obtener desde process.env de forma segura (evita crash en navegadores puros)
+  try {
+    if (typeof process !== "undefined" && process.env && process.env.API_KEY) {
+      apiKey = process.env.API_KEY;
+    }
+  } catch (e) {
+    // Ignoramos error si process no existe
+  }
+
+  // Si no hay variable de entorno, usamos la manual
+  if (!apiKey) {
+    apiKey = MANUAL_API_KEY;
+  }
   
   if (!apiKey) {
-    // Error específico para alertar que falta configuración en el entorno
+    // Lanzamos error específico si no encontramos ninguna clave
     throw new Error("MISSING_API_KEY");
   }
+
   return new GoogleGenAI({ apiKey });
 };
 
@@ -210,7 +227,7 @@ export const summarizeTimeline = async (events: any[]) => {
 function formatGeminiError(error: any): string {
     const msg = (error.message || error.toString() || "").toLowerCase();
     
-    if (msg.includes("missing_api_key")) return "Falta configurar API KEY en el servidor.";
+    if (msg.includes("missing_api_key")) return "Falta configurar API KEY en services/geminiService.ts.";
     if (msg.includes("429")) return "Cuota diaria excedida. Intente mañana.";
     if (msg.includes("404") || msg.includes("not found")) return "Modelo no disponible en su región.";
     if (msg.includes("403") || msg.includes("permission") || msg.includes("key")) return "Clave de API inválida o expirada.";
