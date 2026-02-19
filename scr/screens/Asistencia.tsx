@@ -8,9 +8,14 @@ import {
   query, 
   where,
   setDoc,
-  doc
+  doc,
+  writeBatch
 } from 'firebase/firestore';
 import { User, AttendanceLog, AttendanceType } from '../types';
+
+// CONFIGURACIÓN
+const WEEKLY_TARGET_HOURS = 35;
+const CREDIT_HOURS_PER_DAY = 7; // Horas que se acreditan por Comisión, Licencia o Feriado
 
 export const Asistencia: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -18,7 +23,18 @@ export const Asistencia: React.FC = () => {
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(getMonday(new Date()));
   const [todayLog, setTodayLog] = useState<AttendanceLog | null>(null);
 
+  // Modal Novedades
+  const [isNovedadOpen, setIsNovedadOpen] = useState(false);
+  const [novedadData, setNovedadData] = useState({
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0],
+      type: 'comision' as AttendanceType,
+      notes: '',
+      targetUserId: 'me' // 'me', 'all' (para feriados), o ID especifico si es jefe
+  });
+
   const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario"}');
+  const isJefe = (currentUser.role || '').toLowerCase() === 'jefe' || (currentUser.role || '').toLowerCase() === 'admin';
   const todayStr = new Date().toISOString().split('T')[0];
 
   function getMonday(d: Date) {
@@ -86,8 +102,15 @@ export const Asistencia: React.FC = () => {
       const start = toMinutes(entry);
       const end = toMinutes(exit);
       let diff = end - start;
-      if (diff < 0) diff = 0; // No permitir negativos por ahora
+      if (diff < 0) diff = 0; 
       return minutesToTime(diff);
+  };
+
+  const getCreditMinutes = (type: AttendanceType) => {
+      if (['comision', 'licencia_ord', 'licencia_med', 'feriado', 'franco'].includes(type)) {
+          return CREDIT_HOURS_PER_DAY * 60; // 7 horas crédito
+      }
+      return 0; // Ausente o Normal sin horas no suman
   };
 
   const calculateWeeklyTotalMinutes = (userId: string) => {
@@ -95,10 +118,16 @@ export const Asistencia: React.FC = () => {
     weekDates.forEach(date => {
        const logId = `${userId}_${date}`;
        const log = logs[logId];
-       if (log && log.entry && log.exit && log.type === 'normal') {
-          totalMins += toMinutes(log.exit) - toMinutes(log.entry);
+       if (log) {
+           if (log.type === 'normal') {
+               if (log.entry && log.exit) {
+                   totalMins += toMinutes(log.exit) - toMinutes(log.entry);
+               }
+           } else {
+               // Si es licencia, comision o feriado, suma 7 horas
+               totalMins += getCreditMinutes(log.type);
+           }
        }
-       // Aquí podrías sumar horas fijas por licencia si fuera necesario
     });
     return totalMins;
   };
@@ -107,7 +136,6 @@ export const Asistencia: React.FC = () => {
 
   const handleUpdateCell = async (userId: string, date: string, field: 'entry' | 'exit', value: string) => {
     const logId = `${userId}_${date}`;
-    // Buscamos el usuario dueño del registro para guardar su nombre/rol correctamente si es un registro nuevo
     const userOwner = users.find(u => u.id === userId);
 
     const currentData = logs[logId] || {
@@ -122,7 +150,12 @@ export const Asistencia: React.FC = () => {
     };
 
     const newData = { ...currentData, [field]: value };
-    // Recalcular total horas si tenemos ambos
+    // Al tocar la hora manual, asumimos tipo 'normal' si estaba vacio
+    if (!newData.type) newData.type = 'normal';
+    
+    // Si edito hora, cambio a normal si estaba en ausente
+    if (newData.type === 'ausente') newData.type = 'normal';
+
     if (newData.entry && newData.exit) {
         newData.totalHours = calculateDailyDiff(newData.entry, newData.exit);
     } else {
@@ -132,26 +165,60 @@ export const Asistencia: React.FC = () => {
     await setDoc(doc(db, 'asistencia', logId), newData);
   };
 
-  const handleTypeChange = async (userId: string, date: string, type: AttendanceType) => {
-      const logId = `${userId}_${date}`;
-      const userOwner = users.find(u => u.id === userId);
-      const currentData = logs[logId] || {
-        id: logId,
-        userId: userId,
-        userName: userOwner?.name || 'Desconocido',
-        userRole: userOwner?.role === 'jefe' ? 'JER' : 'OP',
-        date: date,
-        entry: '', exit: '',
-        type: 'normal',
-        totalHours: '00:00'
-      };
-      await setDoc(doc(db, 'asistencia', logId), { ...currentData, type });
-  };
-
   const handleQuickClock = async (type: 'entry' | 'exit') => {
       const now = new Date();
       const timeStr = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
       await handleUpdateCell(currentUser.id, todayStr, type, timeStr);
+  };
+
+  const handleSaveNovedad = async (e: React.FormEvent) => {
+      e.preventDefault();
+      
+      const start = new Date(novedadData.startDate);
+      const end = new Date(novedadData.endDate);
+      const batch = writeBatch(db);
+      
+      // Loop por dias
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          // Skip weekends if needed? Usually licenses cover weekends but hours are only counted on working days logic (weekDates).
+          // Guardamos en DB para todos los días del rango.
+          const dateStr = d.toISOString().split('T')[0];
+          
+          let targetUsers: User[] = [];
+          if (novedadData.targetUserId === 'all') {
+              targetUsers = users;
+          } else if (novedadData.targetUserId === 'me') {
+              const me = users.find(u => u.id === currentUser.id);
+              if (me) targetUsers = [me];
+          } else {
+              const u = users.find(user => user.id === novedadData.targetUserId);
+              if (u) targetUsers = [u];
+          }
+
+          targetUsers.forEach(u => {
+              const logId = `${u.id}_${dateStr}`;
+              const docRef = doc(db, 'asistencia', logId);
+              
+              // No sobreescribimos horas si ya existian, salvo que sea feriado que pisa todo
+              // O simplificamos: La novedad PISA el estado.
+              const data = {
+                  id: logId,
+                  userId: u.id,
+                  userName: u.name,
+                  userRole: u.role === 'jefe' ? 'JER' : 'OP',
+                  date: dateStr,
+                  type: novedadData.type,
+                  notes: novedadData.notes,
+                  // Si es Feriado/Comision/Licencia no necesita entrada/salida para sumar horas
+                  totalHours: '07:00' // Visualmente mostramos 7hs
+              };
+              batch.set(docRef, data, { merge: true });
+          });
+      }
+
+      await batch.commit();
+      setIsNovedadOpen(false);
+      alert("Novedades registradas correctamente.");
   };
 
   const changeWeek = (offset: number) => {
@@ -174,13 +241,15 @@ export const Asistencia: React.FC = () => {
 
   const myTotalMinutes = calculateWeeklyTotalMinutes(currentUser.id);
   const myTotalHoursStr = minutesToTime(myTotalMinutes);
-  // Asumiendo jornada de 8 horas x 5 días = 40 horas = 2400 mins
-  const weeklyTargetMins = 40 * 60; 
+  const weeklyTargetMins = WEEKLY_TARGET_HOURS * 60; 
   const progressPercent = Math.min((myTotalMinutes / weeklyTargetMins) * 100, 100);
 
   const displayDate = new Date().toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const weekStartDisplay = formatShortDate(weekDates[0]);
   const weekEndDisplay = formatShortDate(weekDates[4]);
+  
+  // Check if current week is in the past
+  const isPastWeek = new Date(weekDates[4]) < new Date();
 
   return (
     <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden font-display">
@@ -200,11 +269,11 @@ export const Asistencia: React.FC = () => {
                     <div className="flex flex-col">
                         <span className="text-[10px] font-black uppercase text-slate-400 mb-1">Mis Horas Semanales</span>
                         <div className="flex items-baseline gap-1">
-                            <span className="text-2xl font-black text-slate-900 dark:text-white">{myTotalHoursStr}</span>
-                            <span className="text-[10px] font-bold text-slate-400">/ 40:00 hs</span>
+                            <span className={`text-2xl font-black ${myTotalMinutes >= weeklyTargetMins ? 'text-green-600' : 'text-slate-900 dark:text-white'}`}>{myTotalHoursStr}</span>
+                            <span className="text-[10px] font-bold text-slate-400">/ {WEEKLY_TARGET_HOURS}:00 hs</span>
                         </div>
                         <div className="w-32 h-1.5 bg-slate-200 rounded-full mt-2 overflow-hidden">
-                            <div className="h-full bg-primary" style={{ width: `${progressPercent}%` }}></div>
+                            <div className={`h-full ${myTotalMinutes >= weeklyTargetMins ? 'bg-green-500' : 'bg-primary'}`} style={{ width: `${progressPercent}%` }}></div>
                         </div>
                     </div>
                     <div className="h-10 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
@@ -229,11 +298,20 @@ export const Asistencia: React.FC = () => {
 
            {/* CONTROLES DE SEMANA */}
            <div className="flex justify-between items-center bg-slate-100 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-200 dark:border-slate-700">
-              <button onClick={() => changeWeek(-1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md transition-colors"><span className="material-symbols-outlined text-slate-500">chevron_left</span></button>
-              <h2 className="text-xs font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">
-                 SEMANA DEL {weekStartDisplay} AL {weekEndDisplay}
-              </h2>
-              <button onClick={() => changeWeek(1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md transition-colors"><span className="material-symbols-outlined text-slate-500">chevron_right</span></button>
+              <div className="flex items-center gap-4">
+                  <button onClick={() => changeWeek(-1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md transition-colors"><span className="material-symbols-outlined text-slate-500">chevron_left</span></button>
+                  <h2 className="text-xs font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">
+                     SEMANA DEL {weekStartDisplay} AL {weekEndDisplay}
+                  </h2>
+                  <button onClick={() => changeWeek(1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md transition-colors"><span className="material-symbols-outlined text-slate-500">chevron_right</span></button>
+              </div>
+              <button 
+                  onClick={() => setIsNovedadOpen(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-black uppercase shadow transition-all"
+              >
+                  <span className="material-symbols-outlined text-[14px]">event_note</span>
+                  Gestionar Novedades / Licencias
+              </button>
            </div>
         </div>
 
@@ -251,7 +329,7 @@ export const Asistencia: React.FC = () => {
                              {getDayName(date)} <br/> <span className="text-[9px] opacity-70">{formatShortDate(date)}</span>
                           </th>
                        ))}
-                       <th className="bg-orange-500 text-white w-24 text-center font-black border-b border-slate-300">RESUMEN</th>
+                       <th className="bg-orange-500 text-white w-24 text-center font-black border-b border-slate-300">TOTAL</th>
                     </tr>
                     {/* Header Row 2: Columns */}
                     <tr>
@@ -269,8 +347,9 @@ export const Asistencia: React.FC = () => {
                  <tbody>
                     {users.map(u => {
                        const roleShort = u.role === 'jefe' ? 'JER' : u.role === 'admin' ? 'ADM' : 'OP';
-                       // Es mi fila? (Para resaltar)
                        const isMe = u.id === currentUser.id;
+                       const totalMins = calculateWeeklyTotalMinutes(u.id);
+                       const isDeficit = isPastWeek && totalMins < weeklyTargetMins;
 
                        return (
                           <tr key={u.id} className={`hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors ${isMe ? 'bg-blue-50/30' : ''}`}>
@@ -279,32 +358,26 @@ export const Asistencia: React.FC = () => {
                              {weekDates.map(date => {
                                 const logId = `${u.id}_${date}`;
                                 const log = logs[logId];
-                                const isAbsent = log?.type === 'ausente';
-                                const isLicense = log?.type && log.type.includes('licencia');
-                                const isComision = log?.type === 'comision';
+                                const type = log?.type || 'normal';
+
+                                // Condiciones Visuales
+                                const isAbsent = type === 'ausente';
+                                const isLicense = type.includes('licencia') || type === 'franco';
+                                const isComision = type === 'comision';
+                                const isFeriado = type === 'feriado';
                                 
-                                // Si hay una novedad especial (Licencia, etc), mostramos una celda unificada
-                                if (log && log.type !== 'normal') {
+                                // Si es Feriado, Comision o Licencia, mostramos celda unificada PERO aclaramos que suma horas
+                                if (isFeriado || isComision || isLicense || isAbsent) {
                                    return (
                                      <td key={date} colSpan={2} className="border-r border-b border-slate-300 p-0 relative group">
-                                         <div className={`w-full h-full min-h-[30px] flex items-center justify-center font-black uppercase text-[9px] cursor-pointer 
+                                         <div className={`w-full h-full min-h-[30px] flex flex-col items-center justify-center font-black uppercase text-[9px] cursor-pointer 
                                             ${isAbsent ? 'bg-red-200 text-red-800' : 
                                               isLicense ? 'bg-purple-200 text-purple-800' : 
+                                              isFeriado ? 'bg-green-200 text-green-800' :
                                               isComision ? 'bg-indigo-200 text-indigo-800' : 'bg-slate-200'}`}>
-                                            {log.type.replace('_', ' ')}
+                                            <span>{type.replace('_', ' ')}</span>
+                                            {!isAbsent && <span className="text-[7px] opacity-70">(+7 hs)</span>}
                                          </div>
-                                         {/* Al hacer click o hover, permitir cambiar a normal */}
-                                         <select 
-                                            className="absolute inset-0 opacity-0 cursor-pointer"
-                                            value={log.type}
-                                            onChange={(e) => handleTypeChange(u.id, date, e.target.value as AttendanceType)}
-                                         >
-                                            <option value="normal">Normal</option>
-                                            <option value="comision">Comisión</option>
-                                            <option value="licencia_ord">Lic. Ordinaria</option>
-                                            <option value="licencia_med">Lic. Médica</option>
-                                            <option value="ausente">Ausente</option>
-                                         </select>
                                      </td>
                                    );
                                 }
@@ -320,43 +393,23 @@ export const Asistencia: React.FC = () => {
                                          />
                                       </td>
                                       <td className="border-r border-b border-slate-300 p-0 relative">
-                                          {/* Solo mostramos el input de salida si hay entrada, o si ya hay algo escrito, para limpieza visual */}
-                                         <div className="relative w-full h-full">
-                                            <input 
-                                                type="time" 
-                                                className="w-full h-full min-h-[34px] px-1 text-center bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-300 font-medium"
-                                                value={log?.exit || ''}
-                                                onChange={(e) => handleUpdateCell(u.id, date, 'exit', e.target.value)}
-                                            />
-                                            {/* Selector de tipo invisible encima si se quiere cambiar a licencia click derecho o algo, por ahora usamos un boton pequeño en la celda vacia? No, mejor dejarlo simple. 
-                                                Agregamos un pequeño indicador si está vacio para cambiar estado.
-                                            */}
-                                            {(!log?.entry && !log?.exit) && (
-                                                <select 
-                                                    className="absolute top-0 right-0 w-4 h-full opacity-0 cursor-pointer"
-                                                    onChange={(e) => handleTypeChange(u.id, date, e.target.value as AttendanceType)}
-                                                    value="normal"
-                                                    title="Cambiar estado (Licencia/Comisión)"
-                                                >
-                                                    <option value="normal">N</option>
-                                                    <option value="comision">Comisión</option>
-                                                    <option value="licencia_ord">Lic. Ord</option>
-                                                    <option value="licencia_med">Lic. Med</option>
-                                                    <option value="ausente">Ausente</option>
-                                                </select>
-                                            )}
-                                            {(!log?.entry && !log?.exit) && (
-                                                <div className="absolute top-1 right-1 pointer-events-none text-slate-300">
-                                                    <span className="material-symbols-outlined text-[10px]">more_vert</span>
-                                                </div>
-                                            )}
-                                         </div>
+                                         <input 
+                                             type="time" 
+                                             className="w-full h-full min-h-[34px] px-1 text-center bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-primary/50 text-slate-700 dark:text-slate-300 font-medium"
+                                             value={log?.exit || ''}
+                                             onChange={(e) => handleUpdateCell(u.id, date, 'exit', e.target.value)}
+                                         />
                                       </td>
                                    </React.Fragment>
                                 );
                              })}
-                             <td className="border-b border-slate-300 p-1 text-center font-black bg-orange-50 text-orange-900 text-xs">
-                                {minutesToTime(calculateWeeklyTotalMinutes(u.id))}
+                             
+                             {/* ALERTA VISUAL DE HORAS */}
+                             <td className={`border-b border-slate-300 p-1 text-center font-black text-xs ${isDeficit ? 'bg-red-100 text-red-600' : 'bg-orange-50 text-orange-900'}`}>
+                                <div className="flex items-center justify-center gap-1">
+                                    {isDeficit && <span className="material-symbols-outlined text-[14px]">warning</span>}
+                                    {minutesToTime(totalMins)}
+                                </div>
                              </td>
                           </tr>
                        );
@@ -364,13 +417,68 @@ export const Asistencia: React.FC = () => {
                  </tbody>
               </table>
            </div>
-           
-           <div className="mt-4 text-[10px] text-slate-500 italic">
-               * Nota: Puede editar manualmente los horarios haciendo click sobre la hora. Para marcar Licencias o Ausencias, utilice el menú desplegable (3 puntos) en las celdas vacías.
-           </div>
         </div>
       </div>
+
+      {/* MODAL GESTION NOVEDADES */}
+      {isNovedadOpen && (
+         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-lg border border-slate-200 dark:border-slate-800">
+                 <div className="bg-indigo-600 text-white px-6 py-4 flex justify-between items-center rounded-t-xl">
+                     <span className="text-xs font-black uppercase tracking-widest">Registrar Novedad / Licencia</span>
+                     <button onClick={() => setIsNovedadOpen(false)}><span className="material-symbols-outlined">close</span></button>
+                 </div>
+                 <form onSubmit={handleSaveNovedad} className="p-6 space-y-4">
+                     
+                     {/* USUARIO TARGET */}
+                     <div>
+                         <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Aplicar A</label>
+                         <select className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold" value={novedadData.targetUserId} onChange={e => setNovedadData({...novedadData, targetUserId: e.target.value})}>
+                             <option value="me">A Mí Mismo</option>
+                             {isJefe && (
+                                 <>
+                                    <option value="all">-- TODOS (Para Feriados) --</option>
+                                    <optgroup label="Usuarios Específicos">
+                                        {users.map(u => <option key={u.id} value={u.id}>{u.name.toUpperCase()}</option>)}
+                                    </optgroup>
+                                 </>
+                             )}
+                         </select>
+                     </div>
+
+                     <div className="grid grid-cols-2 gap-4">
+                         <div>
+                             <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Desde Fecha</label>
+                             <input type="date" required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={novedadData.startDate} onChange={e => setNovedadData({...novedadData, startDate: e.target.value})} />
+                         </div>
+                         <div>
+                             <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Hasta Fecha (inclusive)</label>
+                             <input type="date" required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={novedadData.endDate} onChange={e => setNovedadData({...novedadData, endDate: e.target.value})} />
+                         </div>
+                     </div>
+
+                     <div>
+                         <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Tipo de Novedad</label>
+                         <select className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold" value={novedadData.type} onChange={e => setNovedadData({...novedadData, type: e.target.value as AttendanceType})}>
+                             <option value="comision">Comisión de Servicio (+7hs)</option>
+                             <option value="licencia_ord">Licencia Ordinaria / Vacaciones (+7hs)</option>
+                             <option value="licencia_med">Licencia Médica (+7hs)</option>
+                             <option value="feriado">Feriado / Asueto (+7hs)</option>
+                             <option value="franco">Franco Compensatorio (+7hs)</option>
+                             <option value="ausente">Ausente / Falta (0hs)</option>
+                         </select>
+                     </div>
+
+                     <div>
+                         <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nota / Detalle</label>
+                         <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-20" placeholder="Ej: Curso de capacitación en..." value={novedadData.notes} onChange={e => setNovedadData({...novedadData, notes: e.target.value})}></textarea>
+                     </div>
+
+                     <button type="submit" className="w-full py-3 bg-indigo-600 text-white text-xs font-black uppercase rounded shadow-lg hover:bg-indigo-700">Registrar Novedad</button>
+                 </form>
+             </div>
+         </div>
+      )}
     </div>
   );
 };
-
