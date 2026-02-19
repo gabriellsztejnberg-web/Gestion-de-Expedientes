@@ -2,14 +2,13 @@
 import { GoogleGenAI } from "@google/genai";
 
 // --- CONFIGURACIÓN DE API KEY ---
-// 1. Lo ideal es usar variables de entorno (crear archivo .env con API_KEY=tu_clave).
-// 2. Si estás en local y no te funciona el .env, pega tu clave dentro de las comillas abajo.
+// Clave proporcionada por el usuario.
 const MANUAL_API_KEY = "AIzaSyAIqTkZLbil5Fgrc3OSmj-qB1Ljm3iodSs"; 
 
 const getAIClient = () => {
   let apiKey = "";
 
-  // Intentamos obtener desde process.env de forma segura (evita crash en navegadores puros)
+  // Intentamos obtener desde process.env de forma segura
   try {
     if (typeof process !== "undefined" && process.env && process.env.API_KEY) {
       apiKey = process.env.API_KEY;
@@ -24,7 +23,6 @@ const getAIClient = () => {
   }
   
   if (!apiKey) {
-    // Lanzamos error específico si no encontramos ninguna clave
     throw new Error("MISSING_API_KEY");
   }
 
@@ -32,9 +30,10 @@ const getAIClient = () => {
 };
 
 // ESTRATEGIA DE MODELOS:
-// Intentamos usar el más moderno (2.0 Flash). Si falla (404/Region), hacemos fallback al estable (1.5 Flash).
-const PRIMARY_MODEL = "gemini-2.0-flash";
-const FALLBACK_MODEL = "gemini-1.5-flash"; 
+// CAMBIO: Usamos 'gemini-1.5-flash' como primario porque es la versión estable y universal.
+// 'gemini-2.0-flash' puede dar error 403 si la key no tiene acceso al preview.
+const PRIMARY_MODEL = "gemini-1.5-flash";
+const FALLBACK_MODEL = "gemini-1.5-pro"; 
 
 async function generateWithFallback(prompt: string, systemInstruction?: string, temperature: number = 0.7) {
   const ai = getAIClient();
@@ -44,7 +43,7 @@ async function generateWithFallback(prompt: string, systemInstruction?: string, 
   };
 
   try {
-    // Intento 1: Modelo Primario
+    // Intento 1: Modelo Primario (Estable)
     const response = await ai.models.generateContent({
       model: PRIMARY_MODEL,
       contents: prompt,
@@ -54,26 +53,26 @@ async function generateWithFallback(prompt: string, systemInstruction?: string, 
   } catch (error: any) {
     const msg = (error.message || "").toLowerCase();
     
-    // Si es error 403 (Permisos) o falta de key, NO hacemos fallback, fallamos directo para avisar al usuario.
-    if (msg.includes("403") || msg.includes("permission") || msg.includes("key") || msg.includes("missing")) {
+    // Si falta la key, fallamos directo.
+    if (msg.includes("missing_api_key")) {
         throw error;
     }
 
-    // Si es error 404 (No encontrado) o 400 (Bad Request por modelo invalido), probamos fallback
-    if (msg.includes("404") || msg.includes("not found") || msg.includes("not supported")) {
-      console.warn(`Primary model ${PRIMARY_MODEL} failed. Switching to fallback ${FALLBACK_MODEL}.`);
-      try {
-        const responseFallback = await ai.models.generateContent({
-          model: FALLBACK_MODEL,
-          contents: prompt,
-          config,
-        });
-        return responseFallback.text;
-      } catch (fallbackError: any) {
-        throw fallbackError; // Si falla el fallback, lanzamos el error real
-      }
+    // Para cualquier otro error (incluido 403 Permisos o 404 No encontrado), intentamos el fallback.
+    // A veces un modelo específico está bloqueado en una región o key, pero otro funciona.
+    console.warn(`Primary model ${PRIMARY_MODEL} failed (${msg}). Switching to fallback ${FALLBACK_MODEL}.`);
+    
+    try {
+      const responseFallback = await ai.models.generateContent({
+        model: FALLBACK_MODEL,
+        contents: prompt,
+        config,
+      });
+      return responseFallback.text;
+    } catch (fallbackError: any) {
+      // Si ambos fallan, lanzamos el error original o el del fallback
+      throw fallbackError; 
     }
-    throw error; // Otros errores (429, 500) se lanzan directo
   }
 }
 
@@ -230,7 +229,7 @@ function formatGeminiError(error: any): string {
     if (msg.includes("missing_api_key")) return "Falta configurar API KEY en services/geminiService.ts.";
     if (msg.includes("429")) return "Cuota diaria excedida. Intente mañana.";
     if (msg.includes("404") || msg.includes("not found")) return "Modelo no disponible en su región.";
-    if (msg.includes("403") || msg.includes("permission") || msg.includes("key")) return "Clave de API inválida o expirada.";
+    if (msg.includes("403") || msg.includes("permission") || msg.includes("key")) return "Clave de API sin permisos para este modelo.";
     if (msg.includes("400")) return "Error en la solicitud (Datos incorrectos).";
     if (msg.includes("500") || msg.includes("503")) return "Servidor de Google ocupado.";
     if (msg.includes("fetch") || msg.includes("network")) return "Error de Red / Sin Internet.";
