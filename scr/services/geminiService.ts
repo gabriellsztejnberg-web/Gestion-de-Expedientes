@@ -2,7 +2,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 const getAIClient = () => {
-  // Clave API configurada directamente para funcionamiento inmediato
+  // Clave API configurada directamente
   const apiKey = "AIzaSyAIqTkZLbil5Fgrc3OSmj-qB1Ljm3iodSs";
   
   if (!apiKey) {
@@ -11,12 +11,16 @@ const getAIClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
+// MODELO ESTABLE DEFINIDO EN UNA CONSTANTE
+// Usamos gemini-2.0-flash-exp por ser el más rápido y fiable actualmente para cuentas gratuitas.
+const MODEL_NAME = "gemini-2.0-flash-exp"; 
+
 // Función genérica para consultoría legal o administrativa
 export const getLegalAdvice = async (prompt: string) => {
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: MODEL_NAME,
       contents: prompt,
       config: {
         systemInstruction: "Eres un asistente administrativo legal experto en gestión pública y normativa DPAM (División Planes). Tu objetivo es resumir historiales o explicar términos legales de forma concisa y profesional.",
@@ -26,8 +30,8 @@ export const getLegalAdvice = async (prompt: string) => {
     return response.text || "No se pudo generar una respuesta.";
   } catch (error: any) {
     console.error("Gemini Error:", error);
-    if (error.message === "MISSING_API_KEY") return "Falta configurar la API KEY.";
-    return "Error de conexión con IA.";
+    if (error.message && error.message.includes("429")) return "⚠️ Cuota diaria de IA excedida. Intente más tarde.";
+    return `Error IA: ${error.message || "Conexión fallida"}`;
   }
 };
 
@@ -45,15 +49,14 @@ export const draftTechnicalReport = async (rawNotes: string, context: string) =>
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: MODEL_NAME,
       contents: prompt,
-      config: { temperature: 0.3 }, // Baja temperatura para ser preciso
+      config: { temperature: 0.3 },
     });
     return response.text?.trim() || rawNotes;
   } catch (error: any) {
     console.error("Gemini Error (Draft):", error);
-    if (error.message === "MISSING_API_KEY") return "⚠️ Error: Falta API KEY";
-    return rawNotes + " (Sin conexión IA)";
+    return rawNotes + ` (Error IA: ${error.message})`;
   }
 };
 
@@ -79,15 +82,14 @@ export const analyzeExpedienteHistory = async (caseData: any, events: any[]) => 
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: MODEL_NAME,
       contents: prompt,
       config: { temperature: 0.5 },
     });
     return response.text?.trim() || "No se pudo analizar el historial.";
   } catch (error: any) {
     console.error("Gemini Error (Analyze):", error);
-    if (error.message === "MISSING_API_KEY") return "Error: Configura tu API KEY.";
-    return "Error al conectar con el asistente IA.";
+    return `Error al conectar con IA: ${error.message}`;
   }
 };
 
@@ -115,7 +117,7 @@ export const summarizeReportRow = async (numero: string, empresa: string, rawMov
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: MODEL_NAME,
       contents: prompt,
       config: { temperature: 0.4 },
     });
@@ -140,7 +142,7 @@ export const analyzeAuditorProfile = async (auditorData: any) => {
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: MODEL_NAME,
       contents: prompt,
       config: { temperature: 0.6 },
     });
@@ -174,7 +176,7 @@ export const askDatabase = async (question: string, contextData: string) => {
     try {
       const ai = getAIClient();
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: MODEL_NAME,
         contents: prompt,
         config: { temperature: 0.4 },
       });
@@ -182,7 +184,14 @@ export const askDatabase = async (question: string, contextData: string) => {
     } catch (error: any) {
       console.error("Gemini Error (Chat):", error);
       if (error.message === "MISSING_API_KEY") return "⚠️ SISTEMA: Falta configurar la API KEY.";
-      return "Lo siento, hubo un error de conexión con la IA.";
+      
+      // Manejo específico de errores comunes
+      if (error.message?.includes('429')) return "⚠️ Error 429: Cuota de IA excedida por hoy. Intenta más tarde.";
+      if (error.message?.includes('400')) return "⚠️ Error 400: La solicitud fue rechazada por seguridad.";
+      if (error.message?.includes('404')) return "⚠️ Error 404: El modelo de IA no está disponible en esta región.";
+      if (error.message?.includes('500') || error.message?.includes('503')) return "⚠️ Error de Servidor Google (503). Reintente en unos segundos.";
+
+      return `Error técnico: ${error.message}`;
     }
   };
 
