@@ -2,13 +2,19 @@
 import { GoogleGenAI } from "@google/genai";
 
 const getAIClient = () => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Clave API configurada directamente para funcionamiento inmediato
+  const apiKey = "AIzaSyAIqTkZLbil5Fgrc3OSmj-qB1Ljm3iodSs";
+  
+  if (!apiKey) {
+    throw new Error("MISSING_API_KEY");
+  }
+  return new GoogleGenAI({ apiKey });
 };
 
 // Función genérica para consultoría legal o administrativa
 export const getLegalAdvice = async (prompt: string) => {
-  const ai = getAIClient();
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
@@ -18,15 +24,15 @@ export const getLegalAdvice = async (prompt: string) => {
       },
     });
     return response.text || "No se pudo generar una respuesta.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Error:", error);
-    return "Error generando respuesta. Verifique su conexión o clave API.";
+    if (error.message === "MISSING_API_KEY") return "Falta configurar la API KEY.";
+    return "Error de conexión con IA.";
   }
 };
 
 // 1. Asistente de Redacción para Inspecciones
 export const draftTechnicalReport = async (rawNotes: string, context: string) => {
-  const ai = getAIClient();
   const prompt = `
     Contexto: Inspección técnica en ${context}.
     Notas del inspector (borrador): "${rawNotes}"
@@ -37,22 +43,22 @@ export const draftTechnicalReport = async (rawNotes: string, context: string) =>
   `;
 
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
       config: { temperature: 0.3 }, // Baja temperatura para ser preciso
     });
     return response.text?.trim() || rawNotes;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Error (Draft):", error);
-    return rawNotes;
+    if (error.message === "MISSING_API_KEY") return "⚠️ Error: Falta API KEY";
+    return rawNotes + " (Sin conexión IA)";
   }
 };
 
 // 2. Analista de Historial de Expedientes (Edición Individual)
 export const analyzeExpedienteHistory = async (caseData: any, events: any[]) => {
-  const ai = getAIClient();
-  
   const relevantEvents = events.map(e => `${e.fecha}: ${e.tipoAccion} - ${e.texto}`).join('\n');
   
   const prompt = `
@@ -71,21 +77,22 @@ export const analyzeExpedienteHistory = async (caseData: any, events: any[]) => 
   `;
 
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
       config: { temperature: 0.5 },
     });
     return response.text?.trim() || "No se pudo analizar el historial.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Error (Analyze):", error);
+    if (error.message === "MISSING_API_KEY") return "Error: Configura tu API KEY.";
     return "Error al conectar con el asistente IA.";
   }
 };
 
 // 3. Resumidor de Línea de Reporte (Para la Sábana Diaria)
 export const summarizeReportRow = async (numero: string, empresa: string, rawMovements: string) => {
-  const ai = getAIClient();
   const prompt = `
     Actúa como un secretario administrativo redactando un parte diario oficial.
     
@@ -93,14 +100,20 @@ export const summarizeReportRow = async (numero: string, empresa: string, rawMov
     Empresa: ${empresa}
     Lista de Movimientos recientes: "${rawMovements}"
     
-    Tarea: Resume esta secuencia de movimientos en UNA SOLA frase coherente, cronológica y formal que explique qué pasó con el expediente.
-    Ejemplo entrada: "Carga manual | Pase a legales | Retorno con dictamen"
-    Ejemplo salida: "Se inició por carga manual, fue remitido a Legales y retornó con dictamen jurídico."
+    Tarea: Redacta un resumen narrativo de la actividad de este expediente.
     
-    Mantenlo breve (máximo 25 palabras).
+    Requisitos:
+    1. Utiliza un lenguaje formal, administrativo y técnico.
+    2. Conecta los movimientos cronológicamente.
+    3. Longitud: Entre 1 y 3 oraciones como máximo.
+    4. NO uses listas ni guiones, debe ser un párrafo fluido.
+    
+    Ejemplo entrada: "Carga manual | Pase a legales | Retorno con dictamen"
+    Ejemplo salida: "Se procedió al inicio del trámite mediante carga manual. Posteriormente fue remitido al área de Legales y retornó a esta oficina con el dictamen jurídico correspondiente."
   `;
 
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
@@ -114,7 +127,6 @@ export const summarizeReportRow = async (numero: string, empresa: string, rawMov
 
 // 4. Analista de Perfil de Auditor (Inspector)
 export const analyzeAuditorProfile = async (auditorData: any) => {
-  const ai = getAIClient();
   const prompt = `
     Analiza el perfil del siguiente Auditor/Inspector de Seguridad:
     Nombre: ${auditorData.nombre}
@@ -126,6 +138,7 @@ export const analyzeAuditorProfile = async (auditorData: any) => {
   `;
 
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
@@ -136,6 +149,42 @@ export const analyzeAuditorProfile = async (auditorData: any) => {
     return "Error en análisis IA.";
   }
 };
+
+// 5. CHATBOT: Consultar Base de Datos General
+export const askDatabase = async (question: string, contextData: string) => {
+    const prompt = `
+      Eres el Asistente Virtual Inteligente de la "División Planes (DPAM)".
+      Tienes acceso a la base de datos actual del sistema en formato JSON.
+      
+      BASE DE DATOS (Contexto):
+      ${contextData}
+      
+      PREGUNTA DEL USUARIO:
+      "${question}"
+      
+      INSTRUCCIONES:
+      1. Responde basándote ÚNICAMENTE en la información provista en la base de datos.
+      2. Si te preguntan por un expediente, busca por número o empresa.
+      3. Si te preguntan "quién tiene" algo, busca el campo 'asignadoANombre' o el último movimiento.
+      4. Si no encuentras la información, dilo claramente.
+      5. Sé breve, profesional y directo.
+      6. No menciones IDs internos (como 'gabriel-id'), usa los nombres reales.
+    `;
+  
+    try {
+      const ai = getAIClient();
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: { temperature: 0.4 },
+      });
+      return response.text?.trim() || "No pude procesar la respuesta.";
+    } catch (error: any) {
+      console.error("Gemini Error (Chat):", error);
+      if (error.message === "MISSING_API_KEY") return "⚠️ SISTEMA: Falta configurar la API KEY.";
+      return "Lo siento, hubo un error de conexión con la IA.";
+    }
+  };
 
 export const summarizeTimeline = async (events: any[]) => {
   const prompt = `Resume la siguiente línea de tiempo de actividad legal en 2 oraciones: ${JSON.stringify(events)}`;
