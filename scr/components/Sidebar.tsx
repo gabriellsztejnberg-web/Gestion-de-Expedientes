@@ -43,6 +43,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage }) => {
 
   const navItems = [
     { id: 'dashboard', icon: 'dashboard', label: 'Tablero', path: '/dashboard' },
+    { id: 'asistencia', icon: 'schedule', label: 'Control Horario', path: '/asistencia' },
     { id: 'expedientes', icon: 'inventory_2', label: 'Expedientes', path: '/expedientes' },
     { id: 'planes', icon: 'safety_check', label: 'Planes Emergencia', path: '/planes' },
     { id: 'inspecciones', icon: 'assignment', label: 'Inspecciones', path: '/inspecciones' },
