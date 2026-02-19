@@ -114,3 +114,22 @@ export interface Inspeccion {
   registradoPor: string; // Usuario del sistema que cargó el dato
   registradoEn: string; // ISO String
 }
+
+// --- NUEVOS TIPOS PARA ASISTENCIA ---
+
+export type AttendanceType = 'normal' | 'licencia_ord' | 'licencia_med' | 'comision' | 'feriado' | 'ausente';
+
+export interface AttendanceLog {
+  id: string; // composite: userId_YYYY-MM-DD
+  userId: string;
+  userName: string;
+  userRole: string; // Para mostrar JER en la tabla
+  date: string; // YYYY-MM-DD
+  entry: string; // HH:MM
+  exit: string; // HH:MM (Egreso final)
+  breakOut: string; // HH:MM (Salida intermedia)
+  breakIn: string; // HH:MM (Regreso intermedio)
+  type: AttendanceType; 
+  notes?: string;
+  totalHours: string; // HH:MM calculado
+}
