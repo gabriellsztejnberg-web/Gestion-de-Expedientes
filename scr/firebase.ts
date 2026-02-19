@@ -1,7 +1,9 @@
+
 import firebase from "firebase/compat/app";
 import { initializeFirestore } from "firebase/firestore";
 
-const firebaseConfig = {
+// Configuración por defecto
+const DEFAULT_CONFIG = {
   apiKey: "AIzaSyDAVp0wzhkKwWzEKrl4VQgSYuzl7t4fKFk",
   authDomain: "gestion-de-expedientes-7ce57.firebaseapp.com",
   projectId: "gestion-de-expedientes-7ce57",
@@ -10,8 +12,21 @@ const firebaseConfig = {
   appId: "1:567789982821:web:bbc0efe88b83ee8f15e28c"
 };
 
+const getFirebaseConfig = () => {
+  try {
+    const local = localStorage.getItem('app_firebase_config');
+    if (local) return JSON.parse(local);
+  } catch (e) {
+    console.error("Error parsing local config:", e);
+  }
+  return DEFAULT_CONFIG;
+};
+
+export const currentConfig = getFirebaseConfig();
+
 // Use compat initialization to resolve import issues in some environments
-const app = firebase.initializeApp(firebaseConfig);
+// Ensure we don't double-initialize if HMR happens, though usually this file runs once.
+const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(currentConfig);
 
 // Forzamos Long Polling pero eliminamos el caché persistente para asegurar que 
 // los datos que ve el usuario sean SIEMPRE los de la nube y no una versión vieja local.
