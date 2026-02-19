@@ -11,9 +11,9 @@ const getAIClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-// MODELO ESTABLE DEFINIDO EN UNA CONSTANTE
-// Usamos gemini-2.0-flash-exp por ser el más rápido y fiable actualmente para cuentas gratuitas.
-const MODEL_NAME = "gemini-2.0-flash-exp"; 
+// CAMBIO DE MODELO:
+// "gemini-1.5-flash" es el modelo global estable. Soluciona el error 404 de región.
+const MODEL_NAME = "gemini-1.5-flash"; 
 
 // Función genérica para consultoría legal o administrativa
 export const getLegalAdvice = async (prompt: string) => {
@@ -31,6 +31,7 @@ export const getLegalAdvice = async (prompt: string) => {
   } catch (error: any) {
     console.error("Gemini Error:", error);
     if (error.message && error.message.includes("429")) return "⚠️ Cuota diaria de IA excedida. Intente más tarde.";
+    if (error.message && error.message.includes("404")) return "⚠️ Error: El modelo seleccionado no está disponible temporalmente.";
     return `Error IA: ${error.message || "Conexión fallida"}`;
   }
 };
@@ -187,8 +188,8 @@ export const askDatabase = async (question: string, contextData: string) => {
       
       // Manejo específico de errores comunes
       if (error.message?.includes('429')) return "⚠️ Error 429: Cuota de IA excedida por hoy. Intenta más tarde.";
-      if (error.message?.includes('400')) return "⚠️ Error 400: La solicitud fue rechazada por seguridad.";
-      if (error.message?.includes('404')) return "⚠️ Error 404: El modelo de IA no está disponible en esta región.";
+      if (error.message?.includes('400')) return "⚠️ Error 400: Solicitud inválida.";
+      if (error.message?.includes('404')) return "⚠️ Error 404: Modelo no disponible. Se intentará reconectar...";
       if (error.message?.includes('500') || error.message?.includes('503')) return "⚠️ Error de Servidor Google (503). Reintente en unos segundos.";
 
       return `Error técnico: ${error.message}`;
