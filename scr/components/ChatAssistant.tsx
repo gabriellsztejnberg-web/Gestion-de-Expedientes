@@ -39,8 +39,9 @@ export const ChatAssistant: React.FC = () => {
 
     const loadContext = async () => {
         try {
-            // 1. Expedientes Activos (Limitamos para no saturar tokens, priorizando los recientes o todos si son pocos)
-            const qExp = query(collection(db, 'expedientes'), limit(50)); 
+            // OPTIMIZACIÓN: Reducimos límites para evitar "Error de conexión" por payload excesivo
+            // 1. Expedientes Activos (Limitamos a 15 más recientes/relevantes)
+            const qExp = query(collection(db, 'expedientes'), limit(15)); 
             const snapExp = await getDocs(qExp);
             const expedientes = snapExp.docs.map(d => {
                 const data = d.data();
@@ -54,8 +55,8 @@ export const ChatAssistant: React.FC = () => {
                 };
             });
 
-            // 2. Movimientos Recientes (Últimos 30)
-            const qMov = query(collection(db, 'movimientos'), orderBy('fecha', 'desc'), limit(30));
+            // 2. Movimientos Recientes (Últimos 10)
+            const qMov = query(collection(db, 'movimientos'), orderBy('fecha', 'desc'), limit(10));
             const snapMov = await getDocs(qMov);
             const movimientos = snapMov.docs.map(d => {
                 const data = d.data();
@@ -67,14 +68,14 @@ export const ChatAssistant: React.FC = () => {
                 };
             });
 
-            // 3. Usuarios
+            // 3. Usuarios (Solo nombres y roles, data mínima)
             const qUsers = query(collection(db, 'usuarios'));
             const snapUsers = await getDocs(qUsers);
             const usuarios = snapUsers.docs.map(d => ({ nombre: d.data().name, rol: d.data().role }));
 
             const contextString = JSON.stringify({
-                expedientes_actuales: expedientes,
-                movimientos_recientes: movimientos,
+                expedientes_resumen: expedientes,
+                ultimos_movimientos: movimientos,
                 personal: usuarios
             });
 
