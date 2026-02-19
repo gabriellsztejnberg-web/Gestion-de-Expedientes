@@ -15,6 +15,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail } from '../types';
+import { analyzeExpedienteHistory } from '../services/geminiService'; // Importamos servicio IA
 
 const INSTANCIAS: Instancia[] = [
   { id: 'analisis', label: 'Análisis', color: 'bg-blue-100 text-blue-800 border-blue-200' },
@@ -53,6 +54,9 @@ export const Expedientes: React.FC = () => {
   const [editingExp, setEditingExp] = useState<Partial<Case> | null>(null);
   // Default tipo changed to be empty so user chooses explicitly
   const [movData, setMovData] = useState({ tipo: '', detalle: '', destino: '', isTask: false });
+
+  // IA Loading State
+  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
 
   const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
   const isJefe = (currentUser.role || '').toLowerCase() === 'jefe' || (currentUser.role || '').toLowerCase() === 'admin';
@@ -134,6 +138,33 @@ export const Expedientes: React.FC = () => {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  // --- IA Analysis Handler ---
+  const handleAiAnalysis = async () => {
+    if (!editingExp || !editingExp.id) {
+        alert("Primero debe guardar el expediente para tener historial que analizar.");
+        return;
+    }
+    
+    setIsAiAnalyzing(true);
+    
+    // Obtenemos los eventos específicos de este expediente
+    const caseEvents = events.filter(e => e.expedienteId === editingExp.id);
+    
+    if (caseEvents.length === 0) {
+        setEditingExp({ ...editingExp, observaciones: (editingExp.observaciones || '') + "\n\n[IA]: No hay historial de movimientos para analizar." });
+        setIsAiAnalyzing(false);
+        return;
+    }
+
+    const analysis = await analyzeExpedienteHistory(editingExp, caseEvents);
+    
+    // Agregamos el análisis a las observaciones sin borrar lo anterior
+    const newObs = (editingExp.observaciones || '') + `\n\n[ANÁLISIS IA - ${new Date().toLocaleDateString()}]:\n${analysis}`;
+    
+    setEditingExp({ ...editingExp, observaciones: newObs });
+    setIsAiAnalyzing(false);
   };
 
   // --- MAIL LOGIC ---
@@ -673,7 +704,22 @@ export const Expedientes: React.FC = () => {
               )}
 
               <div className="col-span-2">
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Observaciones Iniciales</label>
+                <div className="flex justify-between items-end mb-1">
+                    <label className="block text-[10px] font-black uppercase text-slate-500">Observaciones Iniciales</label>
+                    {editingExp?.id && (
+                        <button 
+                            type="button" 
+                            onClick={handleAiAnalysis}
+                            disabled={isAiAnalyzing}
+                            className="text-[9px] bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 py-1 rounded font-black uppercase flex items-center gap-1 transition-colors"
+                        >
+                            <span className={`material-symbols-outlined text-[12px] ${isAiAnalyzing ? 'animate-spin' : ''}`}>
+                                {isAiAnalyzing ? 'sync' : 'smart_toy'}
+                            </span>
+                            {isAiAnalyzing ? 'Analizando...' : 'Analizar Historial con IA'}
+                        </button>
+                    )}
+                </div>
                 <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-20" value={editingExp?.observaciones || ''} onChange={e => setEditingExp({...editingExp, observaciones: e.target.value})}></textarea>
               </div>
               <button type="submit" className="col-span-2 py-3 bg-primary text-white text-xs font-black uppercase rounded shadow-lg hover:bg-blue-600 transition-all">Sincronizar Datos</button>
