@@ -1,4 +1,4 @@
-
+                           
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
@@ -305,7 +305,7 @@ export const Asistencia: React.FC = () => {
           case 'franco': return 'FRANCO';
           case 'feriado': return 'FERIADO';
           case 'comision': return 'COMISIÓN';
-          case 'ausente': return 'AUSENTE';
+          case 'ausente': return 'FRANCO'; // Antes era AUSENTE
           default: return type;
       }
   };
@@ -562,7 +562,7 @@ export const Asistencia: React.FC = () => {
                              <option disabled>──────────</option>
                              <option value="comision">Comisión de Servicio (Suma Hs)</option>
                              <option value="feriado">Feriado / Asueto (Baja Objetivo)</option>
-                             <option value="ausente">Ausente / Falta (Debe Hs)</option>
+                             <option value="ausente">Franco (Debe Hs)</option>
                              <option disabled>──────────</option>
                              <option value="normal">VOLVER A NORMAL / LIMPIAR</option>
                          </select>
@@ -598,4 +598,3 @@ export const Asistencia: React.FC = () => {
     </div>
   );
 };
-
