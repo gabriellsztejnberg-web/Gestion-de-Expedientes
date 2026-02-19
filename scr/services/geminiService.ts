@@ -11,24 +11,54 @@ const getAIClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-// SELECCIÓN DE MODELO:
-// "gemini-2.0-flash-exp" es el modelo más reciente y compatible con la librería @google/genai.
-// Soluciona el error 404 del modelo 1.5-flash en endpoints v1beta.
-const MODEL_NAME = "gemini-2.0-flash-exp"; 
+// ESTRATEGIA DE MODELOS:
+// Intentamos usar el más moderno (2.0 Flash). Si falla (404/Region), hacemos fallback al estable (1.5 Flash).
+const PRIMARY_MODEL = "gemini-2.0-flash";
+const FALLBACK_MODEL = "gemini-1.5-flash"; 
+
+async function generateWithFallback(prompt: string, systemInstruction?: string, temperature: number = 0.7) {
+  const ai = getAIClient();
+  const config = {
+    systemInstruction,
+    temperature,
+  };
+
+  try {
+    // Intento 1: Modelo Primario
+    const response = await ai.models.generateContent({
+      model: PRIMARY_MODEL,
+      contents: prompt,
+      config,
+    });
+    return response.text;
+  } catch (error: any) {
+    const msg = (error.message || "").toLowerCase();
+    // Si es error 404 (No encontrado) o 400 (Bad Request por modelo invalido), probamos fallback
+    if (msg.includes("404") || msg.includes("not found") || msg.includes("not supported")) {
+      console.warn(`Primary model ${PRIMARY_MODEL} failed. Switching to fallback ${FALLBACK_MODEL}.`);
+      try {
+        const responseFallback = await ai.models.generateContent({
+          model: FALLBACK_MODEL,
+          contents: prompt,
+          config,
+        });
+        return responseFallback.text;
+      } catch (fallbackError: any) {
+        throw fallbackError; // Si falla el fallback, lanzamos el error real
+      }
+    }
+    throw error; // Otros errores (429, 500) se lanzan directo
+  }
+}
 
 // Función genérica para consultoría legal o administrativa
 export const getLegalAdvice = async (prompt: string) => {
   try {
-    const ai = getAIClient();
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: {
-        systemInstruction: "Eres un asistente administrativo legal experto en gestión pública y normativa DPAM (División Planes). Tu objetivo es resumir historiales o explicar términos legales de forma concisa y profesional.",
-        temperature: 0.7,
-      },
-    });
-    return response.text || "No se pudo generar una respuesta.";
+    const text = await generateWithFallback(
+      prompt, 
+      "Eres un asistente administrativo legal experto en gestión pública y normativa DPAM (División Planes). Tu objetivo es resumir historiales o explicar términos legales de forma concisa y profesional."
+    );
+    return text || "No se pudo generar una respuesta.";
   } catch (error: any) {
     console.error("Gemini Error:", error);
     return formatGeminiError(error);
@@ -47,13 +77,8 @@ export const draftTechnicalReport = async (rawNotes: string, context: string) =>
   `;
 
   try {
-    const ai = getAIClient();
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: { temperature: 0.3 },
-    });
-    return response.text?.trim() || rawNotes;
+    const text = await generateWithFallback(prompt, undefined, 0.3);
+    return text?.trim() || rawNotes;
   } catch (error: any) {
     console.error("Gemini Error (Draft):", error);
     return rawNotes + `\n[Error de IA: ${formatGeminiError(error)}]`;
@@ -80,13 +105,8 @@ export const analyzeExpedienteHistory = async (caseData: any, events: any[]) => 
   `;
 
   try {
-    const ai = getAIClient();
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: { temperature: 0.5 },
-    });
-    return response.text?.trim() || "No se pudo analizar el historial.";
+    const text = await generateWithFallback(prompt, undefined, 0.5);
+    return text?.trim() || "No se pudo analizar el historial.";
   } catch (error: any) {
     console.error("Gemini Error (Analyze):", error);
     return `Error al conectar con IA: ${formatGeminiError(error)}`;
@@ -115,13 +135,8 @@ export const summarizeReportRow = async (numero: string, empresa: string, rawMov
   `;
 
   try {
-    const ai = getAIClient();
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: { temperature: 0.4 },
-    });
-    return response.text?.trim() || rawMovements;
+    const text = await generateWithFallback(prompt, undefined, 0.4);
+    return text?.trim() || rawMovements;
   } catch (error) {
     return rawMovements;
   }
@@ -140,13 +155,8 @@ export const analyzeAuditorProfile = async (auditorData: any) => {
   `;
 
   try {
-    const ai = getAIClient();
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: { temperature: 0.6 },
-    });
-    return response.text?.trim() || "No se pudo generar el perfil.";
+    const text = await generateWithFallback(prompt, undefined, 0.6);
+    return text?.trim() || "No se pudo generar el perfil.";
   } catch (error) {
     return "Error en análisis IA.";
   }
@@ -174,13 +184,8 @@ export const askDatabase = async (question: string, contextData: string) => {
     `;
   
     try {
-      const ai = getAIClient();
-      const response = await ai.models.generateContent({
-        model: MODEL_NAME,
-        contents: prompt,
-        config: { temperature: 0.4 },
-      });
-      return response.text?.trim() || "No pude procesar la respuesta.";
+      const text = await generateWithFallback(prompt, undefined, 0.4);
+      return text?.trim() || "No pude procesar la respuesta.";
     } catch (error: any) {
       console.error("Gemini Error (Chat):", error);
       return `⚠️ ${formatGeminiError(error)}`;
@@ -197,7 +202,7 @@ function formatGeminiError(error: any): string {
     const msg = (error.message || error.toString() || "").toLowerCase();
     
     if (msg.includes("429")) return "Cuota diaria excedida. Intente mañana.";
-    if (msg.includes("404")) return "Modelo no encontrado. Contacte soporte.";
+    if (msg.includes("404") || msg.includes("not found")) return "Modelo no disponible en su región.";
     if (msg.includes("403") || msg.includes("key")) return "Error de Permisos (API Key).";
     if (msg.includes("400")) return "Error en la solicitud (Datos incorrectos).";
     if (msg.includes("500") || msg.includes("503")) return "Servidor de Google ocupado.";
