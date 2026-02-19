@@ -2,10 +2,13 @@
 import { GoogleGenAI } from "@google/genai";
 
 const getAIClient = () => {
-  // Clave API proporcionada por el usuario
-  const apiKey = "AIzaSyAIqTkZLbil5Fgrc3OSmj-qB1Ljm3iodSs";
+  // SE SEGURIZA LA CLAVE API:
+  // Se utiliza la variable de entorno del sistema.
+  // La clave hardcodeada anterior causaba error 403 (Permisos Denegados).
+  const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
+    // Error específico para alertar que falta configuración en el entorno
     throw new Error("MISSING_API_KEY");
   }
   return new GoogleGenAI({ apiKey });
@@ -33,6 +36,12 @@ async function generateWithFallback(prompt: string, systemInstruction?: string, 
     return response.text;
   } catch (error: any) {
     const msg = (error.message || "").toLowerCase();
+    
+    // Si es error 403 (Permisos) o falta de key, NO hacemos fallback, fallamos directo para avisar al usuario.
+    if (msg.includes("403") || msg.includes("permission") || msg.includes("key") || msg.includes("missing")) {
+        throw error;
+    }
+
     // Si es error 404 (No encontrado) o 400 (Bad Request por modelo invalido), probamos fallback
     if (msg.includes("404") || msg.includes("not found") || msg.includes("not supported")) {
       console.warn(`Primary model ${PRIMARY_MODEL} failed. Switching to fallback ${FALLBACK_MODEL}.`);
@@ -201,13 +210,13 @@ export const summarizeTimeline = async (events: any[]) => {
 function formatGeminiError(error: any): string {
     const msg = (error.message || error.toString() || "").toLowerCase();
     
+    if (msg.includes("missing_api_key")) return "Falta configurar API KEY en el servidor.";
     if (msg.includes("429")) return "Cuota diaria excedida. Intente mañana.";
     if (msg.includes("404") || msg.includes("not found")) return "Modelo no disponible en su región.";
-    if (msg.includes("403") || msg.includes("key")) return "Error de Permisos (API Key).";
+    if (msg.includes("403") || msg.includes("permission") || msg.includes("key")) return "Clave de API inválida o expirada.";
     if (msg.includes("400")) return "Error en la solicitud (Datos incorrectos).";
     if (msg.includes("500") || msg.includes("503")) return "Servidor de Google ocupado.";
     if (msg.includes("fetch") || msg.includes("network")) return "Error de Red / Sin Internet.";
     
-    // Si no coincide con nada conocido, mostramos el mensaje original para depurar
-    return `Error: ${msg.substring(0, 50)}...`; 
+    return `Error de IA: ${msg.substring(0, 40)}...`; 
 }
