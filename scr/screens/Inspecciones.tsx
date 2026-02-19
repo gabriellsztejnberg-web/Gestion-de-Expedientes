@@ -5,6 +5,7 @@ import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, getDoc, getDocs, where } from 'firebase/firestore';
 import { Inspeccion, Case, Auditor, User, ResultadoInspeccion, TimelineEvent } from '../types';
+import { draftTechnicalReport } from '../services/geminiService'; // Importamos el servicio IA
 
 export const Inspecciones: React.FC = () => {
   const location = useLocation();
@@ -22,6 +23,9 @@ export const Inspecciones: React.FC = () => {
   const [subsanarAuditorId, setSubsanarAuditorId] = useState('');
   const [isHistorialModalOpen, setIsHistorialModalOpen] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<Inspeccion | null>(null);
+  
+  // Estado para Loading de IA
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
   const getUser = () => {
     try {
@@ -52,11 +56,9 @@ export const Inspecciones: React.FC = () => {
   useEffect(() => {
     const qInsp = query(collection(db, 'inspecciones'), orderBy('fecha', 'desc'));
     const unsubscribeInsp = onSnapshot(qInsp, (snapshot) => {
-      // SANITIZACIÓN ROBUSTA: Previene crashes si vienen objetos extraños de Firestore
       const docs = snapshot.docs.map(doc => {
           const data = doc.data();
           let fechaStr = "";
-          // Manejo de Timestamps de Firestore u objetos fecha
           if (data.fecha && typeof data.fecha.toDate === 'function') {
               fechaStr = data.fecha.toDate().toISOString().split('T')[0];
           } else if (typeof data.fecha === 'string') {
@@ -75,7 +77,6 @@ export const Inspecciones: React.FC = () => {
               jurisdiccion: String(data.jurisdiccion || ''),
               tipo: String(data.tipo || 'INICIAL'),
               resultado: String(data.resultado || 'CON PENDIENTES'),
-              // Convertir explícitamente a String para evitar que React intente renderizar objetos
               nroInforme: data.nroInforme ? String(data.nroInforme) : undefined,
               nroCertificado: data.nroCertificado ? String(data.nroCertificado) : undefined,
               nroDisposicion: data.nroDisposicion ? String(data.nroDisposicion) : undefined,
@@ -114,6 +115,22 @@ export const Inspecciones: React.FC = () => {
     }
   };
 
+  // --- FUNCIÓN IA ---
+  const handleAiImprove = async () => {
+      const currentText = editingInsp.observaciones;
+      if (!currentText || currentText.trim().length < 5) {
+          alert("Escribe algunas notas o punteos primero para que la IA pueda redactarlas.");
+          return;
+      }
+      
+      setIsAiLoading(true);
+      const context = editingInsp.ubicacion || "Instalación Portuaria";
+      const improvedText = await draftTechnicalReport(currentText, context);
+      
+      setEditingInsp({ ...editingInsp, observaciones: improvedText });
+      setIsAiLoading(false);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const auditorSeleccionado = auditores.find(a => a.id === editingInsp.auditorId);
@@ -145,6 +162,7 @@ export const Inspecciones: React.FC = () => {
     try {
       let docId = editingInsp.id;
       let accionTexto = "";
+      let shouldBePending = dataToSave.resultado === 'CON PENDIENTES';
 
       if (docId) {
         await updateDoc(doc(db, 'inspecciones', docId), dataToSave);
@@ -152,7 +170,8 @@ export const Inspecciones: React.FC = () => {
       } else {
         const docRef = await addDoc(collection(db, 'inspecciones'), dataToSave);
         docId = docRef.id;
-        accionTexto = "Nueva Inspección Registrada";
+        accionTexto = "Nueva Inspección (Encuesta) Registrada";
+        shouldBePending = true; 
         
         if (auditorSeleccionado && auditorSeleccionado.id) {
            try {
@@ -178,17 +197,18 @@ export const Inspecciones: React.FC = () => {
           await addDoc(collection(db, 'movimientos'), {
              usuario: currentUser.name,
              fecha: new Date().toISOString(),
-             texto: `${accionTexto}: ${dataToSave.resultado} en ${dataToSave.ubicacion}. ${dataToSave.observaciones ? 'Obs: ' + dataToSave.observaciones : ''}`,
+             texto: `${accionTexto}: ${dataToSave.resultado} en ${dataToSave.ubicacion}. ${shouldBePending ? ' [REQUERIMIENTO DE ANÁLISIS]' : ''}`,
              expedienteId: finalExpedienteId || 'SIN_EXPEDIENTE',
              inspeccionId: docId,
              tipoAccion: 'Inspección',
-             isPending: dataToSave.resultado === 'CON PENDIENTES'
+             isPending: shouldBePending
           });
       }
 
-      if (dataToSave.resultado === 'CON PENDIENTES') {
-         alert("Se ha registrado la inspección y se generó una TAREA PENDIENTE en el historial.");
-      }
+      alert(shouldBePending 
+          ? "Encuesta registrada. Se generó automáticamente una TAREA PENDIENTE para su análisis." 
+          : "Inspección actualizada correctamente."
+      );
 
       setIsModalOpen(false);
       setEditingInsp({});
@@ -247,8 +267,8 @@ export const Inspecciones: React.FC = () => {
           const snapPend = await getDocs(qPend);
           snapPend.forEach(async (d) => {
             const data = d.data() as TimelineEvent;
-            if (data.texto.includes('INSPECCIÓN CON PENDIENTES') || data.inspeccionId === subsanarTarget.id) {
-                await updateDoc(doc(db, 'movimientos', d.id), { isPending: false, texto: data.texto + " [SUBSANADO]" });
+            if (data.tipoAccion === 'Inspección' || data.inspeccionId === subsanarTarget.id) {
+                await updateDoc(doc(db, 'movimientos', d.id), { isPending: false, texto: data.texto + " [CERRADO POR SUBSANACIÓN]" });
             }
           });
       }
@@ -288,7 +308,6 @@ export const Inspecciones: React.FC = () => {
   const formatDateSafe = (dateStr: string) => {
       try {
           if(!dateStr) return "-";
-          // Validación extra: verificar si es una fecha válida
           const d = new Date(dateStr);
           return isNaN(d.getTime()) ? "-" : d.toLocaleDateString();
       } catch {
@@ -410,6 +429,7 @@ export const Inspecciones: React.FC = () => {
         </main>
       </div>
 
+      {/* MODAL EDITAR / NUEVO */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
@@ -471,18 +491,25 @@ export const Inspecciones: React.FC = () => {
                             </button>
                         ))}
                      </div>
-                     {editingInsp.resultado === 'CON PENDIENTES' && (
-                        <p className="text-[9px] text-orange-600 font-bold mt-2 flex items-center gap-1">
-                           <span className="material-symbols-outlined text-[14px]">warning</span>
-                           Se creará automáticamente una TAREA PENDIENTE en el historial.
-                        </p>
-                     )}
                   </div>
 
-                  {/* Fila 5: Obs */}
+                  {/* Fila 5: Obs (CON IA) */}
                   <div className="col-span-2">
-                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Observaciones / Detalle Técnico</label>
-                    <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-20" value={editingInsp.observaciones || ''} onChange={e => setEditingInsp({...editingInsp, observaciones: e.target.value})}></textarea>
+                    <div className="flex justify-between items-end mb-1">
+                       <label className="block text-[10px] font-black uppercase text-slate-500">Observaciones / Detalle Técnico</label>
+                       <button 
+                           type="button" 
+                           onClick={handleAiImprove}
+                           disabled={isAiLoading}
+                           className="text-[9px] bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 py-1 rounded font-black uppercase flex items-center gap-1 transition-colors"
+                       >
+                           <span className={`material-symbols-outlined text-[12px] ${isAiLoading ? 'animate-spin' : ''}`}>
+                               {isAiLoading ? 'sync' : 'auto_fix'}
+                           </span>
+                           {isAiLoading ? 'Redactando...' : 'Mejorar Redacción con IA'}
+                       </button>
+                    </div>
+                    <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-24" value={editingInsp.observaciones || ''} onChange={e => setEditingInsp({...editingInsp, observaciones: e.target.value})} placeholder="Escriba los hallazgos (ej: 'extintor vencido, falta cartel'). La IA lo convertirá en un informe formal."></textarea>
                   </div>
 
                   {/* Fila 6: Documentación */}
