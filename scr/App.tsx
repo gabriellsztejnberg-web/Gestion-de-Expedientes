@@ -10,6 +10,7 @@ import { Users } from './screens/Users';
 import { Auditores } from './screens/Auditores';
 import { Inspecciones } from './screens/Inspecciones';
 import { Planes } from './screens/Planes';
+import { Asistencia } from './screens/Asistencia';
 
 const App: React.FC = () => {
   return (
@@ -17,6 +18,7 @@ const App: React.FC = () => {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/asistencia" element={<Asistencia />} />
         <Route path="/expedientes" element={<Expedientes />} />
         <Route path="/planes" element={<Planes />} />
         <Route path="/auditores" element={<Auditores />} />
