@@ -126,9 +126,7 @@ export interface AttendanceLog {
   userRole: string; // Para mostrar JER en la tabla
   date: string; // YYYY-MM-DD
   entry: string; // HH:MM
-  exit: string; // HH:MM (Egreso final)
-  breakOut: string; // HH:MM (Salida intermedia)
-  breakIn: string; // HH:MM (Regreso intermedio)
+  exit: string; // HH:MM
   type: AttendanceType; 
   notes?: string;
   totalHours: string; // HH:MM calculado
