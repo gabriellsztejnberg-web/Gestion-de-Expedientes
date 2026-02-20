@@ -21,8 +21,7 @@ const getGroqClient = () => {
 const MODEL_CANDIDATES = [
   "llama-3.3-70b-versatile", // Modelo potente y rápido
   "llama-3.1-8b-instant",    // Opción muy rápida
-  "mixtral-8x7b-32768",      // Contexto largo
-  "gemma2-9b-it"             // Google Gemma via Groq
+  "mixtral-8x7b-32768"       // Contexto largo
 ];
 
 // --- FUNCIÓN NÚCLEO: INTENTO ROTATIVO ---
