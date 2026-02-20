@@ -1,5 +1,4 @@
 
-
 import { GoogleGenAI } from "@google/genai";
 
 // --- CONFIGURACIÓN DE API KEY ---
@@ -9,11 +8,7 @@ const MANUAL_API_KEY = "AIzaSyAIqTkZLbil5Fgrc3OSmj-qB1Ljm3iodSs";
 // El sistema probará uno por uno hasta que uno responda exitosamente.
 // Esto evita el error "Modelo no disponible en su región".
 const MODEL_CANDIDATES = [
-  "gemini-2.0-flash-exp",      // 1. El más rápido y nuevo (Experimental)
   "gemini-1.5-flash",          // 2. El estándar actual (Estable)
-  "gemini-1.5-flash-latest",   // 3. Alternativa del estándar
-  "gemini-1.0-pro",            // 4. Versión anterior muy compatible
-  "gemini-pro"                 // 5. Legacy (Último recurso)
 ];
 
 const getAIClient = () => {
@@ -159,4 +154,3 @@ function formatGeminiError(error: any): string {
     
     return `Error de conexión IA.`; 
 }
-
