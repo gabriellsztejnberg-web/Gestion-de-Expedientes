@@ -171,7 +171,7 @@ export const Inspecciones: React.FC = () => {
         const docRef = await addDoc(collection(db, 'inspecciones'), dataToSave);
         docId = docRef.id;
         accionTexto = "Nueva Inspección (Encuesta) Registrada";
-        shouldBePending = true; 
+        shouldBePending = dataToSave.resultado === 'CON PENDIENTES'; 
         
         if (auditorSeleccionado && auditorSeleccionado.id) {
            try {
