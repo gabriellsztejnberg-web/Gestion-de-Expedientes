@@ -8,7 +8,7 @@ const MANUAL_API_KEY = "AIzaSyAIqTkZLbil5Fgrc3OSmj-qB1Ljm3iodSs";
 // El sistema probará uno por uno hasta que uno responda exitosamente.
 // Esto evita el error "Modelo no disponible en su región".
 const MODEL_CANDIDATES = [
-  "gemini-1.5-flash",          // 2. El estándar actual (Estable)
+  "gemini-3-flash-preview",    // Modelo solicitado explícitamente
 ];
 
 const getAIClient = () => {
