@@ -152,6 +152,35 @@ export const Auditores: React.FC = () => {
             </button>
           </div>
 
+          {/* KPI CARDS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 shrink-0">
+             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
+                <div className="flex flex-col">
+                    <span className="text-[9px] font-bold uppercase text-slate-400 tracking-wider">Total Inspectores</span>
+                    <span className="text-2xl font-black text-slate-900 dark:text-white">{auditores.length}</span>
+                </div>
+                <span className="material-symbols-outlined text-slate-300 text-3xl">groups</span>
+             </div>
+             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-green-100 dark:border-green-900/30 shadow-sm flex items-center justify-between">
+                <div className="flex flex-col">
+                    <span className="text-[9px] font-bold uppercase text-green-600/70 tracking-wider">Habilitados</span>
+                    <span className="text-2xl font-black text-green-600 dark:text-green-400">
+                        {auditores.filter(a => a.disposicionHabilitacion && a.disposicionHabilitacion !== 'PENDIENTE').length}
+                    </span>
+                </div>
+                <span className="material-symbols-outlined text-green-200 text-3xl">verified</span>
+             </div>
+             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-red-100 dark:border-red-900/30 shadow-sm flex items-center justify-between">
+                <div className="flex flex-col">
+                    <span className="text-[9px] font-bold uppercase text-red-600/70 tracking-wider">Sin Habilitación</span>
+                    <span className="text-2xl font-black text-red-600 dark:text-red-400">
+                        {auditores.filter(a => !a.disposicionHabilitacion || a.disposicionHabilitacion === 'PENDIENTE').length}
+                    </span>
+                </div>
+                <span className="material-symbols-outlined text-red-200 text-3xl">warning</span>
+             </div>
+          </div>
+
           <div className="bg-white dark:bg-slate-900 rounded-lg p-3 border border-slate-200 dark:border-slate-800 mb-6 shrink-0 shadow-sm">
             <div className="relative flex items-center">
               <span className="absolute left-3 text-slate-400 material-symbols-outlined text-[20px]">search</span>
@@ -186,9 +215,16 @@ export const Auditores: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                        <span className="bg-green-50 text-green-700 px-2 py-1 rounded text-[10px] font-black uppercase border border-green-100">
-                           {a.disposicionHabilitacion}
-                        </span>
+                        {(!a.disposicionHabilitacion || a.disposicionHabilitacion === 'PENDIENTE') ? (
+                            <span className="bg-red-50 text-red-700 px-2 py-1 rounded text-[10px] font-black uppercase border border-red-100 flex items-center gap-1 w-fit">
+                               <span className="material-symbols-outlined text-[12px]">warning</span>
+                               {a.disposicionHabilitacion || 'PENDIENTE'}
+                            </span>
+                        ) : (
+                            <span className="bg-green-50 text-green-700 px-2 py-1 rounded text-[10px] font-black uppercase border border-green-100">
+                               {a.disposicionHabilitacion}
+                            </span>
+                        )}
                     </td>
                     <td className="px-4 py-4 font-medium text-slate-600 dark:text-slate-300 uppercase text-[11px]">{a.zonaTrabajo || '-'}</td>
                     <td className="px-4 py-4 text-center">
