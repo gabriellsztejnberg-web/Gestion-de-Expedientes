@@ -1,69 +1,75 @@
 
-import Groq from "groq-sdk";
+
+import { GoogleGenAI } from "@google/genai";
 
 // --- CONFIGURACIÓN DE API KEY ---
-// Se intenta obtener desde variables de entorno (Vite)
-const getGroqClient = () => {
-  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-  
-  if (!apiKey) {
-    console.warn("Falta VITE_GROQ_API_KEY en .env");
-    throw new Error("MISSING_API_KEY");
-  }
+const MANUAL_API_KEY = "AIzaSyAIqTkZLbil5Fgrc3OSmj-qB1Ljm3iodSs"; 
 
-  return new Groq({ 
-    apiKey,
-    dangerouslyAllowBrowser: true // Necesario para uso client-side
-  });
-};
-
-// --- LISTA DE MODELOS GROQ ---
+// --- LISTA DE MODELOS A PROBAR (EN ORDEN DE PREFERENCIA) ---
+// El sistema probará uno por uno hasta que uno responda exitosamente.
+// Esto evita el error "Modelo no disponible en su región".
 const MODEL_CANDIDATES = [
-  "llama-3.3-70b-versatile", // Modelo potente y rápido
-  "llama-3.1-8b-instant",    // Opción muy rápida
+  "gemini-2.0-flash-exp",      // 1. El más rápido y nuevo (Experimental)
+  "gemini-1.5-flash",          // 2. El estándar actual (Estable)
+  "gemini-1.5-flash-latest",   // 3. Alternativa del estándar
+  "gemini-1.0-pro",            // 4. Versión anterior muy compatible
+  "gemini-pro"                 // 5. Legacy (Último recurso)
 ];
+
+const getAIClient = () => {
+  let apiKey = "";
+  try {
+    if (typeof process !== "undefined" && process.env && process.env.GEMINI_API_KEY) {
+      apiKey = process.env.GEMINI_API_KEY;
+    }
+  } catch (e) {}
+
+  if (!apiKey) apiKey = MANUAL_API_KEY;
+  
+  if (!apiKey) throw new Error("MISSING_API_KEY");
+
+  return new GoogleGenAI({ apiKey });
+};
 
 // --- FUNCIÓN NÚCLEO: INTENTO ROTATIVO ---
 async function generateWithRetry(prompt: string, systemInstruction?: string, temperature: number = 0.7) {
-  const groq = getGroqClient();
-  let lastError = null;
+  const ai = getAIClient();
+  const config = { systemInstruction, temperature };
 
-  // Construimos los mensajes
-  const messages: any[] = [];
-  if (systemInstruction) {
-    messages.push({ role: "system", content: systemInstruction });
-  }
-  messages.push({ role: "user", content: prompt });
+  let lastError = null;
 
   // Iteramos sobre la lista de modelos
   for (const modelName of MODEL_CANDIDATES) {
     try {
-      const completion = await groq.chat.completions.create({
-        messages: messages,
+      // Intentamos generar contenido con el modelo actual
+      const response = await ai.models.generateContent({
         model: modelName,
-        temperature: temperature,
-        max_tokens: 1024,
+        contents: prompt,
+        config,
       });
-
-      return completion.choices[0]?.message?.content || "";
+      
+      // Si llegamos aquí, funcionó. Retornamos el texto.
+      return response.text;
 
     } catch (error: any) {
       const msg = (error.message || "").toLowerCase();
       console.warn(`Falló modelo ${modelName}: ${msg}`);
       lastError = error;
 
-      // Si es error de autenticación, no seguimos probando
-      if (msg.includes("401") || msg.includes("authentication") || msg.includes("key")) {
+      // Si el error es de autenticación (Key inválida), no tiene sentido seguir probando modelos.
+      if (msg.includes("403") || msg.includes("key") || msg.includes("permission")) {
         throw error;
       }
+      // Si es 404 (No encontrado/Region), 429 (Cuota) o 5xx (Server), seguimos al siguiente modelo del bucle.
       continue;
     }
   }
 
+  // Si terminamos el bucle y ninguno funcionó, lanzamos el último error.
   throw lastError;
 }
 
-// --- SERVICIOS EXPORTADOS ---
+// --- SERVICIOS EXPORTADOS (Usan la función rotativa) ---
 
 export const getLegalAdvice = async (prompt: string) => {
   try {
@@ -73,7 +79,7 @@ export const getLegalAdvice = async (prompt: string) => {
     );
     return text || "Sin respuesta.";
   } catch (error: any) {
-    return formatError(error);
+    return formatGeminiError(error);
   }
 };
 
@@ -83,7 +89,7 @@ export const draftTechnicalReport = async (rawNotes: string, context: string) =>
     const text = await generateWithRetry(prompt, undefined, 0.3);
     return text?.trim() || rawNotes;
   } catch (error: any) {
-    return rawNotes + `\n[Error IA: ${formatError(error)}]`;
+    return rawNotes + `\n[Error IA: ${formatGeminiError(error)}]`;
   }
 };
 
@@ -98,7 +104,7 @@ export const analyzeExpedienteHistory = async (caseData: any, events: any[]) => 
     const text = await generateWithRetry(prompt, undefined, 0.5);
     return text?.trim() || "No se pudo analizar.";
   } catch (error: any) {
-    return `Error IA: ${formatError(error)}`;
+    return `Error IA: ${formatGeminiError(error)}`;
   }
 };
 
@@ -132,8 +138,8 @@ export const askDatabase = async (question: string, contextData: string) => {
       const text = await generateWithRetry(prompt, undefined, 0.4);
       return text?.trim() || "No pude procesar la respuesta.";
     } catch (error: any) {
-      console.error("Groq Error Final:", error);
-      return `⚠️ ${formatError(error)}`;
+      console.error("Gemini Error Final:", error);
+      return `⚠️ ${formatGeminiError(error)}`;
     }
   };
 
@@ -142,13 +148,15 @@ export const summarizeTimeline = async (events: any[]) => {
   return await getLegalAdvice(prompt);
 };
 
-function formatError(error: any): string {
+function formatGeminiError(error: any): string {
     const msg = (error.message || error.toString() || "").toLowerCase();
     
-    if (msg.includes("missing_api_key")) return "Falta configurar VITE_GROQ_API_KEY.";
-    if (msg.includes("401") || msg.includes("authentication")) return "API Key inválida.";
+    if (msg.includes("missing_api_key")) return "Falta configurar API KEY.";
     if (msg.includes("429")) return "Cuota excedida (Intente luego).";
+    if (msg.includes("403") || msg.includes("key")) return "Clave API inválida.";
+    if (msg.includes("404") || msg.includes("not found")) return "Modelos IA no disponibles temporalmente.";
     if (msg.includes("fetch") || msg.includes("network")) return "Sin conexión a internet.";
     
-    return `Error de conexión IA (${msg}).`; 
+    return `Error de conexión IA.`; 
 }
+
