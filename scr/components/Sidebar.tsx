@@ -15,6 +15,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage }) => {
   const [isConnected, setIsConnected] = useState<boolean>(true);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"name":"Invitado","role":"operador"}');
 
   useEffect(() => {
@@ -68,7 +69,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage }) => {
 
   return (
     <>
-      <aside className="w-64 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#15202b] transition-colors duration-200 hidden md:flex flex-shrink-0 h-screen sticky top-0">
+      {/* Mobile Toggle Button */}
+      <button
+        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        className="md:hidden fixed top-4 right-4 z-[60] p-2 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700"
+        aria-label="Toggle Menu"
+      >
+        <span className="material-symbols-outlined">
+          {isMobileMenuOpen ? 'close' : 'menu'}
+        </span>
+      </button>
+
+      {/* Overlay for mobile */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      <aside className={`
+        w-64 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#15202b] transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-50 h-screen
+        md:relative md:translate-x-0
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
         <div className="p-6">
           <div className="flex flex-col gap-1">
             <h1 className="text-slate-900 dark:text-white text-base font-black leading-tight tracking-tight flex items-center gap-2 uppercase">
@@ -85,7 +110,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage }) => {
         </div>
         <nav className="flex-1 px-4 flex flex-col gap-1 overflow-y-auto">
           {navItems.map((item) => (
-            <Link key={item.id} to={item.path} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${activePage === item.id ? 'bg-primary/10 text-primary dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
+            <Link 
+              key={item.id} 
+              to={item.path} 
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${activePage === item.id ? 'bg-primary/10 text-primary dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+            >
               <span className="material-symbols-outlined">{item.icon}</span>
               <p className="text-sm font-bold uppercase tracking-tighter">{item.label}</p>
             </Link>
