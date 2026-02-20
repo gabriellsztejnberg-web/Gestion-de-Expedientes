@@ -116,7 +116,7 @@ export const ChatAssistant: React.FC = () => {
 
             {/* CHAT WINDOW */}
             {isOpen && (
-                <div className="fixed bottom-24 right-6 w-96 h-[500px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col z-50 overflow-hidden animate-fade-in-up">
+                <div className="fixed bottom-24 right-4 left-4 md:left-auto md:right-6 md:w-96 h-[500px] max-h-[70vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col z-50 overflow-hidden animate-fade-in-up">
                     {/* Header */}
                     <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-4 flex items-center gap-3 shrink-0">
                         <div className="bg-white/20 p-2 rounded-full backdrop-blur-sm">
