@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
-import { collection, query, getDocs, limit, orderBy } from 'firebase/firestore';
+import { collection, query, getDocs, limit, orderBy, where } from 'firebase/firestore';
 import { askDatabase } from '../services/geminiService';
 
 interface Message {
@@ -39,44 +39,71 @@ export const ChatAssistant: React.FC = () => {
 
     const loadContext = async () => {
         try {
-            // OPTIMIZACIÓN: Reducimos límites para evitar "Error de conexión" por payload excesivo
-            // 1. Expedientes Activos (Limitamos a 15 más recientes/relevantes)
-            const qExp = query(collection(db, 'expedientes'), limit(15)); 
+            // 1. Expedientes (TODOS, campos mínimos)
+            const qExp = query(collection(db, 'expedientes')); 
             const snapExp = await getDocs(qExp);
             const expedientes = snapExp.docs.map(d => {
                 const data = d.data();
                 return {
+                    id: d.id,
                     gde: data.numero,
                     empresa: data.empresa,
                     tramite: data.tramite,
                     estado: data.instancia,
-                    asignado_a: data.asignadoANombre,
-                    ubicacion: data.instancia === 'pase' ? `PASE A ${data.destinoExterno}` : 'Oficina'
+                    asignado: data.asignadoANombre,
+                    ubicacion: data.instancia === 'pase' ? `PASE: ${data.destinoExterno}` : 'Oficina'
                 };
             });
 
-            // 2. Movimientos Recientes (Últimos 10)
-            const qMov = query(collection(db, 'movimientos'), orderBy('fecha', 'desc'), limit(10));
-            const snapMov = await getDocs(qMov);
-            const movimientos = snapMov.docs.map(d => {
+            // 2. Inspecciones (TODAS, campos mínimos)
+            const qInsp = query(collection(db, 'inspecciones'), orderBy('fecha', 'desc'));
+            const snapInsp = await getDocs(qInsp);
+            const inspecciones = snapInsp.docs.map(d => {
                 const data = d.data();
                 return {
                     fecha: data.fecha,
-                    usuario: data.usuario,
-                    accion: data.texto,
-                    tipo: data.tipoAccion
+                    lugar: data.ubicacion,
+                    auditor: data.auditorNombre,
+                    res: data.resultado,
+                    exp: data.expedienteNumero
                 };
             });
 
-            // 3. Usuarios (Solo nombres y roles, data mínima)
+            // 3. Usuarios (TODOS)
             const qUsers = query(collection(db, 'usuarios'));
             const snapUsers = await getDocs(qUsers);
-            const usuarios = snapUsers.docs.map(d => ({ nombre: d.data().name, rol: d.data().role }));
+            const usuarios = snapUsers.docs.map(d => ({ 
+                nombre: d.data().name, 
+                rol: d.data().role,
+                id: d.id
+            }));
+
+            // 4. Asistencia (Últimos 30 días aprox para contexto reciente)
+            // No cargamos TODO el historial de años porque es mucho texto.
+            const today = new Date();
+            const pastDate = new Date();
+            pastDate.setDate(today.getDate() - 30);
+            const pastDateStr = pastDate.toISOString().split('T')[0];
+
+            const qAsist = query(collection(db, 'asistencia'), where('date', '>=', pastDateStr));
+            const snapAsist = await getDocs(qAsist);
+            const asistencia = snapAsist.docs.map(d => {
+                const data = d.data();
+                // Solo nos interesa si NO es normal o si tiene notas, para saber novedades
+                if (data.type === 'normal' && !data.notes) return null;
+                return {
+                    fecha: data.date,
+                    usuario: data.userName,
+                    tipo: data.type,
+                    nota: data.notes
+                };
+            }).filter(Boolean); // Eliminar nulos
 
             const contextString = JSON.stringify({
-                expedientes_resumen: expedientes,
-                ultimos_movimientos: movimientos,
-                personal: usuarios
+                expedientes,
+                inspecciones,
+                personal: usuarios,
+                novedades_asistencia: asistencia
             });
 
             setContextData(contextString);
@@ -178,3 +205,4 @@ export const ChatAssistant: React.FC = () => {
         </>
     );
 };
+
