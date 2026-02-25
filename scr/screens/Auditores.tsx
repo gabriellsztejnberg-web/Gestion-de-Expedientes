@@ -11,7 +11,7 @@ import {
   query, 
   deleteDoc 
 } from 'firebase/firestore';
-import { Auditor, Curso, EstadisticasAuditor } from '../types';
+import { Auditor, Curso, EstadisticasAuditor, ESSENTIAL_COURSES } from '../types';
 import { analyzeAuditorProfile } from '../services/geminiService'; // Importamos IA
 
 export const Auditores: React.FC = () => {
@@ -38,6 +38,7 @@ export const Auditores: React.FC = () => {
           dni: data.dni ? String(data.dni) : '',
           disposicionHabilitacion: data.disposicionHabilitacion || 'PENDIENTE',
           zonaTrabajo: data.zonaTrabajo || '',
+          nivel: data.nivel || 'I', // Default Nivel I
           cursos: Array.isArray(data.cursos) ? data.cursos : [],
           stats: {
             totalHistorico: Number(data.stats?.totalHistorico || 0),
@@ -59,6 +60,7 @@ export const Auditores: React.FC = () => {
       dni: editingAuditor.dni || '',
       disposicionHabilitacion: editingAuditor.disposicionHabilitacion || '',
       zonaTrabajo: editingAuditor.zonaTrabajo || '',
+      nivel: editingAuditor.nivel || 'I',
       cursos: editingAuditor.cursos || [],
       stats: editingAuditor.stats || { totalHistorico: 0, anualActual: 0, anioReferencia: new Date().getFullYear() },
       ultimaActualizacion: new Date().toISOString()
@@ -77,6 +79,16 @@ export const Auditores: React.FC = () => {
     } catch (error) {
       alert("Error al guardar datos.");
     }
+  };
+
+  // Helper para verificar cursos esenciales
+  const getMissingCourses = (auditorCourses: Curso[]) => {
+      const courseNames = auditorCourses.map(c => c.nombre.toLowerCase());
+      return ESSENTIAL_COURSES.filter(essential => {
+          // Búsqueda flexible (contiene la palabra clave)
+          const keyword = essential.toLowerCase();
+          return !courseNames.some(c => c.includes(keyword));
+      });
   };
 
   const handleDelete = async (id: string) => {
@@ -211,7 +223,12 @@ export const Auditores: React.FC = () => {
                                 <span className="material-symbols-outlined text-[14px]">content_copy</span>
                             </button>
                          </div>
-                         <span className="text-[10px] text-slate-500 font-mono">{a.dni || 'Sin DNI'}</span>
+                         <div className="flex items-center gap-2">
+                             <span className="text-[10px] text-slate-500 font-mono">{a.dni || 'Sin DNI'}</span>
+                             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${a.nivel === 'III' ? 'bg-purple-100 text-purple-700 border-purple-200' : a.nivel === 'II' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                NIVEL {a.nivel || 'I'}
+                             </span>
+                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-4">
@@ -228,7 +245,15 @@ export const Auditores: React.FC = () => {
                     </td>
                     <td className="px-4 py-4 font-medium text-slate-600 dark:text-slate-300 uppercase text-[11px]">{a.zonaTrabajo || '-'}</td>
                     <td className="px-4 py-4 text-center">
-                        <span className="text-slate-500 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-[10px]">{(a.cursos || []).length} Registrados</span>
+                        <div className="flex flex-col items-center gap-1">
+                            <span className="text-slate-500 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-[10px]">{(a.cursos || []).length} Registrados</span>
+                            {getMissingCourses(a.cursos || []).length > 0 && (
+                                <span className="text-[9px] font-black text-red-500 flex items-center gap-1 animate-pulse" title={`Faltan: ${getMissingCourses(a.cursos || []).join(', ')}`}>
+                                    <span className="material-symbols-outlined text-[12px]">priority_high</span>
+                                    FALTAN CURSOS
+                                </span>
+                            )}
+                        </div>
                     </td>
                     <td className="px-4 py-4 text-center">
                         <div className="flex flex-col items-center">
@@ -299,9 +324,17 @@ export const Auditores: React.FC = () => {
                            <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingAuditor.dni || ''} onChange={e => setEditingAuditor({...editingAuditor, dni: e.target.value})} />
                         </div>
                         <div>
-                           <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Disposición Habilitación</label>
-                           <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={editingAuditor.disposicionHabilitacion || ''} onChange={e => setEditingAuditor({...editingAuditor, disposicionHabilitacion: e.target.value})} placeholder="DISFC-202X-..." />
+                           <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nivel Auditor</label>
+                           <select className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={editingAuditor.nivel || 'I'} onChange={e => setEditingAuditor({...editingAuditor, nivel: e.target.value as any})}>
+                              <option value="I">Nivel I (Básico)</option>
+                              <option value="II">Nivel II (Intermedio)</option>
+                              <option value="III">Nivel III (Avanzado)</option>
+                           </select>
                         </div>
+                     </div>
+                     <div>
+                        <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Disposición Habilitación</label>
+                        <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={editingAuditor.disposicionHabilitacion || ''} onChange={e => setEditingAuditor({...editingAuditor, disposicionHabilitacion: e.target.value})} placeholder="DISFC-202X-..." />
                      </div>
                      <div>
                         <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Zona / Lugar de Trabajo</label>
@@ -313,6 +346,19 @@ export const Auditores: React.FC = () => {
                {activeTab === 'academicos' && (
                   <div className="space-y-6">
                      <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <h4 className="text-[10px] font-black uppercase text-slate-500 mb-3">Cursos Esenciales Requeridos</h4>
+                        <div className="grid grid-cols-2 gap-2 mb-4">
+                           {ESSENTIAL_COURSES.map(course => {
+                              const isCompleted = (editingAuditor.cursos || []).some(c => c.nombre.toLowerCase().includes(course.toLowerCase()));
+                              return (
+                                 <div key={course} className={`flex items-center gap-2 px-3 py-2 rounded border ${isCompleted ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                                    <span className="material-symbols-outlined text-[16px]">{isCompleted ? 'check_circle' : 'cancel'}</span>
+                                    <span className="text-[10px] font-black uppercase">{course}</span>
+                                 </div>
+                              );
+                           })}
+                        </div>
+
                         <h4 className="text-[10px] font-black uppercase text-slate-500 mb-3">Agregar Curso / Antecedente</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                            <input className="w-full px-3 py-2 text-xs border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" placeholder="Nombre del Curso" value={newCurso.nombre || ''} onChange={e => setNewCurso({...newCurso, nombre: e.target.value})} />
