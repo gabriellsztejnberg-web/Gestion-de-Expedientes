@@ -14,7 +14,7 @@ import {
   orderBy,
   getDocs
 } from 'firebase/firestore';
-import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail } from '../types';
+import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI } from '../types';
 import { analyzeExpedienteHistory } from '../services/geminiService'; // Importamos servicio IA
 
 const INSTANCIAS: Instancia[] = [
@@ -27,12 +27,13 @@ const INSTANCIAS: Instancia[] = [
   { id: 'guarda', label: 'Guarda', color: 'bg-gray-200 text-gray-600 border-gray-300' }
 ];
 
-type TabId = 'grupal' | 'individual' | 'usuarios' | 'pases' | 'guarda' | 'mails';
+type TabId = 'grupal' | 'individual' | 'usuarios' | 'pases' | 'guarda' | 'mails' | 'mois';
 
 export const Expedientes: React.FC = () => {
   const navigate = useNavigate();
   const [cases, setCases] = useState<Case[]>([]);
   const [mails, setMails] = useState<Mail[]>([]);
+  const [mois, setMois] = useState<MOI[]>([]);
   const [users, setUsers] = useState<User[]>([]); 
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [activeTab, setActiveTab] = useState<TabId>('grupal');
@@ -50,6 +51,16 @@ export const Expedientes: React.FC = () => {
   const [currentMail, setCurrentMail] = useState<Mail | null>(null);
   const [newMail, setNewMail] = useState<Partial<Mail>>({});
   const [replyText, setReplyText] = useState('');
+
+  // MOI State
+  const [isMoiModalOpen, setIsMoiModalOpen] = useState(false);
+  const [viewingMoi, setViewingMoi] = useState<MOI | null>(null);
+  const [activeMoiTab, setActiveMoiTab] = useState<'recibido' | 'enviado'>('recibido');
+  const [moiFormData, setMoiFormData] = useState<Partial<MOI>>({
+    origen: '', gfh: '', reserva: 'PUBLICO', prioridad: 'RUTINA (R)', 
+    destinatarios: '', informativos: '', exceptuados: '', codigoTexto: '', 
+    texto: '', adjuntos: '', tipo: 'recibido'
+  });
 
   const [editingExp, setEditingExp] = useState<Partial<Case> | null>(null);
   // Default tipo changed to be empty so user chooses explicitly
@@ -94,6 +105,15 @@ export const Expedientes: React.FC = () => {
         setMails(docs);
       }
     );
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'mois'), orderBy('fechaRegistro', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MOI));
+      setMois(docs);
+    });
     return () => unsubscribe();
   }, []);
 
@@ -211,6 +231,63 @@ export const Expedientes: React.FC = () => {
   const handleDeleteMail = async (id: string) => {
       if(!confirm("¿Eliminar este registro de mail?")) return;
       await deleteDoc(doc(db, 'mails', id));
+  };
+
+  // --- MOI LOGIC ---
+  const handleSaveMoi = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!moiFormData.origen || !moiFormData.texto) return alert("Complete los campos obligatorios");
+
+    try {
+      const newMoi = {
+        ...moiFormData,
+        registradoPor: currentUser.name || 'Sistema',
+        fechaRegistro: new Date().toISOString(),
+        tipo: moiFormData.tipo || activeMoiTab 
+      };
+      
+      await addDoc(collection(db, 'mois'), newMoi);
+      await addHistoryEntry('MOIS_GENERAL', `MOI ${activeMoiTab.toUpperCase()} | ORIGEN: ${moiFormData.origen} | DEST: ${moiFormData.destinatarios} | GFH: ${moiFormData.gfh}`, 'Comunicación', false);
+      
+      setIsMoiModalOpen(false);
+      setMoiFormData({
+        origen: '', gfh: '', reserva: 'PUBLICO', prioridad: 'RUTINA (R)', 
+        destinatarios: '', informativos: '', exceptuados: '', codigoTexto: '', 
+        texto: '', adjuntos: '', tipo: activeMoiTab
+      });
+    } catch (error) {
+      console.error("Error saving MOI:", error);
+      alert("Error al guardar MOI");
+    }
+  };
+
+  const handleDeleteMoi = async (id: string) => {
+    if (confirm("¿Eliminar este mensaje?")) {
+      await deleteDoc(doc(db, 'mois', id));
+      if (viewingMoi?.id === id) setViewingMoi(null);
+    }
+  };
+
+  const openNewMoiModal = () => {
+    setMoiFormData({
+        origen: '',
+        gfh: new Date().toLocaleDateString('es-AR', {day: '2-digit', month: 'short', year: 'numeric'}).replace(/ /g, '/').toUpperCase(), 
+        reserva: 'PUBLICO',
+        prioridad: 'RUTINA (R)',
+        destinatarios: '',
+        informativos: '',
+        exceptuados: '',
+        codigoTexto: '',
+        texto: '',
+        adjuntos: '',
+        tipo: activeMoiTab
+    });
+    setViewingMoi(null);
+    setIsMoiModalOpen(true);
+  };
+
+  const openViewMoiModal = (moi: MOI) => {
+    setViewingMoi(moi);
   };
 
   const handleAcquire = async (caseId: string) => {
@@ -447,6 +524,13 @@ export const Expedientes: React.FC = () => {
       m.asunto.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const filteredMois = mois.filter(m => 
+    m.tipo === activeMoiTab && 
+    (m.texto.toLowerCase().includes(searchTerm.toLowerCase()) || 
+     m.origen.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     m.gfh.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
   return (
     <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden font-display">
       <Sidebar activePage="expedientes" />
@@ -470,6 +554,12 @@ export const Expedientes: React.FC = () => {
                         <span>Registrar Mail</span>
                     </button>
                 )}
+                {activeTab === 'mois' && (
+                     <button onClick={openNewMoiModal} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-black uppercase shadow-lg hover:opacity-90 transition-all">
+                        <span className="material-symbols-outlined text-[18px]">add</span>
+                        <span>Nuevo MOI</span>
+                    </button>
+                )}
                 <button onClick={() => { setEditingExp({ tramite: 'Iniciación', asignadoA: 'buzon' }); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
                 <span className="material-symbols-outlined text-[18px]">add_circle</span>
                 <span>Nuevo GDE</span>
@@ -479,16 +569,28 @@ export const Expedientes: React.FC = () => {
 
           <div className="flex border-b border-slate-200 dark:border-slate-800 mb-6 gap-2 shrink-0 overflow-x-auto no-scrollbar">
             {[
-              { id: 'grupal', label: 'Buzón Grupal', icon: 'groups' },
-              { id: 'individual', label: 'Mis Tareas', icon: 'person_check' },
-              { id: 'usuarios', label: 'Por Usuario', icon: 'badge' },
-              { id: 'mails', label: 'Mails / Comunicaciones', icon: 'mail' },
-              { id: 'pases', label: 'Pases Externos', icon: 'outbound' },
-              { id: 'guarda', label: 'Guarda Temporal', icon: 'archive' }
+              { id: 'grupal', label: 'Buzón Grupal', icon: 'groups', count: cases.filter(c => c.asignadoA === 'buzon' && c.instancia !== 'guarda' && c.instancia !== 'pase').length },
+              { id: 'individual', label: 'Mis Tareas', icon: 'person_check', count: cases.filter(c => c.asignadoA === currentUser.id && c.instancia !== 'guarda' && c.instancia !== 'pase').length },
+              { id: 'usuarios', label: 'Por Usuario', icon: 'badge', count: cases.filter(c => c.asignadoA !== 'buzon' && c.asignadoA !== currentUser.id && c.instancia !== 'guarda' && c.instancia !== 'pase').length },
+              { id: 'pases', label: 'Pases Externos', icon: 'outbound', count: cases.filter(c => c.instancia === 'pase').length },
+              { id: 'guarda', label: 'Guarda Temporal', icon: 'archive', count: cases.filter(c => c.instancia === 'guarda').length },
+              { id: 'mails', label: 'Mails / Comunicaciones', icon: 'mail', count: mails.length, isSpecial: true },
+              { id: 'mois', label: 'Mensajes Oficiales (MOI)', icon: 'satellite_alt', count: mois.length, isSpecial: true }
             ].map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id as TabId)} className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-all text-[10px] font-black uppercase tracking-widest whitespace-nowrap ${activeTab === tab.id ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+              <button 
+                key={tab.id} 
+                onClick={() => setActiveTab(tab.id as TabId)} 
+                className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-all text-[10px] font-black uppercase tracking-widest whitespace-nowrap 
+                  ${activeTab === tab.id 
+                    ? (tab.isSpecial ? 'border-purple-500 text-purple-600 bg-purple-50 dark:bg-purple-900/20' : 'border-primary text-primary bg-primary/5') 
+                    : (tab.isSpecial ? 'border-transparent text-purple-400 hover:text-purple-600' : 'border-transparent text-slate-400 hover:text-slate-600')
+                  }`}
+              >
                 <span className="material-symbols-outlined text-[18px]">{tab.icon}</span>
                 {tab.label}
+                <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[9px] ${activeTab === tab.id ? 'bg-white/50' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                  {tab.count}
+                </span>
               </button>
             ))}
           </div>
@@ -502,7 +604,7 @@ export const Expedientes: React.FC = () => {
 
           <div className="flex-1 overflow-auto bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm">
             
-            {activeTab !== 'mails' && (
+            {activeTab !== 'mails' && activeTab !== 'mois' && (
             <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm">
                 <tr className="border-b border-slate-200 dark:border-slate-700">
@@ -647,6 +749,57 @@ export const Expedientes: React.FC = () => {
                         )}
                     </tbody>
                 </table>
+            )}
+
+            {/* TABLA DE MOIS */}
+            {activeTab === 'mois' && (
+                <div className="flex flex-col h-full">
+                    <div className="flex gap-4 mb-4 px-4 border-b border-slate-100 dark:border-slate-800">
+                        <button onClick={() => setActiveMoiTab('recibido')} className={`pb-2 text-xs font-black uppercase tracking-wider border-b-2 transition-colors ${activeMoiTab === 'recibido' ? 'border-primary text-primary' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                            Recibidos
+                        </button>
+                        <button onClick={() => setActiveMoiTab('enviado')} className={`pb-2 text-xs font-black uppercase tracking-wider border-b-2 transition-colors ${activeMoiTab === 'enviado' ? 'border-primary text-primary' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                            Enviados
+                        </button>
+                    </div>
+                    <table className="w-full text-left border-collapse text-xs">
+                        <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm">
+                            <tr className="border-b border-slate-200 dark:border-slate-700">
+                                <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">GFH</th>
+                                <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Origen</th>
+                                <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Texto / Extracto</th>
+                                <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Prioridad</th>
+                                <th className="px-4 py-3 text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {filteredMois.length > 0 ? filteredMois.map(m => (
+                                <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer" onClick={() => openViewMoiModal(m)}>
+                                    <td className="px-4 py-4 font-mono text-slate-500">{m.gfh}</td>
+                                    <td className="px-4 py-4 font-black uppercase text-slate-900 dark:text-white">{m.origen}</td>
+                                    <td className="px-4 py-4">
+                                        <div className="max-w-md truncate font-mono text-slate-600 dark:text-slate-300">
+                                            {m.texto}
+                                        </div>
+                                    </td>
+                                    <td className="px-4 py-4">
+                                        <span className={`px-2 py-1 rounded text-[9px] font-black uppercase border ${m.prioridad.includes('PRIORIDAD') ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                                            {m.prioridad}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-4 text-right">
+                                        <div className="flex justify-end gap-2" onClick={e => e.stopPropagation()}>
+                                            <button onClick={() => openViewMoiModal(m)} className="text-slate-400 hover:text-primary p-1" title="Ver Mensaje"><span className="material-symbols-outlined text-[18px]">visibility</span></button>
+                                            <button onClick={() => handleDeleteMoi(m.id)} className="text-slate-400 hover:text-red-500 p-1" title="Eliminar"><span className="material-symbols-outlined text-[18px]">delete</span></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )) : (
+                                <tr><td colSpan={5} className="py-20 text-center text-slate-400 italic">No hay mensajes registrados en esta bandeja.</td></tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             )}
 
           </div>
@@ -860,6 +1013,176 @@ export const Expedientes: React.FC = () => {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* MODAL NUEVO MOI */}
+      {isMoiModalOpen && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]">
+                    <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shrink-0">
+                        <span className="text-xs font-black uppercase tracking-widest">Nuevo Mensaje Oficial (MOI)</span>
+                        <button onClick={() => setIsMoiModalOpen(false)}><span className="material-symbols-outlined">close</span></button>
+                    </div>
+                    <form onSubmit={handleSaveMoi} className="p-6 overflow-y-auto font-mono text-xs">
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="block font-bold text-slate-500 mb-1">TIPO</label>
+                                <select 
+                                    className="w-full px-3 py-2 border rounded dark:bg-slate-800 dark:border-slate-700"
+                                    value={moiFormData.tipo}
+                                    onChange={e => setMoiFormData({...moiFormData, tipo: e.target.value as any})}
+                                >
+                                    <option value="recibido">RECIBIDO (Entrante)</option>
+                                    <option value="enviado">ENVIADO (Saliente)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block font-bold text-slate-500 mb-1">GFH (Fecha Hora)</label>
+                                <input 
+                                    className="w-full px-3 py-2 border rounded dark:bg-slate-800 dark:border-slate-700 uppercase"
+                                    placeholder="DDHHMM/MMM/AAAA"
+                                    value={moiFormData.gfh}
+                                    onChange={e => setMoiFormData({...moiFormData, gfh: e.target.value})}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="block font-bold text-slate-500 mb-1">ORIGEN</label>
+                                <input 
+                                    className="w-full px-3 py-2 border rounded dark:bg-slate-800 dark:border-slate-700 uppercase"
+                                    value={moiFormData.origen}
+                                    onChange={e => setMoiFormData({...moiFormData, origen: e.target.value})}
+                                />
+                            </div>
+                            <div>
+                                <label className="block font-bold text-slate-500 mb-1">RESERVA</label>
+                                <select 
+                                    className="w-full px-3 py-2 border rounded dark:bg-slate-800 dark:border-slate-700 uppercase"
+                                    value={moiFormData.reserva}
+                                    onChange={e => setMoiFormData({...moiFormData, reserva: e.target.value})}
+                                >
+                                    <option>PUBLICO</option>
+                                    <option>RESERVADO</option>
+                                    <option>CONFIDENCIAL</option>
+                                    <option>SECRETO</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="block font-bold text-slate-500 mb-1">PRIORIDAD</label>
+                                <input 
+                                    className="w-full px-3 py-2 border rounded dark:bg-slate-800 dark:border-slate-700 uppercase"
+                                    value={moiFormData.prioridad}
+                                    onChange={e => setMoiFormData({...moiFormData, prioridad: e.target.value})}
+                                />
+                            </div>
+                            <div>
+                                <label className="block font-bold text-slate-500 mb-1">CODIGO TEXTO</label>
+                                <input 
+                                    className="w-full px-3 py-2 border rounded dark:bg-slate-800 dark:border-slate-700 uppercase"
+                                    value={moiFormData.codigoTexto}
+                                    onChange={e => setMoiFormData({...moiFormData, codigoTexto: e.target.value})}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="block font-bold text-slate-500 mb-1">DESTINATARIOS</label>
+                            <input 
+                                className="w-full px-3 py-2 border rounded dark:bg-slate-800 dark:border-slate-700 uppercase"
+                                value={moiFormData.destinatarios}
+                                onChange={e => setMoiFormData({...moiFormData, destinatarios: e.target.value})}
+                            />
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="block font-bold text-slate-500 mb-1">INFORMATIVOS</label>
+                            <input 
+                                className="w-full px-3 py-2 border rounded dark:bg-slate-800 dark:border-slate-700 uppercase"
+                                value={moiFormData.informativos}
+                                onChange={e => setMoiFormData({...moiFormData, informativos: e.target.value})}
+                            />
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="block font-bold text-slate-500 mb-1">TEXTO CLARO</label>
+                            <textarea 
+                                className="w-full px-3 py-2 border rounded dark:bg-slate-800 dark:border-slate-700 h-32 uppercase"
+                                value={moiFormData.texto}
+                                onChange={e => setMoiFormData({...moiFormData, texto: e.target.value})}
+                            ></textarea>
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="block font-bold text-slate-500 mb-1">ADJUNTOS (Nombre/Link)</label>
+                            <input 
+                                className="w-full px-3 py-2 border rounded dark:bg-slate-800 dark:border-slate-700"
+                                value={moiFormData.adjuntos}
+                                onChange={e => setMoiFormData({...moiFormData, adjuntos: e.target.value})}
+                            />
+                        </div>
+
+                        <button type="submit" className="w-full py-3 bg-slate-900 text-white font-black uppercase rounded hover:bg-slate-800">
+                            Guardar Mensaje
+                        </button>
+                    </form>
+                </div>
+            </div>
+      )}
+
+      {/* MODAL VER MOI */}
+      {viewingMoi && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]">
+                <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shrink-0">
+                    <span className="text-xs font-black uppercase tracking-widest">Visualización de Mensaje</span>
+                    <button onClick={() => setViewingMoi(null)}><span className="material-symbols-outlined">close</span></button>
+                </div>
+                <div className="p-8 font-mono text-sm leading-relaxed text-slate-800 dark:text-slate-300 overflow-y-auto">
+                    <div className="grid grid-cols-[120px_1fr] gap-y-2 mb-6">
+                        <span className="font-bold text-slate-500 text-right pr-4">ORIGEN</span>
+                        <span className="font-bold">{viewingMoi.origen}</span>
+
+                        <span className="font-bold text-slate-500 text-right pr-4">GFH</span>
+                        <span>{viewingMoi.gfh}</span>
+
+                        <span className="font-bold text-slate-500 text-right pr-4">RESERVA</span>
+                        <span>{viewingMoi.reserva}</span>
+
+                        <span className="font-bold text-slate-500 text-right pr-4">PRIORIDAD</span>
+                        <span>{viewingMoi.prioridad}</span>
+
+                        <span className="font-bold text-slate-500 text-right pr-4">DESTINATARIOS</span>
+                        <span>{viewingMoi.destinatarios}</span>
+
+                        <span className="font-bold text-slate-500 text-right pr-4">INFORMATIVOS</span>
+                        <span>{viewingMoi.informativos}</span>
+
+                        <span className="font-bold text-slate-500 text-right pr-4">EXCEPTUADOS</span>
+                        <span>{viewingMoi.exceptuados || '-'}</span>
+
+                        <span className="font-bold text-slate-500 text-right pr-4">CODIGO TEXTO</span>
+                        <span>{viewingMoi.codigoTexto}</span>
+                    </div>
+
+                    <div className="border-t border-b border-slate-200 dark:border-slate-700 py-6 my-6 whitespace-pre-wrap">
+                        {viewingMoi.texto}
+                    </div>
+
+                    {viewingMoi.adjuntos && (
+                        <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 mb-6">
+                            <span className="material-symbols-outlined">attach_file</span>
+                            <span className="font-bold">ADJUNTOS:</span>
+                            <span>{viewingMoi.adjuntos}</span>
+                        </div>
+                    )}
+                </div>
+            </div>
         </div>
       )}
     </div>
