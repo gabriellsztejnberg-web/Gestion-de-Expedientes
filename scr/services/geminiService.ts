@@ -104,7 +104,7 @@ export const analyzeExpedienteHistory = async (caseData: any, events: any[]) => 
 };
 
 export const summarizeReportRow = async (numero: string, empresa: string, rawMovements: string) => {
-  const prompt = `Expediente ${numero} (${empresa}). Movimientos: ${rawMovements}. Redacta un resumen narrativo de 1 párrafo formal administrativo.`;
+  const prompt = `Analiza los siguientes movimientos del expediente ${numero} (${empresa}): ${rawMovements}. Genera un resumen ejecutivo cronológico, breve y claro, destacando la última acción y el estado actual. Usa un lenguaje administrativo formal pero directo. Máximo 3 oraciones.`;
   try {
     const text = await generateWithRetry(prompt, undefined, 0.4);
     return text?.trim() || rawMovements;
