@@ -74,6 +74,18 @@ export const Timeline: React.FC = () => {
           <div className="max-w-4xl mx-auto space-y-4">
             {filteredEvents.length > 0 ? filteredEvents.map((item) => {
               const exp = cases.find(c => c.id === item.expedienteId);
+              
+              let headerTitle = "EXP: " + (exp?.numero || 'S/GDE');
+              let headerSubtitle = exp?.empresa || 'Empresa Desconocida';
+
+              if (item.expedienteId === 'MOIS_GENERAL') {
+                  headerTitle = "MOI (MENSAJE OFICIAL)";
+                  headerSubtitle = "COMUNICACIÓN INTERNA / EXTERNA";
+              } else if (item.expedienteId === 'MAILS_GENERAL') {
+                  headerTitle = "MAIL (CORREO)";
+                  headerSubtitle = "COMUNICACIÓN DIGITAL";
+              }
+
               return (
                 <div key={item.id} className={`flex flex-col p-4 rounded-xl border transition-all ${item.isPending ? 'bg-orange-50 border-orange-200 shadow-sm' : 'bg-white dark:bg-[#15202b] border-slate-200 dark:border-slate-800 opacity-70'}`}>
                   <div className="flex justify-between items-start mb-3">
@@ -82,7 +94,7 @@ export const Timeline: React.FC = () => {
                         {item.isPending ? 'TAREA PENDIENTE' : 'COMPLETADA'}
                       </span>
                       <p className="text-slate-900 dark:text-white font-black text-xs uppercase tracking-tight">
-                        EXP: {exp?.numero || 'S/GDE'} <span className="text-slate-400 font-normal mx-1">|</span> {exp?.empresa || 'Empresa Desconocida'}
+                        {headerTitle} <span className="text-slate-400 font-normal mx-1">|</span> {headerSubtitle}
                       </p>
                     </div>
                     <span className="text-slate-400 font-mono text-[9px]">{new Date(item.fecha).toLocaleString()}</span>
