@@ -84,10 +84,19 @@ export interface Auditor {
   dni?: string;
   disposicionHabilitacion: string; // Numero y Año
   zonaTrabajo: string;
+  nivel?: 'I' | 'II' | 'III'; // Nuevo campo Nivel
   cursos: Curso[];
   stats: EstadisticasAuditor;
   ultimaActualizacion: string;
 }
+
+// Cursos Esenciales definidos por normativa
+export const ESSENTIAL_COURSES = [
+  "PBIP",
+  "Mercancias Peligrosas",
+  "Auditor Lider",
+  "Sistemas de Gestion"
+];
 
 // --- NUEVOS TIPOS PARA INSPECCIONES ---
 
@@ -141,3 +150,21 @@ export interface AttendanceLog {
   notes?: string;
   totalHours: string; // HH:MM calculado
 }
+
+export interface MOI {
+  id: string;
+  tipo: 'enviado' | 'recibido';
+  origen: string; // CITS, DEDU, etc.
+  gfh: string; // DDHHMM/MMM/YYYY
+  reserva: string; // PUBLICO, RESERVADO
+  prioridad: string; // RUTINA (R), PRIORIDAD (P)
+  destinatarios: string;
+  informativos: string;
+  exceptuados?: string;
+  codigoTexto: string; // 9999
+  texto: string;
+  adjuntos?: string; // Nombre del archivo o link
+  registradoPor: string;
+  fechaRegistro: string; // ISO para ordenamiento
+}
+
