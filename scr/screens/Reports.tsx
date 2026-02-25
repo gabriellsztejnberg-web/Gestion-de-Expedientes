@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, query, getDocs, orderBy } from 'firebase/firestore';
-import { TimelineEvent, Case, Mail } from '../types';
+import { TimelineEvent, Case, Mail, MOI } from '../types';
 import { summarizeReportRow } from '../services/geminiService'; // Importamos servicio IA
 
 export const Reports: React.FC = () => {
@@ -16,6 +16,7 @@ export const Reports: React.FC = () => {
 
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [mails, setMails] = useState<Mail[]>([]);
+  const [mois, setMois] = useState<MOI[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(false);
   
@@ -51,6 +52,16 @@ export const Reports: React.FC = () => {
       });
       setMails(dayMails);
 
+      // Fetch MOIs
+      const qMois = query(collection(db, 'mois'), orderBy('fechaRegistro', 'asc'));
+      const snapshotMois = await getDocs(qMois);
+      const allMois = snapshotMois.docs.map(d => ({ id: d.id, ...d.data() } as MOI));
+      const dayMois = allMois.filter(m => {
+          const registro = new Date(m.fechaRegistro).toLocaleDateString() === new Date(selectedDate + 'T00:00:00').toLocaleDateString();
+          return registro;
+      });
+      setMois(dayMois);
+
       const qCases = query(collection(db, 'expedientes'));
       const snapshotCases = await getDocs(qCases);
       setCases(snapshotCases.docs.map(d => ({ id: d.id, ...d.data() } as Case)));
@@ -72,8 +83,67 @@ export const Reports: React.FC = () => {
   const gestionEvents = events.filter(e => !['Adquisición', 'Carga'].includes(e.tipoAccion || '') && !(e.tipoAccion || '').toLowerCase().includes('pase'));
 
   const renderCard = (e: TimelineEvent, colorClass: string) => {
-    const exp = cases.find(c => c.id === e.expedienteId);
     const time = new Date(e.fecha).toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
+    
+    // MOI HANDLING
+    if (e.expedienteId === 'MOIS_GENERAL') {
+        const isRecibido = e.texto.includes('RECIBIDO');
+        const moiColorClass = isRecibido ? 'bg-indigo-500' : 'bg-pink-500';
+        const moiTextColor = isRecibido ? 'text-indigo-600' : 'text-pink-600';
+        
+        return (
+          <div key={e.id} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700 mb-3 relative overflow-hidden group hover:shadow-md transition-all">
+            <div className={`absolute top-0 left-0 w-1 h-full ${moiColorClass}`}></div>
+            <div className="flex justify-between items-start mb-2">
+              <span className={`text-[10px] font-black uppercase ${moiTextColor}`}>MOI / RADIO</span>
+              <div className="flex items-center gap-1 text-slate-400">
+                <span className="material-symbols-outlined text-[14px]">schedule</span>
+                <span className="text-[10px] font-mono">{time}</span>
+              </div>
+            </div>
+            <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase mb-1 line-clamp-1">
+                MOI
+            </h4>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-3 line-clamp-3 leading-relaxed font-mono">
+                {e.texto}
+            </p>
+            
+            <div className="flex items-center gap-2 mt-auto">
+              <div className="size-5 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-[8px] font-black text-slate-500 uppercase">
+                 {e.usuario.charAt(0)}
+              </div>
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{e.usuario}</span>
+            </div>
+          </div>
+        );
+    }
+
+    // MAIL HANDLING
+    if (e.expedienteId === 'MAILS_GENERAL') {
+        return (
+          <div key={e.id} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700 mb-3 relative overflow-hidden group hover:shadow-md transition-all">
+            <div className="absolute top-0 left-0 w-1 h-full bg-orange-500"></div>
+            <div className="flex justify-between items-start mb-2">
+              <span className="text-[10px] font-black uppercase text-orange-600">MAIL / CORREO</span>
+              <div className="flex items-center gap-1 text-slate-400">
+                <span className="material-symbols-outlined text-[14px]">schedule</span>
+                <span className="text-[10px] font-mono">{time}</span>
+              </div>
+            </div>
+            <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase mb-1 line-clamp-1">COMUNICACIÓN DIGITAL</h4>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-3 line-clamp-2 leading-relaxed">{e.texto}</p>
+            
+            <div className="flex items-center gap-2 mt-auto">
+              <div className="size-5 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-[8px] font-black text-slate-500 uppercase">
+                 {e.usuario.charAt(0)}
+              </div>
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{e.usuario}</span>
+            </div>
+          </div>
+        );
+    }
+
+    const exp = cases.find(c => c.id === e.expedienteId);
     
     return (
       <div key={e.id} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700 mb-3 relative overflow-hidden group hover:shadow-md transition-all">
@@ -113,7 +183,7 @@ export const Reports: React.FC = () => {
   };
 
   const lineasReporte = expedienteIdsUnicos.map((id: string): ReportLine | null => {
-    if (id === 'MAILS_GENERAL' || id === 'SIN_EXPEDIENTE') return null;
+    if (id === 'MAILS_GENERAL' || id === 'MOIS_GENERAL' || id === 'SIN_EXPEDIENTE') return null;
     const exp = cases.find(c => c.id === id);
     const eventosExp = events.filter(e => e.expedienteId === id);
     // Unimos los textos crudos
@@ -402,6 +472,45 @@ export const Reports: React.FC = () => {
                 </div>
             )}
 
+            {/* TABLA DE MOIS EN IMPRESION */}
+            {mois.length > 0 && (
+                <div className="mt-8 break-inside-avoid page-break-inside-avoid">
+                    <h3 className="text-sm font-black uppercase border-b-2 border-slate-300 mb-2 pb-1">Mensajes Oficiales (MOI)</h3>
+                    <table className="w-full border-collapse border border-slate-300 text-[9px] table-fixed">
+                        <colgroup>
+                            <col className="w-[15%]" />
+                            <col className="w-[15%]" />
+                            <col className="w-[50%]" />
+                            <col className="w-[20%]" />
+                        </colgroup>
+                        <thead className="bg-slate-100 table-header-group">
+                            <tr>
+                                <th className="border border-slate-300 p-1.5 uppercase font-black text-left">GFH</th>
+                                <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Origen</th>
+                                <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Texto / Extracto</th>
+                                <th className="border border-slate-300 p-1.5 uppercase font-black text-left">Tipo / Prioridad</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {mois.map(m => (
+                                <tr key={m.id} className="break-inside-avoid page-break-inside-avoid">
+                                    <td className="border border-slate-300 p-1.5 font-mono text-slate-600">{m.gfh}</td>
+                                    <td className="border border-slate-300 p-1.5 font-black uppercase">{m.origen}</td>
+                                    <td className="border border-slate-300 p-1.5 uppercase">
+                                        <span className="font-bold block mb-1">{m.codigoTexto}</span>
+                                        <span className="text-slate-600 italic">{m.texto}</span>
+                                    </td>
+                                    <td className="border border-slate-300 p-1.5 uppercase text-center">
+                                        <div className="font-bold">{m.tipo === 'recibido' ? 'RECIBIDO' : 'ENVIADO'}</div>
+                                        <div className="text-[7px] text-slate-500">{m.prioridad}</div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
             <div className="flex justify-between mt-12 pt-8 px-8 break-inside-avoid page-break-inside-avoid">
               <div className="text-center w-56 border-t border-slate-400 pt-2">
                 <p className="text-[9px] font-black uppercase">Firma Operador</p>
@@ -417,4 +526,5 @@ export const Reports: React.FC = () => {
     </div>
   );
 };
+
 
