@@ -92,10 +92,10 @@ export interface Auditor {
 
 // Cursos Esenciales definidos por normativa
 export const ESSENTIAL_COURSES = [
-  "PBIP",
-  "Mercancias Peligrosas",
-  "Auditor Lider",
-  "Sistemas de Gestion"
+  "PLANIFICACION PARA CONTINGENCIAS POR DERRAMES - TEORICO",
+  "PLANIFICACION PARA CONTINGENCIAS POR DERRAMES - PRACTICO",
+  "CURSO CONTROL DE DERRAME - NIVEL OPERADOR",
+  "CURSO CONTROL DE DERRAME - NIVEL SUPERVISOR"
 ];
 
 // --- NUEVOS TIPOS PARA INSPECCIONES ---
