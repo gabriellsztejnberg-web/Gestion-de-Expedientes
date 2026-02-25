@@ -167,4 +167,3 @@ export interface MOI {
   registradoPor: string;
   fechaRegistro: string; // ISO para ordenamiento
 }
-
