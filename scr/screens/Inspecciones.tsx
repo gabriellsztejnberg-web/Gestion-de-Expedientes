@@ -696,3 +696,21 @@ export const Inspecciones: React.FC = () => {
                 <div key={idx} className={`relative pl-6 border-l-2 ${e.isPending ? 'border-orange-500' : 'border-slate-200 dark:border-slate-800'}`}>
                   <div className={`absolute -left-[9px] top-0 size-4 rounded-full bg-white dark:bg-slate-900 border-2 ${e.isPending ? 'border-orange-500 animate-pulse' : 'border-primary'}`}></div>
                   <div className="flex justify-between items-start mb-1">
+                    <span className={`text-[10px] font-black uppercase ${e.isPending ? 'text-orange-600' : 'text-primary'}`}>
+                      {e.isPending ? 'PENDIENTE' : (e.tipoAccion || 'HISTORIAL')}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">{new Date(e.fecha).toLocaleString()}</span>
+                  </div>
+                  <p className="text-sm text-slate-700 dark:text-slate-300 mb-1 font-medium">{e.texto}</p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Por: {e.usuario}</p>
+                </div>
+              )) : (
+                <div className="text-center py-10 text-slate-400 italic">No hay movimientos registrados para esta inspección.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
