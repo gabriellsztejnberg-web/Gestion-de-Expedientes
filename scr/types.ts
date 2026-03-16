@@ -13,6 +13,7 @@ export interface Case {
   id: string;
   numero: string; // GDE
   empresa: string;
+  planId?: string; // Vinculación con Base de Datos de Planes
   plan?: string;
   tramite: string;
   ordenanza?: string;
@@ -106,6 +107,7 @@ export interface Inspeccion {
   id: string;
   fecha: string; // YYYY-MM-DD
   expedienteId?: string; // Opcional, vinculación con Case
+  planId?: string; // Vinculación directa con Plan si no hay expediente
   expedienteNumero?: string; // Cache del numero GDE para visualización rápida
   auditorId: string;
   auditorNombre: string;
@@ -113,6 +115,7 @@ export interface Inspeccion {
   jurisdiccion?: string; // Nuevo campo: Jurisdicción Prefectura
   tipo: string; // Ej: Habilitación, Renovación, Denuncia
   resultado: ResultadoInspeccion;
+  convalidacionNumero?: 1 | 2 | 3 | 4; // Para identificar qué año se está convalidando
   observaciones: string;
   
   // Documentación generada
@@ -186,6 +189,3 @@ export interface PlanEmergencia {
     anio4?: string;
   };
   observaciones?: string;
-  ultimaActualizacion: string; // ISO String
-  expedienteOrigenId?: string; // ID del expediente que generó/actualizó este plan
-}
