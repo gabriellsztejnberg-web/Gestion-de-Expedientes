@@ -15,7 +15,7 @@ import {
   getDocs,
   where
 } from 'firebase/firestore';
-import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI } from '../types';
+import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI, PlanEmergencia, AnexoTipo } from '../types';
 import { analyzeExpedienteHistory } from '../services/geminiService'; // Importamos servicio IA
 
 const INSTANCIAS: Instancia[] = [
@@ -316,6 +316,71 @@ export const Expedientes: React.FC = () => {
       navigate('/inspecciones', { state: { prefill: c } });
   };
 
+  const syncExpedienteToPlan = async (c: Case) => {
+    // Solo sincronizamos si tiene empresa y anexo (categoria)
+    if (!c.empresa || !c.categoria) return;
+
+    // Normalizar el anexo
+    let anexoKey: AnexoTipo = 'anexo_18'; // Default
+    const cat = c.categoria.toLowerCase();
+    if (cat.includes('16')) anexoKey = 'anexo_16';
+    else if (cat.includes('17')) anexoKey = 'anexo_17';
+    else if (cat.includes('18')) anexoKey = 'anexo_18';
+    else if (cat.includes('19')) anexoKey = 'anexo_19';
+    else if (cat.includes('20')) anexoKey = 'anexo_20';
+
+    try {
+      // Buscar si ya existe un plan para esta empresa y anexo
+      const q = query(
+        collection(db, 'planes'), 
+        where('empresa', '==', c.empresa),
+        where('anexo', '==', anexoKey)
+      );
+      const snap = await getDocs(q);
+      
+      const planData: Partial<PlanEmergencia> = {
+        empresa: c.empresa,
+        anexo: anexoKey,
+        expedienteOrigenId: c.id,
+        ultimaActualizacion: new Date().toISOString(),
+        // Intentamos extraer la disposición si está en las observaciones o número
+        disposicion: c.numero, 
+      };
+
+      if (snap.empty) {
+        // Crear nuevo plan
+        await addDoc(collection(db, 'planes'), {
+          ...planData,
+          convalidaciones: {},
+          vencimiento: '', // El usuario deberá completarlo o lo extraemos si es posible
+          dependencia: 'S/D'
+        });
+      } else {
+        // Actualizar plan existente
+        const planDoc = snap.docs[0];
+        const existingData = planDoc.data() as PlanEmergencia;
+        
+        // Si el trámite es convalidación, intentamos actualizar el año correspondiente
+        const convalidaciones = { ...(existingData.convalidaciones || {}) };
+        if (c.tramite?.toLowerCase().includes('convalida')) {
+           // Lógica simple: llenar el primer slot vacío
+           if (!convalidaciones.anio1) convalidaciones.anio1 = new Date().toISOString().split('T')[0];
+           else if (!convalidaciones.anio2) convalidaciones.anio2 = new Date().toISOString().split('T')[0];
+           else if (!convalidaciones.anio3) convalidaciones.anio3 = new Date().toISOString().split('T')[0];
+           else if (!convalidaciones.anio4) convalidaciones.anio4 = new Date().toISOString().split('T')[0];
+        }
+
+        await updateDoc(doc(db, 'planes', planDoc.id), {
+          ...planData,
+          convalidaciones,
+          ultimaActualizacion: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error("Error syncing to plans:", error);
+    }
+  };
+
   const handleRegistrarMovimiento = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingExp || !editingExp.id) return;
@@ -393,6 +458,9 @@ export const Expedientes: React.FC = () => {
           nuevoAsignadoNombre = 'Archivo';
           nuevoDestino = "";
           
+          // Sincronizar con Base de Datos de Planes
+          await syncExpedienteToPlan(editingExp as Case);
+
           // Auto-completar tareas pendientes al enviar a guarda
           try {
             const qPend = query(collection(db, 'movimientos'), where('expedienteId', '==', editingExp.id), where('isPending', '==', true));
