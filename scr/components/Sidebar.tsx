@@ -59,6 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage }) => {
 
   if (isJefe) {
     navItems.push({ id: 'users', icon: 'badge', label: 'Personal DPAM', path: '/users' });
+    navItems.push({ id: 'configuracion', icon: 'settings_backup_restore', label: 'Respaldo de Datos', path: '/configuracion' });
   }
 
   const handleLogout = () => {
