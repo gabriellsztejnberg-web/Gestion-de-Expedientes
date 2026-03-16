@@ -300,6 +300,45 @@ export const Inspecciones: React.FC = () => {
           observaciones: nuevaObs
       });
 
+      // --- AUTOMATIZACIÓN: Actualizar Base de Datos de Planes al subsanar ---
+      let targetPlanId = subsanarTarget.planId;
+      if (!targetPlanId && subsanarTarget.expedienteId) {
+        const expSnap = await getDoc(doc(db, 'expedientes', subsanarTarget.expedienteId));
+        if (expSnap.exists()) {
+          targetPlanId = expSnap.data().planId;
+        }
+      }
+
+      if (targetPlanId) {
+        const planRef = doc(db, 'planes', targetPlanId);
+        const planSnap = await getDoc(planRef);
+        if (planSnap.exists()) {
+          const planData = planSnap.data() as PlanEmergencia;
+          const convalidaciones = { ...(planData.convalidaciones || {}) };
+          
+          if (subsanarTarget.tipo === 'CONVALIDACIÓN ANUAL' || subsanarTarget.tipo === 'RENOVACIÓN') {
+            const num = subsanarTarget.convalidacionNumero;
+            const fechaHoy = new Date().toISOString().split('T')[0];
+
+            if (num === 1) convalidaciones.anio1 = fechaHoy;
+            else if (num === 2) convalidaciones.anio2 = fechaHoy;
+            else if (num === 3) convalidaciones.anio3 = fechaHoy;
+            else if (num === 4) convalidaciones.anio4 = fechaHoy;
+            else {
+              if (!convalidaciones.anio1) convalidaciones.anio1 = fechaHoy;
+              else if (!convalidaciones.anio2) convalidaciones.anio2 = fechaHoy;
+              else if (!convalidaciones.anio3) convalidaciones.anio3 = fechaHoy;
+              else if (!convalidaciones.anio4) convalidaciones.anio4 = fechaHoy;
+            }
+            
+            await updateDoc(planRef, {
+              convalidaciones,
+              ultimaActualizacion: new Date().toISOString()
+            });
+          }
+        }
+      }
+
       await addDoc(collection(db, 'movimientos'), {
         usuario: currentUser.name,
         fecha: new Date().toISOString(),
@@ -510,7 +549,10 @@ export const Inspecciones: React.FC = () => {
                         required 
                         className="w-full px-3 py-2 text-sm border-2 border-primary/20 rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-black text-primary" 
                         value={editingInsp.convalidacionNumero || ''} 
-                        onChange={e => setEditingInsp({...editingInsp, convalidacionNumero: parseInt(e.target.value)})}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setEditingInsp({...editingInsp, convalidacionNumero: val ? (parseInt(val) as 1|2|3|4) : undefined});
+                        }}
                       >
                           <option value="">-- SELECCIONAR --</option>
                           <option value="1">1º CONVALIDACIÓN</option>
