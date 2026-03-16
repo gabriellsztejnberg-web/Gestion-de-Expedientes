@@ -170,7 +170,7 @@ export const Inspecciones: React.FC = () => {
       } else {
         const docRef = await addDoc(collection(db, 'inspecciones'), dataToSave);
         docId = docRef.id;
-        accionTexto = "Nueva Inspección (Encuesta) Registrada";
+        accionTexto = "Nueva Inspección Registrada";
         shouldBePending = dataToSave.resultado === 'CON PENDIENTES'; 
         
         if (auditorSeleccionado && auditorSeleccionado.id) {
@@ -206,7 +206,7 @@ export const Inspecciones: React.FC = () => {
       }
 
       alert(shouldBePending 
-          ? "Encuesta registrada. Se generó automáticamente una TAREA PENDIENTE para su análisis." 
+          ? "Inspección registrada. Se generó automáticamente una TAREA PENDIENTE para su análisis." 
           : "Inspección actualizada correctamente."
       );
 
