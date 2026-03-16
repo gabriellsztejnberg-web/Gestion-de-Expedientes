@@ -12,7 +12,8 @@ const COLLECTIONS = [
   'usuarios',
   'auditores',
   'inspecciones',
-  'asistencia'
+  'asistencia',
+  'planes'
 ];
 
 export const Configuracion: React.FC = () => {
