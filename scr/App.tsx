@@ -11,7 +11,7 @@ import { Auditores } from './screens/Auditores';
 import { Inspecciones } from './screens/Inspecciones';
 import { Planes } from './screens/Planes';
 import { Asistencia } from './screens/Asistencia';
-import { Configuracion } from './screens/configuracion';
+import { Configuracion } from './screens/Configuracion';
 
 const App: React.FC = () => {
   return (
