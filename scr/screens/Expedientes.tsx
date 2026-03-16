@@ -12,7 +12,8 @@ import {
   query, 
   deleteDoc,
   orderBy,
-  getDocs
+  getDocs,
+  where
 } from 'firebase/firestore';
 import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI } from '../types';
 import { analyzeExpedienteHistory } from '../services/geminiService'; // Importamos servicio IA
@@ -21,7 +22,7 @@ const INSTANCIAS: Instancia[] = [
   { id: 'analisis', label: 'Análisis', color: 'bg-blue-100 text-blue-800 border-blue-200' },
   { id: 'obs', label: 'Obs (Observado)', color: 'bg-red-100 text-red-800 border-red-200' },
   { id: 'notificacion', label: 'Notificación', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-  { id: 'p_insp', label: 'P. Inspección', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+  { id: 'p_insp', label: 'Encuesta', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
   { id: 'p_dispo', label: 'P. Disposición', color: 'bg-purple-100 text-purple-800 border-purple-200' },
   { id: 'pase', label: 'Pase Externo', color: 'bg-orange-100 text-orange-800 border-orange-200' },
   { id: 'guarda', label: 'Guarda', color: 'bg-gray-200 text-gray-600 border-gray-300' }
@@ -338,7 +339,8 @@ export const Expedientes: React.FC = () => {
     } else {
       switch(movData.tipo) {
         case 'PlanillaOK':
-          nuevoEstado = 'analisis'; 
+          // REQUERIMIENTO: Planilla OK = Pasa a Disposición
+          nuevoEstado = 'p_dispo'; 
           textoNovedad = `Se cargó PLANILLA SATISFACTORIA. ${movData.detalle}. ${ts}.`;
           esTareaAutomatica = false;
           break;
@@ -390,6 +392,17 @@ export const Expedientes: React.FC = () => {
           nuevoAsignado = 'buzon';
           nuevoAsignadoNombre = 'Archivo';
           nuevoDestino = "";
+          
+          // Auto-completar tareas pendientes al enviar a guarda
+          try {
+            const qPend = query(collection(db, 'movimientos'), where('expedienteId', '==', editingExp.id), where('isPending', '==', true));
+            const snapPend = await getDocs(qPend);
+            for (const d of snapPend.docs) {
+              await updateDoc(doc(db, 'movimientos', d.id), { isPending: false });
+            }
+          } catch (err) {
+            console.error("Error al cerrar tareas pendientes:", err);
+          }
           break;
 
         case 'Retorno':
