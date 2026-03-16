@@ -347,40 +347,46 @@ export const Expedientes: React.FC = () => {
     else if (cat.includes('20')) anexoKey = 'anexo_20';
 
     try {
-      // Buscar si ya existe un plan para esta empresa y anexo
-      const q = query(
-        collection(db, 'planes'), 
-        where('empresa', '==', c.empresa),
-        where('anexo', '==', anexoKey)
-      );
-      const snap = await getDocs(q);
+      let planDoc = null;
+      
+      if (c.planId) {
+        const docSnap = await getDoc(doc(db, 'planes', c.planId));
+        if (docSnap.exists()) planDoc = docSnap;
+      }
+
+      if (!planDoc) {
+        // Buscar si ya existe un plan para esta empresa y anexo
+        const q = query(
+          collection(db, 'planes'), 
+          where('empresa', '==', c.empresa),
+          where('anexo', '==', anexoKey)
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) planDoc = snap.docs[0];
+      }
       
       const planData: Partial<PlanEmergencia> = {
         empresa: c.empresa,
         anexo: anexoKey,
         expedienteOrigenId: c.id,
         ultimaActualizacion: new Date().toISOString(),
-        // Intentamos extraer la disposición si está en las observaciones o número
         disposicion: c.numero, 
       };
 
-      if (snap.empty) {
+      if (!planDoc) {
         // Crear nuevo plan
         await addDoc(collection(db, 'planes'), {
           ...planData,
           convalidaciones: {},
-          vencimiento: '', // El usuario deberá completarlo o lo extraemos si es posible
+          vencimiento: '', 
           dependencia: 'S/D'
         });
       } else {
         // Actualizar plan existente
-        const planDoc = snap.docs[0];
         const existingData = planDoc.data() as PlanEmergencia;
         
-        // Si el trámite es convalidación, intentamos actualizar el año correspondiente
         const convalidaciones = { ...(existingData.convalidaciones || {}) };
         if (c.tramite?.toLowerCase().includes('convalida')) {
-           // Lógica simple: llenar el primer slot vacío
            if (!convalidaciones.anio1) convalidaciones.anio1 = new Date().toISOString().split('T')[0];
            else if (!convalidaciones.anio2) convalidaciones.anio2 = new Date().toISOString().split('T')[0];
            else if (!convalidaciones.anio3) convalidaciones.anio3 = new Date().toISOString().split('T')[0];
@@ -588,6 +594,7 @@ export const Expedientes: React.FC = () => {
     const caseData: any = {
       numero: numeroGDE,
       empresa: (editingExp?.empresa || '').trim(),
+      planId: editingExp?.planId || '',
       plan: editingExp?.plan || '',
       tramite: editingExp?.tramite || 'Iniciación',
       ordenanza: editingExp?.ordenanza || '',
