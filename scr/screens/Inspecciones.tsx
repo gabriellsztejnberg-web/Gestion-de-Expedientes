@@ -503,6 +503,24 @@ export const Inspecciones: React.FC = () => {
                     </select>
                   </div>
 
+                  {(editingInsp.tipo === 'CONVALIDACIÓN ANUAL' || editingInsp.tipo === 'RENOVACIÓN') && (
+                    <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                      <label className="block text-[10px] font-black uppercase text-primary mb-1">Nº de Convalidación</label>
+                      <select 
+                        required 
+                        className="w-full px-3 py-2 text-sm border-2 border-primary/20 rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-black text-primary" 
+                        value={editingInsp.convalidacionNumero || ''} 
+                        onChange={e => setEditingInsp({...editingInsp, convalidacionNumero: parseInt(e.target.value)})}
+                      >
+                          <option value="">-- SELECCIONAR --</option>
+                          <option value="1">1º CONVALIDACIÓN</option>
+                          <option value="2">2º CONVALIDACIÓN</option>
+                          <option value="3">3º CONVALIDACIÓN</option>
+                          <option value="4">4º CONVALIDACIÓN</option>
+                      </select>
+                    </div>
+                  )}
+
                   {/* Fila 2: Vinculación */}
                   <div className="col-span-2 md:col-span-1">
                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Vincular con Plan (Empresa)</label>
@@ -678,21 +696,3 @@ export const Inspecciones: React.FC = () => {
                 <div key={idx} className={`relative pl-6 border-l-2 ${e.isPending ? 'border-orange-500' : 'border-slate-200 dark:border-slate-800'}`}>
                   <div className={`absolute -left-[9px] top-0 size-4 rounded-full bg-white dark:bg-slate-900 border-2 ${e.isPending ? 'border-orange-500 animate-pulse' : 'border-primary'}`}></div>
                   <div className="flex justify-between items-start mb-1">
-                    <span className={`text-[10px] font-black uppercase ${e.isPending ? 'text-orange-600' : 'text-primary'}`}>
-                      {e.isPending ? 'PENDIENTE' : (e.tipoAccion || 'HISTORIAL')}
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-400">{new Date(e.fecha).toLocaleString()}</span>
-                  </div>
-                  <p className="text-sm text-slate-700 dark:text-slate-300 mb-1 font-medium">{e.texto}</p>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Por: {e.usuario}</p>
-                </div>
-              )) : (
-                <div className="text-center py-10 text-slate-400 italic">No hay movimientos registrados para esta inspección.</div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
