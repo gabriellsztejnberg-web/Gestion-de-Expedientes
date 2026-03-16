@@ -13,7 +13,8 @@ import {
   deleteDoc,
   orderBy,
   getDocs,
-  where
+  where,
+  getDoc
 } from 'firebase/firestore';
 import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI, PlanEmergencia, AnexoTipo } from '../types';
 import { analyzeExpedienteHistory } from '../services/geminiService'; // Importamos servicio IA
@@ -35,6 +36,7 @@ export const Expedientes: React.FC = () => {
   const [cases, setCases] = useState<Case[]>([]);
   const [mails, setMails] = useState<Mail[]>([]);
   const [mois, setMois] = useState<MOI[]>([]);
+  const [planes, setPlanes] = useState<PlanEmergencia[]>([]);
   const [users, setUsers] = useState<User[]>([]); 
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [activeTab, setActiveTab] = useState<TabId>('grupal');
@@ -65,7 +67,14 @@ export const Expedientes: React.FC = () => {
 
   const [editingExp, setEditingExp] = useState<Partial<Case> | null>(null);
   // Default tipo changed to be empty so user chooses explicitly
-  const [movData, setMovData] = useState({ tipo: '', detalle: '', destino: '', isTask: false });
+  const [movData, setMovData] = useState({ 
+    tipo: '', 
+    detalle: '', 
+    destino: '', 
+    nroDisposicion: '', 
+    vencimiento: '', 
+    isTask: false 
+  });
 
   // IA Loading State
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
@@ -126,6 +135,14 @@ export const Expedientes: React.FC = () => {
         setEvents(docs);
       }
     );
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'planes'), orderBy('empresa', 'asc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setPlanes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlanEmergencia)));
+    });
     return () => unsubscribe();
   }, []);
 
@@ -487,19 +504,52 @@ export const Expedientes: React.FC = () => {
 
       const caseRef = doc(db, 'expedientes', editingExp.id);
       
-      await updateDoc(caseRef, {
+      const updates: any = {
         instancia: nuevoEstado,
         asignadoA: nuevoAsignado,
         asignadoANombre: nuevoAsignadoNombre,
         destinoExterno: nuevoDestino,
         ultimaModificacion: new Date().toISOString() 
-      });
+      };
+
+      // --- AUTOMATIZACIÓN: Emisión de Disposición ---
+      if ((movData.tipo === 'Conclusiones' || movData.tipo === 'Guarda') && movData.nroDisposicion && movData.vencimiento) {
+        if (editingExp.planId) {
+          const planRef = doc(db, 'planes', editingExp.planId);
+          const planSnap = await getDoc(planRef);
+          
+          if (planSnap.exists()) {
+            const approvalDate = new Date(); // Fecha de hoy como fecha de emisión
+            
+            // Calcular fechas tentativas para convalidaciones (1 año después de hoy, 2 años, etc.)
+            const calcTentative = (years: number) => {
+              const d = new Date(approvalDate);
+              d.setFullYear(d.getFullYear() + years);
+              return d.toISOString().split('T')[0];
+            };
+
+            await updateDoc(planRef, {
+              disposicion: movData.nroDisposicion,
+              vencimiento: movData.vencimiento,
+              convalidaciones: {
+                anio1: `TENTATIVA: ${calcTentative(1)}`,
+                anio2: `TENTATIVA: ${calcTentative(2)}`,
+                anio3: `TENTATIVA: ${calcTentative(3)}`,
+                anio4: `TENTATIVA: ${calcTentative(4)}`,
+              },
+              ultimaActualizacion: new Date().toISOString()
+            });
+          }
+        }
+      }
+
+      await updateDoc(caseRef, updates);
 
       await addHistoryEntry(editingExp.id, textoNovedad, movData.tipo, esTareaAutomatica);
     }
     
     setIsMovimientoModalOpen(false);
-    setMovData({ tipo: '', detalle: '', destino: '', isTask: false });
+    setMovData({ tipo: '', detalle: '', destino: '', nroDisposicion: '', vencimiento: '', isTask: false });
   };
 
   const handleSaveExp = async (e: React.FormEvent) => {
@@ -902,7 +952,47 @@ export const Expedientes: React.FC = () => {
               </div>
               <div className="col-span-2 md:col-span-1">
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa / Titular</label>
-                <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary uppercase" value={editingExp?.empresa || ''} onChange={e => setEditingExp({...editingExp, empresa: e.target.value})} />
+                <div className="relative">
+                  <input 
+                    required 
+                    className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary uppercase font-bold" 
+                    value={editingExp?.empresa || ''} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      setEditingExp({...editingExp, empresa: val, planId: ''}); // Reset planId if typing manually
+                    }}
+                    placeholder="BUSCAR O ESCRIBIR NUEVA..."
+                    list="planes-list"
+                  />
+                  <datalist id="planes-list">
+                    {planes.map(p => (
+                      <option key={p.id} value={p.empresa}>{p.anexo.replace('_', ' ').toUpperCase()}</option>
+                    ))}
+                  </datalist>
+                  <div className="absolute right-2 top-2 flex gap-1">
+                    {planes.find(p => p.empresa.toUpperCase() === (editingExp?.empresa || '').toUpperCase()) ? (
+                      <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded font-black uppercase">Existente</span>
+                    ) : (
+                      <span className="text-[9px] bg-blue-100 text-blue-700 px-1 rounded font-black uppercase">Nueva</span>
+                    )}
+                  </div>
+                </div>
+                {/* Botón para vincular si se encontró coincidencia exacta */}
+                {(() => {
+                  const found = planes.find(p => p.empresa.toUpperCase() === (editingExp?.empresa || '').toUpperCase());
+                  if (found && editingExp?.planId !== found.id) {
+                    return (
+                      <button 
+                        type="button"
+                        onClick={() => setEditingExp({...editingExp, planId: found.id})}
+                        className="mt-1 text-[9px] text-primary font-bold uppercase hover:underline"
+                      >
+                        Vincular con Plan ID: {found.id.slice(0,5)}...
+                      </button>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Trámite</label>
@@ -1050,6 +1140,58 @@ export const Expedientes: React.FC = () => {
                   <input required placeholder="Ej: Legales, Catastro, etc." className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={movData.destino} onChange={e => setMovData({...movData, destino: e.target.value})} />
                 </div>
               )}
+              {(movData.tipo === 'Conclusiones' || movData.tipo === 'Guarda') && (
+                <div className="grid grid-cols-2 gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-900/50">
+                  <div className="col-span-2">
+                    <p className="text-[9px] font-black uppercase text-blue-700 dark:text-blue-300 mb-2">Datos de la Nueva Disposición</p>
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Nº Disposición</label>
+                    <input 
+                      placeholder="Ej: 123/24" 
+                      className="w-full px-2 py-1 text-xs border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-mono" 
+                      value={movData.nroDisposicion} 
+                      onChange={e => setMovData({...movData, nroDisposicion: e.target.value})} 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Vencimiento</label>
+                    <input 
+                      type="date" 
+                      className="w-full px-2 py-1 text-xs border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" 
+                      value={movData.vencimiento} 
+                      onChange={e => setMovData({...movData, vencimiento: e.target.value})} 
+                    />
+                  </div>
+                </div>
+              )}
+
+              {(movData.tipo === 'Conclusiones' || movData.tipo === 'Guarda') && (
+                <div className="grid grid-cols-2 gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-900/50">
+                  <div className="col-span-2">
+                    <p className="text-[9px] font-black uppercase text-blue-700 dark:text-blue-300 mb-2">Datos de la Nueva Disposición</p>
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Nº Disposición</label>
+                    <input 
+                      placeholder="Ej: 123/24" 
+                      className="w-full px-2 py-1 text-xs border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-mono" 
+                      value={movData.nroDisposicion} 
+                      onChange={e => setMovData({...movData, nroDisposicion: e.target.value})} 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Vencimiento</label>
+                    <input 
+                      type="date" 
+                      className="w-full px-2 py-1 text-xs border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" 
+                      value={movData.vencimiento} 
+                      onChange={e => setMovData({...movData, vencimiento: e.target.value})} 
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Detalle / Nota</label>
                 <textarea required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-24" value={movData.detalle} onChange={e => setMovData({...movData, detalle: e.target.value})} placeholder={movData.tipo === 'Tarea' ? "Qué queda pendiente por hacer?" : "Breve explicación..."}></textarea>
