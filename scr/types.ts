@@ -167,3 +167,25 @@ export interface MOI {
   registradoPor: string;
   fechaRegistro: string; // ISO para ordenamiento
 }
+
+// --- NUEVOS TIPOS PARA PLANES DE EMERGENCIA ---
+
+export type AnexoTipo = 'anexo_16' | 'anexo_17' | 'anexo_18' | 'anexo_19' | 'anexo_20';
+
+export interface PlanEmergencia {
+  id: string;
+  empresa: string;
+  anexo: AnexoTipo;
+  dependencia: string; // Jurisdicción
+  disposicion: string; // Número de disposición de aprobación
+  vencimiento: string; // Fecha de vencimiento (YYYY-MM-DD)
+  convalidaciones: {
+    anio1?: string;
+    anio2?: string;
+    anio3?: string;
+    anio4?: string;
+  };
+  observaciones?: string;
+  ultimaActualizacion: string; // ISO String
+  expedienteOrigenId?: string; // ID del expediente que generó/actualizó este plan
+}
