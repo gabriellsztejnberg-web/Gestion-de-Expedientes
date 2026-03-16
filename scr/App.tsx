@@ -11,6 +11,7 @@ import { Auditores } from './screens/Auditores';
 import { Inspecciones } from './screens/Inspecciones';
 import { Planes } from './screens/Planes';
 import { Asistencia } from './screens/Asistencia';
+import { Configuracion } from './screens/Configuracion';
 
 const App: React.FC = () => {
   return (
@@ -26,6 +27,7 @@ const App: React.FC = () => {
         <Route path="/reportes" element={<Reports />} />
         <Route path="/timeline" element={<Timeline />} />
         <Route path="/users" element={<Users />} />
+        <Route path="/configuracion" element={<Configuracion />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>
