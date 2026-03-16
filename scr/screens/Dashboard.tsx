@@ -87,8 +87,39 @@ export const Dashboard: React.FC = () => {
   ];
 
   // --- CÁLCULOS SECCIÓN 2: Métricas Específicas ---
-  // Histórico de planillas: Contamos movimientos que digan "Se cargó planilla"
-  const planillasEmitidas = events.filter(e => e.texto && e.texto.includes('Se cargó planilla')).length;
+  // Histórico de planillas: Contamos movimientos que mencionen carga de planilla o planilla de análisis
+  const planillaEvents = events.filter(e => 
+    e.texto && (
+      e.texto.toUpperCase().includes('PLANILLA')
+    )
+  );
+
+  const planillasEmitidas = planillaEvents.length;
+
+  // Estadísticas por Mes y Ordenanza
+  const planillasPorMes: Record<string, number> = {};
+  const planillasPorOrdenanza: Record<string, number> = {};
+
+  planillaEvents.forEach(e => {
+    // Por Mes
+    const date = new Date(e.fecha);
+    const monthKey = date.toLocaleString('es-AR', { month: 'long', year: 'numeric' });
+    planillasPorMes[monthKey] = (planillasPorMes[monthKey] || 0) + 1;
+
+    // Por Ordenanza
+    const relatedCase = cases.find(c => c.id === e.expedienteId);
+    const ordKey = relatedCase?.ordenanza || 'SIN ORDENANZA';
+    planillasPorOrdenanza[ordKey] = (planillasPorOrdenanza[ordKey] || 0) + 1;
+  });
+
+  // Convertir a arrays para renderizar
+  const monthlyStats = Object.entries(planillasPorMes)
+    .map(([month, count]) => ({ month, count }))
+    .reverse(); // Mostrar más recientes primero (o según orden cronológico si se prefiere)
+
+  const ordenanzaStats = Object.entries(planillasPorOrdenanza)
+    .map(([ord, count]) => ({ ord, count }))
+    .sort((a, b) => b.count - a.count);
   
   // Stock actual de Guarda
   const enGuarda = cases.filter(c => c.instancia === 'guarda').length;
@@ -156,40 +187,89 @@ export const Dashboard: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
              
              {/* COLUMNA 1: ESTADISTICAS DE FLUJO */}
-             <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 h-max">
-                {/* Planillas Emitidas */}
-                <div className="bg-indigo-600 rounded-xl p-6 text-white shadow-lg relative overflow-hidden group">
-                   <div className="absolute right-[-20px] top-[-20px] opacity-20 transform rotate-12 group-hover:rotate-0 transition-all duration-500">
-                      <span className="material-symbols-outlined text-[120px]">description</span>
-                   </div>
-                   <h3 className="text-4xl font-black mb-1 relative z-10">{planillasEmitidas}</h3>
-                   <p className="text-xs font-bold uppercase tracking-widest opacity-80 relative z-10">Planillas Emitidas</p>
-                   <p className="text-[10px] opacity-60 mt-2 relative z-10">Total Histórico</p>
+             <div className="lg:col-span-2 space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-max">
+                    {/* Planillas Emitidas */}
+                    <div className="bg-indigo-600 rounded-xl p-6 text-white shadow-lg relative overflow-hidden group">
+                      <div className="absolute right-[-20px] top-[-20px] opacity-20 transform rotate-12 group-hover:rotate-0 transition-all duration-500">
+                          <span className="material-symbols-outlined text-[120px]">description</span>
+                      </div>
+                      <h3 className="text-4xl font-black mb-1 relative z-10">{planillasEmitidas}</h3>
+                      <p className="text-xs font-bold uppercase tracking-widest opacity-80 relative z-10">Planillas Emitidas</p>
+                      <p className="text-[10px] opacity-60 mt-2 relative z-10">Total Histórico</p>
+                    </div>
+
+                    {/* En Guarda */}
+                    <div className="bg-slate-800 rounded-xl p-6 text-white shadow-lg relative overflow-hidden group">
+                      <div className="absolute right-[-20px] top-[-20px] opacity-20 transform rotate-12 group-hover:rotate-0 transition-all duration-500">
+                          <span className="material-symbols-outlined text-[120px]">archive</span>
+                      </div>
+                      <h3 className="text-4xl font-black mb-1 relative z-10">{enGuarda}</h3>
+                      <p className="text-xs font-bold uppercase tracking-widest opacity-80 relative z-10">En Guarda Temp.</p>
+                      <p className="text-[10px] opacity-60 mt-2 relative z-10">Stock Actual en Archivo</p>
+                    </div>
+
+                    {/* Otras Oficinas */}
+                    <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-6 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
+                      <div className="absolute right-[-20px] top-[-20px] opacity-5 transform rotate-12 group-hover:rotate-0 transition-all duration-500">
+                          <span className="material-symbols-outlined text-[120px]">domain</span>
+                      </div>
+                      <h3 className="text-4xl font-black mb-1 relative z-10">{enPase}</h3>
+                      <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 relative z-10">En Otras Oficinas</p>
+                      <p className="text-[10px] text-slate-400 mt-2 relative z-10">Pases Externos Activos</p>
+                    </div>
                 </div>
 
-                {/* En Guarda */}
-                <div className="bg-slate-800 rounded-xl p-6 text-white shadow-lg relative overflow-hidden group">
-                   <div className="absolute right-[-20px] top-[-20px] opacity-20 transform rotate-12 group-hover:rotate-0 transition-all duration-500">
-                      <span className="material-symbols-outlined text-[120px]">archive</span>
-                   </div>
-                   <h3 className="text-4xl font-black mb-1 relative z-10">{enGuarda}</h3>
-                   <p className="text-xs font-bold uppercase tracking-widest opacity-80 relative z-10">En Guarda Temp.</p>
-                   <p className="text-[10px] opacity-60 mt-2 relative z-10">Stock Actual en Archivo</p>
-                </div>
+                {/* NUEVAS ESTADISTICAS: MES Y ORDENANZA */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Por Mes */}
+                    <div className="bg-white dark:bg-[#15202b] p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="material-symbols-outlined text-indigo-500">calendar_month</span>
+                            <h3 className="text-xs font-black uppercase text-slate-900 dark:text-white">Planillas por Mes</h3>
+                        </div>
+                        <div className="space-y-3">
+                            {monthlyStats.length > 0 ? monthlyStats.map((s, i) => (
+                                <div key={i} className="flex justify-between items-center border-b border-slate-50 dark:border-slate-800 pb-2 last:border-0">
+                                    <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">{s.month}</span>
+                                    <span className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded text-[10px] font-black">{s.count}</span>
+                                </div>
+                            )) : (
+                                <p className="text-center py-4 text-slate-400 italic text-[10px]">Sin datos mensuales</p>
+                            )}
+                        </div>
+                    </div>
 
-                 {/* Otras Oficinas */}
-                 <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-6 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
-                   <div className="absolute right-[-20px] top-[-20px] opacity-5 transform rotate-12 group-hover:rotate-0 transition-all duration-500">
-                      <span className="material-symbols-outlined text-[120px]">domain</span>
-                   </div>
-                   <h3 className="text-4xl font-black mb-1 relative z-10">{enPase}</h3>
-                   <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 relative z-10">En Otras Oficinas</p>
-                   <p className="text-[10px] text-slate-400 mt-2 relative z-10">Pases Externos Activos</p>
+                    {/* Por Ordenanza */}
+                    <div className="bg-white dark:bg-[#15202b] p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="material-symbols-outlined text-emerald-500">gavel</span>
+                            <h3 className="text-xs font-black uppercase text-slate-900 dark:text-white">Planillas por Ordenanza</h3>
+                        </div>
+                        <div className="space-y-3">
+                            {ordenanzaStats.length > 0 ? ordenanzaStats.map((s, i) => (
+                                <div key={i} className="group">
+                                    <div className="flex justify-between text-[10px] font-bold uppercase mb-1">
+                                        <span className="text-slate-600 dark:text-slate-400">{s.ord}</span>
+                                        <span className="text-emerald-500">{s.count}</span>
+                                    </div>
+                                    <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                        <div 
+                                            className="bg-emerald-500 h-1.5 rounded-full" 
+                                            style={{ width: `${(s.count / planillasEmitidas) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            )) : (
+                                <p className="text-center py-4 text-slate-400 italic text-[10px]">Sin datos por ordenanza</p>
+                            )}
+                        </div>
+                    </div>
                 </div>
              </div>
 
              {/* COLUMNA 2: CARGA POR USUARIO */}
-             <div className="bg-white dark:bg-[#15202b] p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm lg:row-span-2">
+             <div className="bg-white dark:bg-[#15202b] p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm h-full lg:row-span-2">
                 <div className="flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
                    <span className="material-symbols-outlined text-primary">person</span>
                    <div>
