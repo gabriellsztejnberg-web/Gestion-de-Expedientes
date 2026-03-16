@@ -1166,32 +1166,6 @@ export const Expedientes: React.FC = () => {
                 </div>
               )}
 
-              {(movData.tipo === 'Conclusiones' || movData.tipo === 'Guarda') && (
-                <div className="grid grid-cols-2 gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-900/50">
-                  <div className="col-span-2">
-                    <p className="text-[9px] font-black uppercase text-blue-700 dark:text-blue-300 mb-2">Datos de la Nueva Disposición</p>
-                  </div>
-                  <div>
-                    <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Nº Disposición</label>
-                    <input 
-                      placeholder="Ej: 123/24" 
-                      className="w-full px-2 py-1 text-xs border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-mono" 
-                      value={movData.nroDisposicion} 
-                      onChange={e => setMovData({...movData, nroDisposicion: e.target.value})} 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Vencimiento</label>
-                    <input 
-                      type="date" 
-                      className="w-full px-2 py-1 text-xs border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" 
-                      value={movData.vencimiento} 
-                      onChange={e => setMovData({...movData, vencimiento: e.target.value})} 
-                    />
-                  </div>
-                </div>
-              )}
-
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Detalle / Nota</label>
                 <textarea required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-24" value={movData.detalle} onChange={e => setMovData({...movData, detalle: e.target.value})} placeholder={movData.tipo === 'Tarea' ? "Qué queda pendiente por hacer?" : "Breve explicación..."}></textarea>
