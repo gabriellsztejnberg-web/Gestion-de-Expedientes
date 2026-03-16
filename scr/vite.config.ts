@@ -18,8 +18,8 @@ export default defineConfig(({ mode }) => {
       },
       resolve: {
         alias: {
-          '@': path.resolve(__dirname, './src'),
-          'src': path.resolve(__dirname, './src'),
+          '@': path.resolve(process.cwd(), './src'),
+          'src': path.resolve(process.cwd(), './src'),
         }
       }
     };
