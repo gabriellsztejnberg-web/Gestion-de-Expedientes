@@ -4,13 +4,14 @@ import { useLocation } from 'react-router';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, getDoc, getDocs, where } from 'firebase/firestore';
-import { Inspeccion, Case, Auditor, User, ResultadoInspeccion, TimelineEvent } from '../types';
+import { Inspeccion, Case, Auditor, User, ResultadoInspeccion, TimelineEvent, PlanEmergencia } from '../types';
 import { draftTechnicalReport } from '../services/geminiService'; // Importamos el servicio IA
 
 export const Inspecciones: React.FC = () => {
   const location = useLocation();
   const [inspecciones, setInspecciones] = useState<Inspeccion[]>([]);
   const [auditores, setAuditores] = useState<Auditor[]>([]);
+  const [planes, setPlanes] = useState<PlanEmergencia[]>([]);
   const [movimientos, setMovimientos] = useState<TimelineEvent[]>([]); 
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -90,6 +91,11 @@ export const Inspecciones: React.FC = () => {
       setAuditores(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Auditor)));
     });
 
+    const qPlanes = query(collection(db, 'planes'), orderBy('empresa', 'asc'));
+    const unsubscribePlanes = onSnapshot(qPlanes, (snapshot) => {
+      setPlanes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlanEmergencia)));
+    });
+
     const qMovs = query(collection(db, 'movimientos'), orderBy('fecha', 'desc'));
     const unsubscribeMovs = onSnapshot(qMovs, (snapshot) => {
       setMovimientos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TimelineEvent)));
@@ -98,6 +104,7 @@ export const Inspecciones: React.FC = () => {
     return () => {
       unsubscribeInsp();
       unsubscribeAud();
+      unsubscribePlanes();
       unsubscribeMovs();
     };
   }, []);
@@ -144,6 +151,7 @@ export const Inspecciones: React.FC = () => {
     const dataToSave = {
       fecha: editingInsp.fecha || new Date().toISOString().split('T')[0],
       expedienteId: finalExpedienteId, 
+      planId: editingInsp.planId || '',
       expedienteNumero: finalNumero,
       auditorId: editingInsp.auditorId || '',
       auditorNombre: auditorSeleccionado ? auditorSeleccionado.nombre : 'DESCONOCIDO',
@@ -151,6 +159,7 @@ export const Inspecciones: React.FC = () => {
       jurisdiccion: (editingInsp.jurisdiccion || '').toUpperCase(),
       tipo: editingInsp.tipo || 'INICIAL',
       resultado: editingInsp.resultado || 'CON PENDIENTES',
+      convalidacionNumero: editingInsp.convalidacionNumero || null,
       observaciones: editingInsp.observaciones || '',
       nroInforme: editingInsp.nroInforme || '',
       nroCertificado: editingInsp.nroCertificado || '',
@@ -203,6 +212,45 @@ export const Inspecciones: React.FC = () => {
              tipoAccion: 'Inspección',
              isPending: shouldBePending
           });
+      }
+
+      // --- AUTOMATIZACIÓN: Actualizar Base de Datos de Planes ---
+      let targetPlanId = dataToSave.planId;
+      if (!targetPlanId && finalExpedienteId) {
+        // Intentar obtener planId del expediente
+        const expSnap = await getDoc(doc(db, 'expedientes', finalExpedienteId));
+        if (expSnap.exists()) {
+          targetPlanId = expSnap.data().planId;
+        }
+      }
+
+      if (targetPlanId && dataToSave.resultado === 'APROBADO') {
+        const planRef = doc(db, 'planes', targetPlanId);
+        const planSnap = await getDoc(planRef);
+        if (planSnap.exists()) {
+          const planData = planSnap.data() as PlanEmergencia;
+          const convalidaciones = { ...(planData.convalidaciones || {}) };
+          
+          if (dataToSave.tipo === 'CONVALIDACIÓN ANUAL' || dataToSave.tipo === 'RENOVACIÓN') {
+            const num = dataToSave.convalidacionNumero;
+            if (num === 1) convalidaciones.anio1 = dataToSave.fecha;
+            else if (num === 2) convalidaciones.anio2 = dataToSave.fecha;
+            else if (num === 3) convalidaciones.anio3 = dataToSave.fecha;
+            else if (num === 4) convalidaciones.anio4 = dataToSave.fecha;
+            else {
+              // Lógica fallback: llenar el primer slot vacío
+              if (!convalidaciones.anio1) convalidaciones.anio1 = dataToSave.fecha;
+              else if (!convalidaciones.anio2) convalidaciones.anio2 = dataToSave.fecha;
+              else if (!convalidaciones.anio3) convalidaciones.anio3 = dataToSave.fecha;
+              else if (!convalidaciones.anio4) convalidaciones.anio4 = dataToSave.fecha;
+            }
+            
+            await updateDoc(planRef, {
+              convalidaciones,
+              ultimaActualizacion: new Date().toISOString()
+            });
+          }
+        }
       }
 
       alert(shouldBePending 
@@ -456,6 +504,26 @@ export const Inspecciones: React.FC = () => {
                   </div>
 
                   {/* Fila 2: Vinculación */}
+                  <div className="col-span-2 md:col-span-1">
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Vincular con Plan (Empresa)</label>
+                     <select 
+                        className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold"
+                        value={editingInsp.planId || ''}
+                        onChange={e => {
+                          const selectedPlan = planes.find(p => p.id === e.target.value);
+                          setEditingInsp({
+                            ...editingInsp, 
+                            planId: e.target.value,
+                            ubicacion: selectedPlan ? selectedPlan.empresa : (editingInsp.ubicacion || '')
+                          });
+                        }}
+                     >
+                        <option value="">-- SELECCIONAR PLAN --</option>
+                        {planes.map(p => (
+                          <option key={p.id} value={p.id}>{p.empresa}</option>
+                        ))}
+                     </select>
+                  </div>
                   <div className="col-span-2 md:col-span-1">
                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nº Expediente (Manual)</label>
                      <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-mono" value={editingInsp.expedienteNumero || ''} onChange={e => setEditingInsp({...editingInsp, expedienteNumero: e.target.value})} placeholder="EX-..." />
