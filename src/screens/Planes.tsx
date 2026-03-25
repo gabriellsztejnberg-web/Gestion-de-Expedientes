@@ -100,6 +100,18 @@ export const Planes: React.FC = () => {
     e.preventDefault();
     if (!editingPlan?.empresa) return alert("La empresa es obligatoria");
 
+    // Prevenir duplicados en guardado manual
+    const isDuplicate = planes.some(p => 
+      p.id !== editingPlan.id && 
+      p.anexo === activeTab && 
+      p.empresa.toUpperCase() === editingPlan.empresa?.toUpperCase() &&
+      p.dependencia?.toUpperCase() === editingPlan.dependencia?.toUpperCase()
+    );
+
+    if (isDuplicate) {
+      return alert("Ya existe un registro para esta empresa y dependencia en este anexo.");
+    }
+
     const planData = {
       ...editingPlan,
       anexo: activeTab,
@@ -134,6 +146,37 @@ export const Planes: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Helper para parsear fechas de CSV (DD/MM/YYYY o Excel serial) a YYYY-MM-DD
+    const parseCSVDate = (dateStr: string): string => {
+      if (!dateStr) return '';
+      const str = dateStr.toString().trim();
+      
+      // Excel serial date (ej. 45000)
+      if (/^\d+$/.test(str)) {
+        const excelEpoch = new Date(1899, 11, 30);
+        const days = parseInt(str, 10);
+        const date = new Date(excelEpoch.getTime() + days * 86400000);
+        if (!isNaN(date.getTime())) {
+          return date.toISOString().split('T')[0];
+        }
+      }
+      
+      // Formato DD/MM/YYYY o DD-MM-YYYY
+      const parts = str.split(/[\/\-]/);
+      if (parts.length === 3) {
+        if (parts[0].length <= 2 && parts[2].length === 4) {
+          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+        if (parts[0].length === 4) {
+          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        }
+      }
+      
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+      return str;
+    };
+
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -150,43 +193,68 @@ export const Planes: React.FC = () => {
 
           setIsLoading(true);
           
-          // Procesar en lotes de 500 (límite de Firestore)
+          // Obtener registros existentes para evitar duplicados (misma empresa + misma dependencia)
+          const existingPlanes = planes.filter(p => p.anexo === activeTab);
+          const existingKeys = new Set(existingPlanes.map(p => `${p.empresa}_${p.dependencia}`.toUpperCase()));
+          
           const chunks = [];
           for (let i = 0; i < data.length; i += 500) {
             chunks.push(data.slice(i, i + 500));
           }
 
+          let recordsAdded = 0;
+          let recordsSkipped = 0;
+
           for (const chunk of chunks) {
             const batch = writeBatch(db);
             chunk.forEach((row) => {
+              let empresaVal = row.EMPRESA || row.Empresa || row.empresa || 
+                               row.TITULAR || row.Titular || row.titular || 
+                               row['RAZON SOCIAL'] || row['Razon Social'] || row['Razón Social'] ||
+                               row.INSTALACION || row.Instalacion || row.NOMBRE || row.Nombre || '';
+                               
+              if (!empresaVal && Object.keys(row).length > 0) {
+                 empresaVal = row[Object.keys(row)[0]];
+              }
+
+              const empresaFinal = (empresaVal || 'SIN NOMBRE').toString().toUpperCase().trim();
+              const dependenciaFinal = (row.JURISDICCION || row.Jurisdiccion || row.jurisdiccion || row.DEPENDENCIA || row.Dependencia || row.dependencia || 'S/D').toString().toUpperCase().trim();
+              
+              const key = `${empresaFinal}_${dependenciaFinal}`;
+              if (existingKeys.has(key)) {
+                recordsSkipped++;
+                return; // Saltar duplicado
+              }
+              existingKeys.add(key);
+
               const newPlanRef = doc(collection(db, 'planes'));
               const plan: Partial<PlanEmergencia> = {
-                empresa: (row.EMPRESA || row.Empresa || row.TITULAR || row.Titular || '').toString().toUpperCase(),
-                dependencia: (row.JURISDICCION || row.Jurisdiccion || row.DEPENDENCIA || row.Dependencia || 'S/D').toString().toUpperCase(),
-                disposicion: (row.DISPOSICION || row.Disposicion || row.NRO_DISPO || '').toString().toUpperCase(),
-                vencimiento: (row.VENCIMIENTO || row.Vencimiento || '').toString(),
-                cuit: (row.CUIT || row.Cuit || '').toString(),
-                domicilio: (row.DOMICILIO || row.Domicilio || '').toString().toUpperCase(),
-                localidad: (row.LOCALIDAD || row.Localidad || '').toString().toUpperCase(),
-                email: (row.EMAIL || row.Email || '').toString(),
-                telefono: (row.TELEFONO || row.Telefono || row.TEL || '').toString(),
+                empresa: empresaFinal,
+                dependencia: dependenciaFinal,
+                disposicion: (row.DISPOSICION || row.Disposicion || row.disposicion || row.NRO_DISPO || '').toString().toUpperCase(),
+                vencimiento: parseCSVDate(row.VENCIMIENTO || row.Vencimiento || row.vencimiento || ''),
+                cuit: (row.CUIT || row.Cuit || row.cuit || '').toString(),
+                domicilio: (row.DOMICILIO || row.Domicilio || row.domicilio || '').toString().toUpperCase(),
+                localidad: (row.LOCALIDAD || row.Localidad || row.localidad || '').toString().toUpperCase(),
+                email: (row.EMAIL || row.Email || row.email || '').toString(),
+                telefono: (row.TELEFONO || row.Telefono || row.telefono || row.TEL || row.Tel || '').toString(),
                 anexo: activeTab,
                 convalidaciones: {
-                  anio1: (row.CONV1 || row.CONV_1 || '').toString(),
-                  anio2: (row.CONV2 || row.CONV_2 || '').toString(),
-                  anio3: (row.CONV3 || row.CONV_3 || '').toString(),
-                  anio4: (row.CONV4 || row.CONV_4 || '').toString(),
+                  anio1: parseCSVDate(row.CONV1 || row.CONV_1 || row.Conv1 || ''),
+                  anio2: parseCSVDate(row.CONV2 || row.CONV_2 || row.Conv2 || ''),
+                  anio3: parseCSVDate(row.CONV3 || row.CONV_3 || row.Conv3 || ''),
+                  anio4: parseCSVDate(row.CONV4 || row.CONV_4 || row.Conv4 || ''),
                 },
                 ultimaActualizacion: new Date().toISOString()
               };
-              if (plan.empresa) {
-                batch.set(newPlanRef, plan);
-              }
+              
+              batch.set(newPlanRef, plan);
+              recordsAdded++;
             });
             await batch.commit();
           }
 
-          alert("Importación completada con éxito");
+          alert(`Importación completada.\nAgregados: ${recordsAdded}\nOmitidos (ya existían): ${recordsSkipped}`);
         } catch (error) {
           console.error("Error al importar CSV:", error);
           alert("Error al procesar el archivo. Verifique el formato.");
@@ -318,10 +386,26 @@ export const Planes: React.FC = () => {
                                           {p.vencimiento || '-'}
                                       </span>
                                   </td>
-                                  <td className="px-2 py-4 text-center font-mono text-slate-500">{p.convalidaciones?.anio1 || '-'}</td>
-                                  <td className="px-2 py-4 text-center font-mono text-slate-500">{p.convalidaciones?.anio2 || '-'}</td>
-                                  <td className="px-2 py-4 text-center font-mono text-slate-500">{p.convalidaciones?.anio3 || '-'}</td>
-                                  <td className="px-2 py-4 text-center font-mono text-slate-500">{p.convalidaciones?.anio4 || '-'}</td>
+                                  <td className="px-2 py-4 text-center">
+                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio1 || '')}`}>
+                                          {p.convalidaciones?.anio1 || '-'}
+                                      </span>
+                                  </td>
+                                  <td className="px-2 py-4 text-center">
+                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio2 || '')}`}>
+                                          {p.convalidaciones?.anio2 || '-'}
+                                      </span>
+                                  </td>
+                                  <td className="px-2 py-4 text-center">
+                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio3 || '')}`}>
+                                          {p.convalidaciones?.anio3 || '-'}
+                                      </span>
+                                  </td>
+                                  <td className="px-2 py-4 text-center">
+                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio4 || '')}`}>
+                                          {p.convalidaciones?.anio4 || '-'}
+                                      </span>
+                                  </td>
                                   <td className="px-4 py-4 text-center">
                                       <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                           <button onClick={() => { setEditingPlan(p); setIsModalOpen(true); }} className="text-slate-400 hover:text-primary p-1"><span className="material-symbols-outlined text-[18px]">edit</span></button>
@@ -443,7 +527,26 @@ export const Planes: React.FC = () => {
                           type="date"
                           className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary" 
                           value={editingPlan?.vencimiento || ''} 
-                          onChange={e => setEditingPlan({...editingPlan!, vencimiento: e.target.value})}
+                          onChange={e => {
+                            const newVencimiento = e.target.value;
+                            const newPlan = { ...editingPlan, vencimiento: newVencimiento };
+                            
+                            // Autocalcular convalidaciones (-4, -3, -2, -1 años)
+                            if (newVencimiento) {
+                              const [y, m, dayStr] = newVencimiento.split('-');
+                              const yNum = parseInt(y, 10);
+                              if (!isNaN(yNum)) {
+                                newPlan.convalidaciones = {
+                                  ...newPlan.convalidaciones,
+                                  anio1: `${yNum - 4}-${m}-${dayStr}`,
+                                  anio2: `${yNum - 3}-${m}-${dayStr}`,
+                                  anio3: `${yNum - 2}-${m}-${dayStr}`,
+                                  anio4: `${yNum - 1}-${m}-${dayStr}`,
+                                };
+                              }
+                            }
+                            setEditingPlan(newPlan);
+                          }}
                         />
                       </div>
 
@@ -563,54 +666,69 @@ export const Planes: React.FC = () => {
                 {/* Columna Historial / Timeline */}
                 <div className="md:col-span-2 space-y-6">
                   <section>
-                    <h3 className="text-[10px] font-black uppercase text-primary mb-4 border-b border-primary/20 pb-1">Cronología de Trámites e Inspecciones</h3>
+                    <h3 className="text-[10px] font-black uppercase text-primary mb-4 border-b border-primary/20 pb-1">Historial de Expedientes y Auditorías</h3>
                     <div className="space-y-4">
-                      {/* Combinamos expedientes e inspecciones para el timeline */}
-                      {[
-                        ...cases.filter(c => c.planId === selectedPlan.id).map(c => ({
-                          fecha: c.creadoEn,
-                          tipo: 'EXPEDIENTE',
-                          titulo: c.tramite,
-                          detalle: `Nº GDE: ${c.numero}`,
-                          estado: c.instancia,
-                          id: c.id
-                        })),
-                        ...inspecciones.filter(i => i.planId === selectedPlan.id || (i.expedienteId && cases.find(c => c.id === i.expedienteId)?.planId === selectedPlan.id)).map(i => ({
-                          fecha: i.fecha,
-                          tipo: 'INSPECCIÓN',
-                          titulo: i.tipo,
-                          detalle: `Resultado: ${i.resultado}. Auditor: ${i.auditorNombre}`,
-                          estado: i.resultado,
-                          id: i.id
-                        }))
-                      ].sort((a,b) => b.fecha.localeCompare(a.fecha)).map((item, idx) => (
-                        <div key={idx} className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-800 pb-4 last:pb-0">
-                          <div className={`absolute -left-[7px] top-0 size-3 rounded-full border-2 bg-white dark:bg-slate-900 ${item.tipo === 'EXPEDIENTE' ? 'border-blue-500' : 'border-green-500'}`}></div>
-                          <div className="flex justify-between items-start mb-1">
-                            <span className={`text-[9px] font-black uppercase ${item.tipo === 'EXPEDIENTE' ? 'text-blue-600' : 'text-green-600'}`}>
-                              {item.tipo} - {item.titulo}
-                            </span>
-                            <span className="text-[9px] font-mono text-slate-400">{new Date(item.fecha).toLocaleDateString()}</span>
+                      {cases.filter(c => c.empresa.toUpperCase() === selectedPlan.empresa.toUpperCase() || c.planId === selectedPlan.id).map(c => (
+                        <div key={c.id} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-black text-blue-600 dark:text-blue-400 text-xs uppercase tracking-tight">{c.numero}</span>
+                            <span className="text-[9px] font-mono font-bold text-slate-400">{new Date(c.creadoEn).toLocaleDateString()}</span>
                           </div>
-                          <p className="text-xs font-bold text-slate-900 dark:text-white mb-1">{item.detalle}</p>
+                          <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 mb-3 uppercase">{c.tramite}</p>
                           
-                          {/* Mostrar movimientos asociados si es expediente */}
-                          {item.tipo === 'EXPEDIENTE' && (
-                            <div className="mt-2 space-y-1">
-                              {movimientos.filter(m => m.expedienteId === item.id).sort((a,b) => b.fecha.localeCompare(a.fecha)).slice(0, 2).map((m, midx) => (
-                                <div key={midx} className="bg-slate-50 dark:bg-slate-800/30 p-2 rounded text-[10px] text-slate-600 dark:text-slate-400 border border-slate-100 dark:border-slate-800">
-                                  <span className="font-bold text-primary mr-2">{new Date(m.fecha).toLocaleDateString()}</span>
-                                  {m.texto}
-                                </div>
-                              ))}
+                          {/* Movimientos del expediente */}
+                          <div className="pl-3 border-l-2 border-slate-200 dark:border-slate-700 space-y-2 mt-2">
+                            {movimientos.filter(m => m.expedienteId === c.id).sort((a,b) => b.fecha.localeCompare(a.fecha)).map(m => (
+                              <div key={m.id} className="text-[9px] text-slate-600 dark:text-slate-400">
+                                <span className="font-bold text-primary mr-2">{new Date(m.fecha).toLocaleDateString()}</span>
+                                {m.texto}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Inspecciones del expediente */}
+                          {inspecciones.filter(i => i.expedienteId === c.id).length > 0 && (
+                            <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+                              <h5 className="text-[9px] font-black uppercase text-green-600 mb-2 flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px]">fact_check</span> Auditorías / Inspecciones
+                              </h5>
+                              <div className="space-y-2">
+                                {inspecciones.filter(i => i.expedienteId === c.id).map(i => (
+                                  <div key={i.id} className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800 text-[10px]">
+                                    <div className="flex justify-between items-center mb-2 pb-2 border-b border-slate-50 dark:border-slate-800">
+                                      <span className="font-black uppercase text-slate-700 dark:text-slate-300">{i.tipo}</span>
+                                      <span className="font-mono text-slate-400 font-bold">{new Date(i.fecha).toLocaleDateString()}</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 mb-2">
+                                      <p><span className="text-slate-400 font-bold uppercase text-[9px]">Auditor:</span> <span className="font-bold">{i.auditorNombre}</span></p>
+                                      <p><span className="text-slate-400 font-bold uppercase text-[9px]">IF:</span> <span className="font-mono">{i.nroInforme || '-'}</span></p>
+                                      <p><span className="text-slate-400 font-bold uppercase text-[9px]">Cert/Dispo:</span> <span className="font-mono">{i.nroCertificado || i.nroDisposicion || '-'}</span></p>
+                                      <p>
+                                        <span className="text-slate-400 font-bold uppercase text-[9px]">Resultado:</span>{' '}
+                                        <span className={`font-black uppercase ${i.resultado.includes('APROBADO') ? 'text-green-600' : 'text-orange-600'}`}>
+                                          {i.resultado}
+                                        </span>
+                                      </p>
+                                    </div>
+                                    {i.observaciones && (
+                                      <div className="mt-2 pt-2 border-t border-slate-50 dark:border-slate-800">
+                                        <p className="text-[9px] font-bold uppercase text-slate-400 mb-1">Pendientes / Oportunidades de Mejora:</p>
+                                        <p className="text-slate-600 dark:text-slate-400 italic">"{i.observaciones}"</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           )}
                         </div>
                       ))}
                       
-                      {cases.filter(c => c.planId === selectedPlan.id).length === 0 && 
-                       inspecciones.filter(i => i.planId === selectedPlan.id).length === 0 && (
-                        <p className="text-center py-10 text-slate-400 italic text-xs uppercase font-bold tracking-widest">Sin historial registrado</p>
+                      {cases.filter(c => c.empresa.toUpperCase() === selectedPlan.empresa.toUpperCase() || c.planId === selectedPlan.id).length === 0 && (
+                        <div className="text-center py-10 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200 dark:border-slate-800">
+                          <span className="material-symbols-outlined text-3xl text-slate-300 mb-2">folder_off</span>
+                          <p className="text-slate-400 italic text-xs uppercase font-bold tracking-widest">Sin expedientes registrados</p>
+                        </div>
                       )}
                     </div>
                   </section>
