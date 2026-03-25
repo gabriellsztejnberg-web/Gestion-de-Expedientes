@@ -238,6 +238,12 @@ export const Planes: React.FC = () => {
                 localidad: (row.LOCALIDAD || row.Localidad || row.localidad || '').toString().toUpperCase(),
                 email: (row.EMAIL || row.Email || row.email || '').toString(),
                 telefono: (row.TELEFONO || row.Telefono || row.telefono || row.TEL || row.Tel || '').toString(),
+                numeroPlan: (row.NRO_PLAN || row.NUMERO_PLAN || row['Nº PLAN'] || row.PLAN || '').toString(),
+                coordenadas: (row.COORDENADAS || row.LAT_LONG || row.UBICACION || '').toString(),
+                responsablePlan: (row.RESPONSABLE || row.RESPONSABLE_PLAN || '').toString(),
+                contactoPlan: (row.CONTACTO || row.CONTACTO_PLAN || '').toString(),
+                tipoRespuesta: (row.TIPO_RESPUESTA || row.RESPUESTA || '').toString().toLowerCase().includes('tercero') ? 'terceros' : ((row.TIPO_RESPUESTA || row.RESPUESTA || '').toString().toLowerCase().includes('propia') ? 'propia' : ''),
+                empresaRespuesta: (row.EMPRESA_RESPUESTA || row.TERCERO || row.CONTRATISTA || '').toString().toUpperCase(),
                 anexo: activeTab,
                 convalidaciones: {
                   anio1: parseCSVDate(row.CONV1 || row.CONV_1 || row.Conv1 || ''),
@@ -550,9 +556,69 @@ export const Planes: React.FC = () => {
                         />
                       </div>
 
-                      <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
+                      <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 mt-2 border-t border-slate-200 dark:border-slate-700 pt-4">
                         <div className="col-span-full">
-                          <p className="text-[10px] font-black uppercase text-slate-400 border-b pb-1 mb-2">Convalidaciones Anuales</p>
+                          <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Detalles del Plan</p>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nº de Plan</label>
+                          <input 
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase font-mono" 
+                            value={editingPlan?.numeroPlan || ''} 
+                            onChange={e => setEditingPlan({...editingPlan!, numeroPlan: e.target.value})}
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Coordenadas Geográficas</label>
+                          <input 
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary font-mono" 
+                            value={editingPlan?.coordenadas || ''} 
+                            onChange={e => setEditingPlan({...editingPlan!, coordenadas: e.target.value})}
+                            placeholder="Ej: 34°35'59.0&quot;S 58°22'55.0&quot;W"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Responsable del Plan</label>
+                          <input 
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase" 
+                            value={editingPlan?.responsablePlan || ''} 
+                            onChange={e => setEditingPlan({...editingPlan!, responsablePlan: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Contacto</label>
+                          <input 
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary" 
+                            value={editingPlan?.contactoPlan || ''} 
+                            onChange={e => setEditingPlan({...editingPlan!, contactoPlan: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Tipo de Respuesta</label>
+                          <select 
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase text-xs" 
+                            value={editingPlan?.tipoRespuesta || ''} 
+                            onChange={e => setEditingPlan({...editingPlan!, tipoRespuesta: e.target.value as any})}
+                          >
+                            <option value="">Seleccionar...</option>
+                            <option value="propia">Propia</option>
+                            <option value="terceros">De Terceros</option>
+                          </select>
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa de Respuesta (Si es de terceros)</label>
+                          <input 
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase" 
+                            value={editingPlan?.empresaRespuesta || ''} 
+                            onChange={e => setEditingPlan({...editingPlan!, empresaRespuesta: e.target.value})}
+                            disabled={editingPlan?.tipoRespuesta !== 'terceros'}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-3 mt-2 border-t border-slate-200 dark:border-slate-700 pt-4">
+                        <div className="col-span-full">
+                          <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Convalidaciones Anuales</p>
                         </div>
                         {['anio1', 'anio2', 'anio3', 'anio4'].map((y, i) => (
                           <div key={y}>
@@ -658,6 +724,38 @@ export const Planes: React.FC = () => {
                       <div className="flex justify-between items-center">
                         <span className="text-[10px] font-bold uppercase text-slate-400">Disposición:</span>
                         <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-400">{selectedPlan.disposicion || 'S/D'}</span>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Detalles Operativos</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase leading-none mb-1">Nº de Plan</p>
+                        <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">{selectedPlan.numeroPlan || 'S/D'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase leading-none mb-1">Coordenadas</p>
+                        <p className="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300">{selectedPlan.coordenadas || 'S/D'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase leading-none mb-1">Responsable</p>
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">{selectedPlan.responsablePlan || 'S/D'}</p>
+                        {selectedPlan.contactoPlan && <p className="text-[10px] text-slate-500 mt-0.5">{selectedPlan.contactoPlan}</p>}
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase leading-none mb-1">Respuesta ante Emergencias</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${selectedPlan.tipoRespuesta === 'propia' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : selectedPlan.tipoRespuesta === 'terceros' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                            {selectedPlan.tipoRespuesta ? (selectedPlan.tipoRespuesta === 'propia' ? 'Propia' : 'De Terceros') : 'S/D'}
+                          </span>
+                          {selectedPlan.tipoRespuesta === 'terceros' && selectedPlan.empresaRespuesta && (
+                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase truncate">
+                              {selectedPlan.empresaRespuesta}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </section>
