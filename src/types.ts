@@ -199,4 +199,12 @@ export interface PlanEmergencia {
   email?: string;
   telefono?: string;
   notas?: string;
+  
+  // Nuevos campos solicitados
+  numeroPlan?: string;
+  coordenadas?: string;
+  responsablePlan?: string;
+  contactoPlan?: string;
+  tipoRespuesta?: 'propia' | 'terceros' | '';
+  empresaRespuesta?: string;
 }
