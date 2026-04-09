@@ -47,6 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage }) => {
     { id: 'asistencia', icon: 'schedule', label: 'Control Horario', path: '/asistencia' },
     { id: 'expedientes', icon: 'inventory_2', label: 'Expedientes', path: '/expedientes' },
     { id: 'planes', icon: 'safety_check', label: 'Planes Emergencia', path: '/planes' },
+    { id: 'mapa', icon: 'map', label: 'SIG - Mapa', path: '/mapa' },
     { id: 'inspecciones', icon: 'assignment', label: 'Inspecciones', path: '/inspecciones' },
     { id: 'auditores', icon: 'engineering', label: 'Auditores Habilitados', path: '/auditores' },
     { id: 'reportes', icon: 'description', label: 'Reportes DPAM', path: '/reportes' },
