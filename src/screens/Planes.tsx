@@ -458,10 +458,10 @@ export const Planes: React.FC = () => {
                   anio4: anio4Date,
                 },
                 convalidacionesDetalle: {
-                  anio1: { nroExpediente: anio1Exp, nroIF: anio1Date && anio1Exp ? 'S/D' : undefined },
-                  anio2: { nroExpediente: anio2Exp, nroIF: anio2Date && anio2Exp ? 'S/D' : undefined },
-                  anio3: { nroExpediente: anio3Exp, nroIF: anio3Date && anio3Exp ? 'S/D' : undefined },
-                  anio4: { nroExpediente: anio4Exp, nroIF: anio4Date && anio4Exp ? 'S/D' : undefined },
+                  anio1: { nroExpediente: anio1Exp, nroIF: anio1Date && anio1Exp ? 'S/D' : '' },
+                  anio2: { nroExpediente: anio2Exp, nroIF: anio2Date && anio2Exp ? 'S/D' : '' },
+                  anio3: { nroExpediente: anio3Exp, nroIF: anio3Date && anio3Exp ? 'S/D' : '' },
+                  anio4: { nroExpediente: anio4Exp, nroIF: anio4Date && anio4Exp ? 'S/D' : '' },
                 },
                 ultimaActualizacion: new Date().toISOString()
               };
