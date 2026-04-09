@@ -77,7 +77,28 @@ export const Planes: React.FC = () => {
     };
   }, []);
 
-  const getStatusColor = (dateStr: string) => {
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr || dateStr === '-' || dateStr.length < 5) return dateStr || 'S/D';
+    let d = new Date(dateStr);
+    if (isNaN(d.getTime())) {
+       const parts = dateStr.split('/');
+       if(parts.length === 3) d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+    }
+    if (isNaN(d.getTime())) return dateStr;
+    // Ajustar por zona horaria para evitar que reste un día
+    const userTimezoneOffset = d.getTimezoneOffset() * 60000;
+    const adjustedDate = new Date(d.getTime() + userTimezoneOffset);
+    const day = adjustedDate.getDate().toString().padStart(2, '0');
+    const month = (adjustedDate.getMonth() + 1).toString().padStart(2, '0');
+    const year = adjustedDate.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+
+  const getStatusColor = (dateStr?: string, isConvalidacion = false, isFulfilled = false) => {
+    if (isConvalidacion && isFulfilled) {
+      return 'bg-emerald-100 text-emerald-700 border-emerald-200 font-bold'; // Convalidado
+    }
+
     if (!dateStr || dateStr === '-' || dateStr.length < 5) return 'bg-slate-100 text-slate-400';
     
     let d = new Date(dateStr);
@@ -88,11 +109,22 @@ export const Planes: React.FC = () => {
     if (isNaN(d.getTime())) return 'bg-slate-100 text-slate-400';
 
     const now = new Date();
-    const diffTime = d.getTime() - now.getTime();
+    now.setHours(0,0,0,0);
+    
+    // Ajustar la fecha evaluada para que sea a las 00:00 local
+    const userTimezoneOffset = d.getTimezoneOffset() * 60000;
+    const adjustedDate = new Date(d.getTime() + userTimezoneOffset);
+    adjustedDate.setHours(0,0,0,0);
+
+    const diffTime = adjustedDate.getTime() - now.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
     if (diffDays < 0) return 'bg-red-100 text-red-700 border-red-200 font-bold'; // Vencido
-    if (diffDays < 90) return 'bg-yellow-100 text-yellow-700 border-yellow-200 font-bold'; // Por vencer
+    if (diffDays <= 90) return 'bg-yellow-100 text-yellow-700 border-yellow-200 font-bold'; // Por vencer
+    
+    if (isConvalidacion) {
+      return 'bg-slate-100 text-slate-500 border-slate-200'; // Futuro / Pendiente
+    }
     return 'bg-green-100 text-green-700 border-green-200'; // Vigente
   };
 
@@ -116,7 +148,8 @@ export const Planes: React.FC = () => {
       ...editingPlan,
       anexo: activeTab,
       ultimaActualizacion: new Date().toISOString(),
-      convalidaciones: editingPlan.convalidaciones || {}
+      convalidaciones: editingPlan.convalidaciones || {},
+      convalidacionesDetalle: editingPlan.convalidacionesDetalle || {}
     };
 
     try {
@@ -130,6 +163,45 @@ export const Planes: React.FC = () => {
     } catch (error) {
       console.error(error);
       alert("Error al guardar el plan");
+    }
+  };
+
+  const handleRenovar = async () => {
+    if (!editingPlan || !editingPlan.id) return;
+    if (!confirm("¿Estás seguro de archivar esta disposición y renovar el plan? Se limpiarán los datos actuales de disposición y convalidaciones para cargar los nuevos.")) return;
+
+    const historial = editingPlan.historialDisposiciones || [];
+    historial.push({
+      disposicion: editingPlan.disposicion || '',
+      vencimiento: editingPlan.vencimiento || '',
+      formatoDisposicion: editingPlan.formatoDisposicion || '',
+      convalidaciones: editingPlan.convalidaciones || {},
+      convalidacionesDetalle: editingPlan.convalidacionesDetalle || {},
+      fechaArchivo: new Date().toISOString(),
+      numeroPlan: editingPlan.numeroPlan || '',
+      documentacionExtra: editingPlan.documentacionExtra || ''
+    });
+
+    const planData = {
+      ...editingPlan,
+      disposicion: '',
+      vencimiento: '',
+      formatoDisposicion: '',
+      convalidaciones: {},
+      convalidacionesDetalle: {},
+      numeroPlan: '',
+      documentacionExtra: '',
+      historialDisposiciones: historial,
+      ultimaActualizacion: new Date().toISOString()
+    };
+
+    try {
+      await updateDoc(doc(db, 'planes', editingPlan.id), planData);
+      setEditingPlan(planData);
+      alert("Disposición archivada correctamente. Ahora puedes cargar los nuevos datos.");
+    } catch (error) {
+      console.error(error);
+      alert("Error al renovar el plan");
     }
   };
 
@@ -232,7 +304,7 @@ export const Planes: React.FC = () => {
                 empresa: empresaFinal,
                 dependencia: dependenciaFinal,
                 disposicion: (row.DISPOSICION || row.Disposicion || row.disposicion || row.NRO_DISPO || '').toString().toUpperCase(),
-                vencimiento: parseCSVDate(row.VENCIMIENTO || row.Vencimiento || row.vencimiento || ''),
+                vencimiento: parseCSVDate(row.VENCIMIENTO || row.Vencimiento || row.vencimiento || row['FECHA VENCIMIENTO'] || row['Fecha Vencimiento'] || row['Fecha de Vencimiento'] || row['FECHA DE VENCIMIENTO'] || ''),
                 cuit: (row.CUIT || row.Cuit || row.cuit || '').toString(),
                 domicilio: (row.DOMICILIO || row.Domicilio || row.domicilio || '').toString().toUpperCase(),
                 localidad: (row.LOCALIDAD || row.Localidad || row.localidad || '').toString().toUpperCase(),
@@ -246,10 +318,10 @@ export const Planes: React.FC = () => {
                 empresaRespuesta: (row.EMPRESA_RESPUESTA || row.TERCERO || row.CONTRATISTA || '').toString().toUpperCase(),
                 anexo: activeTab,
                 convalidaciones: {
-                  anio1: parseCSVDate(row.CONV1 || row.CONV_1 || row.Conv1 || ''),
-                  anio2: parseCSVDate(row.CONV2 || row.CONV_2 || row.Conv2 || ''),
-                  anio3: parseCSVDate(row.CONV3 || row.CONV_3 || row.Conv3 || ''),
-                  anio4: parseCSVDate(row.CONV4 || row.CONV_4 || row.Conv4 || ''),
+                  anio1: parseCSVDate(row.CONV1 || row.CONV_1 || row.Conv1 || row['1º Convalidación'] || row['1° CONVALIDACION'] || row['1RA CONVALIDACION'] || row['1ra Convalidacion'] || ''),
+                  anio2: parseCSVDate(row.CONV2 || row.CONV_2 || row.Conv2 || row['2º Convalidación'] || row['2° CONVALIDACION'] || row['2DA CONVALIDACION'] || row['2da Convalidacion'] || ''),
+                  anio3: parseCSVDate(row.CONV3 || row.CONV_3 || row.Conv3 || row['3º Convalidación'] || row['3° CONVALIDACION'] || row['3RA CONVALIDACION'] || row['3ra Convalidacion'] || ''),
+                  anio4: parseCSVDate(row.CONV4 || row.CONV_4 || row.Conv4 || row['4º Convalidación'] || row['4° CONVALIDACION'] || row['4TA CONVALIDACION'] || row['4ta Convalidacion'] || ''),
                 },
                 ultimaActualizacion: new Date().toISOString()
               };
@@ -389,27 +461,27 @@ export const Planes: React.FC = () => {
                                   <td className="px-4 py-4 font-mono text-[10px] uppercase text-slate-600 dark:text-slate-400">{p.disposicion || '-'}</td>
                                   <td className="px-4 py-4 text-center">
                                       <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase border ${getStatusColor(p.vencimiento)}`}>
-                                          {p.vencimiento || '-'}
+                                          {formatDate(p.vencimiento)}
                                       </span>
                                   </td>
                                   <td className="px-2 py-4 text-center">
-                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio1 || '')}`}>
-                                          {p.convalidaciones?.anio1 || '-'}
+                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio1 || '', true, !!(p.convalidacionesDetalle?.anio1?.nroIF && p.convalidacionesDetalle?.anio1?.nroExpediente))}`}>
+                                          {!!(p.convalidacionesDetalle?.anio1?.nroIF && p.convalidacionesDetalle?.anio1?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio1)}` : formatDate(p.convalidaciones?.anio1)}
                                       </span>
                                   </td>
                                   <td className="px-2 py-4 text-center">
-                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio2 || '')}`}>
-                                          {p.convalidaciones?.anio2 || '-'}
+                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio2 || '', true, !!(p.convalidacionesDetalle?.anio2?.nroIF && p.convalidacionesDetalle?.anio2?.nroExpediente))}`}>
+                                          {!!(p.convalidacionesDetalle?.anio2?.nroIF && p.convalidacionesDetalle?.anio2?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio2)}` : formatDate(p.convalidaciones?.anio2)}
                                       </span>
                                   </td>
                                   <td className="px-2 py-4 text-center">
-                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio3 || '')}`}>
-                                          {p.convalidaciones?.anio3 || '-'}
+                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio3 || '', true, !!(p.convalidacionesDetalle?.anio3?.nroIF && p.convalidacionesDetalle?.anio3?.nroExpediente))}`}>
+                                          {!!(p.convalidacionesDetalle?.anio3?.nroIF && p.convalidacionesDetalle?.anio3?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio3)}` : formatDate(p.convalidaciones?.anio3)}
                                       </span>
                                   </td>
                                   <td className="px-2 py-4 text-center">
-                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio4 || '')}`}>
-                                          {p.convalidaciones?.anio4 || '-'}
+                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio4 || '', true, !!(p.convalidacionesDetalle?.anio4?.nroIF && p.convalidacionesDetalle?.anio4?.nroExpediente))}`}>
+                                          {!!(p.convalidacionesDetalle?.anio4?.nroIF && p.convalidacionesDetalle?.anio4?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio4)}` : formatDate(p.convalidaciones?.anio4)}
                                       </span>
                                   </td>
                                   <td className="px-4 py-4 text-center">
@@ -438,9 +510,9 @@ export const Planes: React.FC = () => {
       {/* MODAL DE EDICIÓN */}
       {isModalOpen && (
          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                <form onSubmit={handleSave}>
-                  <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <form onSubmit={handleSave} className="flex flex-col h-full overflow-hidden">
+                  <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shrink-0">
                     <div>
                       <h2 className="text-xs font-black uppercase tracking-widest">Gestión de Plan de Emergencia</h2>
                       <p className="text-[10px] text-slate-400 uppercase font-bold">{ANEXOS.find(a => a.id === activeTab)?.label}</p>
@@ -448,7 +520,7 @@ export const Planes: React.FC = () => {
                     <button type="button" onClick={() => setIsModalOpen(false)}><span className="material-symbols-outlined">close</span></button>
                   </div>
                   
-                  <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto flex-1">
                       <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="md:col-span-2">
                           <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa / Razón Social</label>
@@ -528,6 +600,19 @@ export const Planes: React.FC = () => {
                       </div>
 
                       <div>
+                        <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Formato de Disposición</label>
+                        <select 
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase text-xs" 
+                          value={editingPlan?.formatoDisposicion || ''} 
+                          onChange={e => setEditingPlan({...editingPlan!, formatoDisposicion: e.target.value as any})}
+                        >
+                          <option value="">Seleccionar...</option>
+                          <option value="digital">Digital</option>
+                          <option value="papel">Papel</option>
+                        </select>
+                      </div>
+
+                      <div className="md:col-span-2">
                         <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Fecha de Vencimiento</label>
                         <input 
                           type="date"
@@ -566,6 +651,15 @@ export const Planes: React.FC = () => {
                             className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase font-mono" 
                             value={editingPlan?.numeroPlan || ''} 
                             onChange={e => setEditingPlan({...editingPlan!, numeroPlan: e.target.value})}
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Documentación Extra Aprobada (Opcional)</label>
+                          <textarea 
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary text-xs h-16" 
+                            value={editingPlan?.documentacionExtra || ''} 
+                            onChange={e => setEditingPlan({...editingPlan!, documentacionExtra: e.target.value})}
+                            placeholder="Ej: Anexo de Evacuación, Planos adicionales..."
                           />
                         </div>
                         <div className="md:col-span-2">
@@ -616,24 +710,102 @@ export const Planes: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-3 mt-2 border-t border-slate-200 dark:border-slate-700 pt-4">
+                      <div className="md:col-span-2 mt-2 border-t border-slate-200 dark:border-slate-700 pt-4">
                         <div className="col-span-full">
-                          <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Convalidaciones Anuales</p>
+                          <p className="text-[10px] font-black uppercase text-slate-400 mb-4">Registro de Convalidaciones Anuales</p>
                         </div>
-                        {['anio1', 'anio2', 'anio3', 'anio4'].map((y, i) => (
-                          <div key={y}>
-                            <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">{i+1}º Conval.</label>
-                            <input 
-                              placeholder="YYYY-MM-DD"
-                              className="w-full px-2 py-1.5 text-[10px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary font-mono" 
-                              value={(editingPlan?.convalidaciones as any)?.[y] || ''} 
-                              onChange={e => setEditingPlan({
-                                ...editingPlan!, 
-                                convalidaciones: { ...editingPlan?.convalidaciones, [y]: e.target.value }
-                              })}
-                            />
-                          </div>
-                        ))}
+                        <div className="space-y-4">
+                          {(['anio1', 'anio2', 'anio3', 'anio4'] as const).map((y, i) => {
+                            const dateVal = (editingPlan?.convalidaciones as any)?.[y] || '';
+                            const det = (editingPlan?.convalidacionesDetalle as any)?.[y] || {};
+                            const formatoGlobal = editingPlan?.formatoDisposicion;
+                            return (
+                              <div key={y} className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                                <div className="flex flex-wrap gap-3 items-start">
+                                  <div className="w-32">
+                                    <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">{i+1}º Conval. (Fecha)</label>
+                                    <input 
+                                      type="date"
+                                      className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary font-mono" 
+                                      value={dateVal} 
+                                      onChange={e => setEditingPlan({
+                                        ...editingPlan!, 
+                                        convalidaciones: { ...editingPlan?.convalidaciones, [y]: e.target.value }
+                                      })}
+                                    />
+                                  </div>
+                                  
+                                  {formatoGlobal && (
+                                    <div className="flex-1 min-w-[200px]">
+                                      <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">Auditor / Inspector</label>
+                                      <input 
+                                        className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase"
+                                        value={det.auditorNombre || ''}
+                                        onChange={e => setEditingPlan({
+                                          ...editingPlan!,
+                                          convalidacionesDetalle: {
+                                            ...editingPlan?.convalidacionesDetalle,
+                                            [y]: { ...det, auditorNombre: e.target.value }
+                                          }
+                                        })}
+                                      />
+                                    </div>
+                                  )}
+                                  
+                                  {formatoGlobal && (
+                                    <>
+                                      <div className="w-32">
+                                        <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">Nº IF</label>
+                                        <input 
+                                          className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase font-mono"
+                                          value={det.nroIF || ''}
+                                          onChange={e => setEditingPlan({
+                                            ...editingPlan!,
+                                            convalidacionesDetalle: {
+                                              ...editingPlan?.convalidacionesDetalle,
+                                              [y]: { ...det, nroIF: e.target.value }
+                                            }
+                                          })}
+                                        />
+                                      </div>
+                                      <div className="w-40">
+                                        <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">Nº Expediente</label>
+                                        <input 
+                                          className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase font-mono"
+                                          value={det.nroExpediente || ''}
+                                          onChange={e => setEditingPlan({
+                                            ...editingPlan!,
+                                            convalidacionesDetalle: {
+                                              ...editingPlan?.convalidacionesDetalle,
+                                              [y]: { ...det, nroExpediente: e.target.value }
+                                            }
+                                          })}
+                                        />
+                                      </div>
+                                    </>
+                                  )}
+
+                                  {formatoGlobal === 'digital' && (
+                                    <div className="w-32">
+                                      <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">Nº Certificado</label>
+                                      <input 
+                                        className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase font-mono"
+                                        value={det.nroCertificado || ''}
+                                        onChange={e => setEditingPlan({
+                                          ...editingPlan!,
+                                          convalidacionesDetalle: {
+                                            ...editingPlan?.convalidacionesDetalle,
+                                            [y]: { ...det, nroCertificado: e.target.value }
+                                          }
+                                        })}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
 
                       <div className="md:col-span-2">
@@ -646,9 +818,19 @@ export const Planes: React.FC = () => {
                       </div>
                   </div>
 
-                  <div className="p-6 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3">
-                    <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2 text-xs font-black uppercase text-slate-500 hover:text-slate-700">Cancelar</button>
-                    <button type="submit" className="px-8 py-2 bg-primary text-white text-xs font-black uppercase rounded-lg shadow-lg hover:bg-blue-600">Guardar Registro</button>
+                  <div className="p-6 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center shrink-0 border-t border-slate-200 dark:border-slate-700">
+                    <div>
+                      {editingPlan?.id && (
+                        <button type="button" onClick={handleRenovar} className="px-4 py-2 text-xs font-black uppercase text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800/30 transition-colors flex items-center gap-2">
+                          <span className="material-symbols-outlined text-sm">history</span>
+                          Renovar Disposición
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex gap-3">
+                      <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2 text-xs font-black uppercase text-slate-500 hover:text-slate-700">Cancelar</button>
+                      <button type="submit" className="px-8 py-2 bg-primary text-white text-xs font-black uppercase rounded-lg shadow-lg hover:bg-blue-600">Guardar Registro</button>
+                    </div>
                   </div>
                 </form>
             </div>
@@ -718,13 +900,19 @@ export const Planes: React.FC = () => {
                       <div className="flex justify-between items-center">
                         <span className="text-[10px] font-bold uppercase text-slate-400">Vencimiento:</span>
                         <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${getStatusColor(selectedPlan.vencimiento)}`}>
-                          {selectedPlan.vencimiento || 'S/D'}
+                          {formatDate(selectedPlan.vencimiento)}
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-[10px] font-bold uppercase text-slate-400">Disposición:</span>
                         <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-400">{selectedPlan.disposicion || 'S/D'}</span>
                       </div>
+                      {selectedPlan.formatoDisposicion && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-bold uppercase text-slate-400">Formato:</span>
+                          <span className={`text-[10px] font-black uppercase ${selectedPlan.formatoDisposicion === 'digital' ? 'text-blue-600' : 'text-orange-600'}`}>{selectedPlan.formatoDisposicion}</span>
+                        </div>
+                      )}
                     </div>
                   </section>
 
@@ -735,6 +923,12 @@ export const Planes: React.FC = () => {
                         <p className="text-[9px] font-bold text-slate-400 uppercase leading-none mb-1">Nº de Plan</p>
                         <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">{selectedPlan.numeroPlan || 'S/D'}</p>
                       </div>
+                      {selectedPlan.documentacionExtra && (
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase leading-none mb-1">Documentación Extra Aprobada</p>
+                          <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{selectedPlan.documentacionExtra}</p>
+                        </div>
+                      )}
                       <div>
                         <p className="text-[9px] font-bold text-slate-400 uppercase leading-none mb-1">Coordenadas</p>
                         <p className="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300">{selectedPlan.coordenadas || 'S/D'}</p>
@@ -759,12 +953,69 @@ export const Planes: React.FC = () => {
                       </div>
                     </div>
                   </section>
+
+                  <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Registro de Convalidaciones</h3>
+                    <div className="space-y-3">
+                      {(['anio1', 'anio2', 'anio3', 'anio4'] as const).map((y, i) => {
+                        const dateVal = (selectedPlan.convalidaciones as any)?.[y];
+                        const det = (selectedPlan.convalidacionesDetalle as any)?.[y];
+                        if (!dateVal && !det) return null;
+                        
+                        return (
+                          <div key={y} className="border-l-2 border-primary pl-3 py-1">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-[10px] font-black uppercase text-slate-700 dark:text-slate-300">{i+1}º Convalidación</span>
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${getStatusColor(dateVal, true, !!(det?.nroIF && det?.nroExpediente))}`}>
+                                {!!(det?.nroIF && det?.nroExpediente) ? `✅ CONVALIDADO (${formatDate(dateVal)})` : formatDate(dateVal)}
+                              </span>
+                            </div>
+                            {det?.auditorNombre && (
+                              <div className="mt-2 space-y-1 text-[9px] bg-white dark:bg-slate-900 p-2 rounded border border-slate-100 dark:border-slate-800">
+                                {det.auditorNombre && <p><span className="text-slate-400 font-bold uppercase">Auditor:</span> <span className="font-bold uppercase">{det.auditorNombre}</span></p>}
+                                {selectedPlan.formatoDisposicion === 'digital' && det.nroCertificado && (
+                                  <p><span className="text-slate-400 font-bold uppercase">Certificado:</span> <span className="font-mono">{det.nroCertificado}</span></p>
+                                )}
+                                {det.nroIF && <p><span className="text-slate-400 font-bold uppercase">IF:</span> <span className="font-mono">{det.nroIF}</span></p>}
+                                {det.nroExpediente && <p><span className="text-slate-400 font-bold uppercase">Expediente:</span> <span className="font-mono">{det.nroExpediente}</span></p>}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {(!selectedPlan.convalidaciones || Object.values(selectedPlan.convalidaciones).every(v => !v)) && (
+                        <p className="text-[10px] text-slate-400 italic">No hay convalidaciones registradas.</p>
+                      )}
+                    </div>
+                  </section>
                 </div>
 
                 {/* Columna Historial / Timeline */}
                 <div className="md:col-span-2 space-y-6">
                   <section>
-                    <h3 className="text-[10px] font-black uppercase text-primary mb-4 border-b border-primary/20 pb-1">Historial de Expedientes y Auditorías</h3>
+                    <div className="flex justify-between items-end mb-4 border-b border-primary/20 pb-1">
+                      <h3 className="text-[10px] font-black uppercase text-primary">Historial de Expedientes y Auditorías</h3>
+                    </div>
+                    
+                    {selectedPlan.historialDisposiciones && selectedPlan.historialDisposiciones.length > 0 && (
+                      <div className="mb-6">
+                        <h4 className="text-[9px] font-black uppercase text-slate-500 mb-2">Disposiciones Archivadas</h4>
+                        <div className="space-y-2">
+                          {selectedPlan.historialDisposiciones.map((hist, idx) => (
+                            <div key={idx} className="bg-slate-50 dark:bg-slate-800/30 p-3 rounded-lg border border-slate-200 dark:border-slate-700 flex justify-between items-start">
+                              <div>
+                                <p className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300">Dispo: {hist.disposicion || 'S/D'}</p>
+                                <p className="text-[9px] text-slate-500 uppercase">Vencimiento: {formatDate(hist.vencimiento)}</p>
+                                {hist.numeroPlan && <p className="text-[9px] text-slate-500 uppercase mt-1">Plan: <span className="font-mono">{hist.numeroPlan}</span></p>}
+                                {hist.documentacionExtra && <p className="text-[9px] text-slate-500 uppercase">Extra: {hist.documentacionExtra}</p>}
+                              </div>
+                              <span className="text-[9px] font-bold text-slate-400">Archivado: {formatDate(hist.fechaArchivo)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-4">
                       {cases.filter(c => c.empresa.toUpperCase() === selectedPlan.empresa.toUpperCase() || c.planId === selectedPlan.id).map(c => (
                         <div key={c.id} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
