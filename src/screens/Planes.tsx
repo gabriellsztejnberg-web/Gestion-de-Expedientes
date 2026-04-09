@@ -408,11 +408,30 @@ export const Planes: React.FC = () => {
               const observaciones = getCsvVal(row, ['observaciones', 'documentacionextra', 'respuesta']).toString();
               const isDesafectado = observaciones.toLowerCase().includes('desafectado');
 
+              const disposicionStr = getCsvVal(row, ['disposicion', 'nrodispo']).toString().toUpperCase();
+              let formatoDisposicion: 'digital' | 'papel' | '' = '';
+              const yearMatch = disposicionStr.match(/-(20\d{2})-/);
+              if (yearMatch) {
+                const year = parseInt(yearMatch[1], 10);
+                formatoDisposicion = year >= 2023 ? 'digital' : 'papel';
+              }
+
+              const anio1Date = parseCSVDate(getCsvVal(row, ['1conv', '1insp', '1convalidacion'], ['expediente', 'exp']));
+              const anio2Date = parseCSVDate(getCsvVal(row, ['2conv', '2insp', '2convalidacion'], ['expediente', 'exp']));
+              const anio3Date = parseCSVDate(getCsvVal(row, ['3conv', '3insp', '3convalidacion'], ['expediente', 'exp']));
+              const anio4Date = parseCSVDate(getCsvVal(row, ['4conv', '4insp', '4convalidacion'], ['expediente', 'exp']));
+
+              const anio1Exp = getCsvVal(row, ['expediente1', 'exp1', 'expediente1conv']).toString() || getCsvVal(row, ['expediente'], ['1', '2', '3', '4']).toString();
+              const anio2Exp = getCsvVal(row, ['expediente2', 'exp2', 'expediente2conv']).toString();
+              const anio3Exp = getCsvVal(row, ['expediente3', 'exp3', 'expediente3conv']).toString();
+              const anio4Exp = getCsvVal(row, ['expediente4', 'exp4', 'expediente4conv']).toString();
+
               const plan: Partial<PlanEmergencia> = {
                 empresa: empresaFinal,
                 dependencia: dependenciaFinal,
-                disposicion: getCsvVal(row, ['disposicion', 'nrodispo']).toString().toUpperCase(),
+                disposicion: disposicionStr,
                 vencimiento: parseCSVDate(getCsvVal(row, ['vencimiento', 'hasta', 'dispofecha'])),
+                formatoDisposicion,
                 cuit: getCsvVal(row, ['cuit']).toString(),
                 domicilio: getCsvVal(row, ['domicilio']).toString().toUpperCase(),
                 localidad: getCsvVal(row, ['localidad']).toString().toUpperCase(),
@@ -428,16 +447,16 @@ export const Planes: React.FC = () => {
                 anexo: activeTab,
                 estado: isDesafectado ? 'desafectado' : 'vigente',
                 convalidaciones: {
-                  anio1: parseCSVDate(getCsvVal(row, ['1conv', '1insp', '1convalidacion'], ['expediente', 'exp'])),
-                  anio2: parseCSVDate(getCsvVal(row, ['2conv', '2insp', '2convalidacion'], ['expediente', 'exp'])),
-                  anio3: parseCSVDate(getCsvVal(row, ['3conv', '3insp', '3convalidacion'], ['expediente', 'exp'])),
-                  anio4: parseCSVDate(getCsvVal(row, ['4conv', '4insp', '4convalidacion'], ['expediente', 'exp'])),
+                  anio1: anio1Date,
+                  anio2: anio2Date,
+                  anio3: anio3Date,
+                  anio4: anio4Date,
                 },
                 convalidacionesDetalle: {
-                  anio1: { nroExpediente: getCsvVal(row, ['expediente1', 'exp1', 'expediente1conv']).toString() || getCsvVal(row, ['expediente'], ['1', '2', '3', '4']).toString() },
-                  anio2: { nroExpediente: getCsvVal(row, ['expediente2', 'exp2', 'expediente2conv']).toString() },
-                  anio3: { nroExpediente: getCsvVal(row, ['expediente3', 'exp3', 'expediente3conv']).toString() },
-                  anio4: { nroExpediente: getCsvVal(row, ['expediente4', 'exp4', 'expediente4conv']).toString() },
+                  anio1: { nroExpediente: anio1Exp, nroIF: anio1Date && anio1Exp ? 'S/D' : undefined },
+                  anio2: { nroExpediente: anio2Exp, nroIF: anio2Date && anio2Exp ? 'S/D' : undefined },
+                  anio3: { nroExpediente: anio3Exp, nroIF: anio3Date && anio3Exp ? 'S/D' : undefined },
+                  anio4: { nroExpediente: anio4Exp, nroIF: anio4Date && anio4Exp ? 'S/D' : undefined },
                 },
                 ultimaActualizacion: new Date().toISOString()
               };
