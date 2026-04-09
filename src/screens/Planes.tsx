@@ -249,9 +249,21 @@ export const Planes: React.FC = () => {
       return str;
     };
 
+    let headerCounts: Record<string, number> = {};
+
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
+      transformHeader: (header) => {
+        const h = header.trim();
+        if (headerCounts[h]) {
+          headerCounts[h]++;
+          return `${h}_${headerCounts[h]}`;
+        } else {
+          headerCounts[h] = 1;
+          return h;
+        }
+      },
       complete: async (results) => {
         try {
           const data = results.data as any[];
@@ -280,7 +292,7 @@ export const Planes: React.FC = () => {
           for (const chunk of chunks) {
             const batch = writeBatch(db);
             chunk.forEach((row) => {
-              let empresaVal = row.EMPRESA || row.Empresa || row.empresa || 
+              let empresaVal = row.EMPRESAS || row.EMPRESA || row.Empresa || row.empresa || 
                                row.TITULAR || row.Titular || row.titular || 
                                row['RAZON SOCIAL'] || row['Razon Social'] || row['Razón Social'] ||
                                row.INSTALACION || row.Instalacion || row.NOMBRE || row.Nombre || '';
@@ -290,7 +302,7 @@ export const Planes: React.FC = () => {
               }
 
               const empresaFinal = (empresaVal || 'SIN NOMBRE').toString().toUpperCase().trim();
-              const dependenciaFinal = (row.JURISDICCION || row.Jurisdiccion || row.jurisdiccion || row.DEPENDENCIA || row.Dependencia || row.dependencia || 'S/D').toString().toUpperCase().trim();
+              const dependenciaFinal = (row.DEPEN || row.JURISDICCION || row.Jurisdiccion || row.jurisdiccion || row.DEPENDENCIA || row.Dependencia || row.dependencia || 'S/D').toString().toUpperCase().trim();
               
               const key = `${empresaFinal}_${dependenciaFinal}`;
               if (existingKeys.has(key)) {
@@ -304,24 +316,31 @@ export const Planes: React.FC = () => {
                 empresa: empresaFinal,
                 dependencia: dependenciaFinal,
                 disposicion: (row.DISPOSICION || row.Disposicion || row.disposicion || row.NRO_DISPO || '').toString().toUpperCase(),
-                vencimiento: parseCSVDate(row.VENCIMIENTO || row.Vencimiento || row.vencimiento || row['FECHA VENCIMIENTO'] || row['Fecha Vencimiento'] || row['Fecha de Vencimiento'] || row['FECHA DE VENCIMIENTO'] || ''),
+                vencimiento: parseCSVDate(row.HASTA || row.VENCIMIENTO || row.Vencimiento || row.vencimiento || row['FECHA VENCIMIENTO'] || row['Fecha Vencimiento'] || row['Fecha de Vencimiento'] || row['FECHA DE VENCIMIENTO'] || ''),
                 cuit: (row.CUIT || row.Cuit || row.cuit || '').toString(),
                 domicilio: (row.DOMICILIO || row.Domicilio || row.domicilio || '').toString().toUpperCase(),
                 localidad: (row.LOCALIDAD || row.Localidad || row.localidad || '').toString().toUpperCase(),
                 email: (row.EMAIL || row.Email || row.email || '').toString(),
                 telefono: (row.TELEFONO || row.Telefono || row.telefono || row.TEL || row.Tel || '').toString(),
-                numeroPlan: (row.NRO_PLAN || row.NUMERO_PLAN || row['Nº PLAN'] || row.PLAN || '').toString(),
+                numeroPlan: (row.PLAN || row.NRO_PLAN || row.NUMERO_PLAN || row['Nº PLAN'] || '').toString(),
                 coordenadas: (row.COORDENADAS || row.LAT_LONG || row.UBICACION || '').toString(),
                 responsablePlan: (row.RESPONSABLE || row.RESPONSABLE_PLAN || '').toString(),
                 contactoPlan: (row.CONTACTO || row.CONTACTO_PLAN || '').toString(),
-                tipoRespuesta: (row.TIPO_RESPUESTA || row.RESPUESTA || '').toString().toLowerCase().includes('tercero') ? 'terceros' : ((row.TIPO_RESPUESTA || row.RESPUESTA || '').toString().toLowerCase().includes('propia') ? 'propia' : ''),
+                tipoRespuesta: (row.RESPUESTA || row.TIPO_RESPUESTA || '').toString().toLowerCase().includes('tercero') ? 'terceros' : ((row.RESPUESTA || row.TIPO_RESPUESTA || '').toString().toLowerCase().includes('propia') ? 'propia' : ''),
                 empresaRespuesta: (row.EMPRESA_RESPUESTA || row.TERCERO || row.CONTRATISTA || '').toString().toUpperCase(),
+                documentacionExtra: (row.OBSERVACIONES || row.DOCUMENTACION_EXTRA || '').toString(),
                 anexo: activeTab,
                 convalidaciones: {
-                  anio1: parseCSVDate(row.CONV1 || row.CONV_1 || row.Conv1 || row['1º Convalidación'] || row['1° CONVALIDACION'] || row['1RA CONVALIDACION'] || row['1ra Convalidacion'] || ''),
-                  anio2: parseCSVDate(row.CONV2 || row.CONV_2 || row.Conv2 || row['2º Convalidación'] || row['2° CONVALIDACION'] || row['2DA CONVALIDACION'] || row['2da Convalidacion'] || ''),
-                  anio3: parseCSVDate(row.CONV3 || row.CONV_3 || row.Conv3 || row['3º Convalidación'] || row['3° CONVALIDACION'] || row['3RA CONVALIDACION'] || row['3ra Convalidacion'] || ''),
-                  anio4: parseCSVDate(row.CONV4 || row.CONV_4 || row.Conv4 || row['4º Convalidación'] || row['4° CONVALIDACION'] || row['4TA CONVALIDACION'] || row['4ta Convalidacion'] || ''),
+                  anio1: parseCSVDate(row['1º INSP. ANU'] || row.CONV1 || row.CONV_1 || row.Conv1 || row['1º Convalidación'] || row['1° CONVALIDACION'] || row['1RA CONVALIDACION'] || row['1ra Convalidacion'] || ''),
+                  anio2: parseCSVDate(row['2º INSP. ANU'] || row.CONV2 || row.CONV_2 || row.Conv2 || row['2º Convalidación'] || row['2° CONVALIDACION'] || row['2DA CONVALIDACION'] || row['2da Convalidacion'] || ''),
+                  anio3: parseCSVDate(row['3º INSP. ANU'] || row.CONV3 || row.CONV_3 || row.Conv3 || row['3º Convalidación'] || row['3° CONVALIDACION'] || row['3RA CONVALIDACION'] || row['3ra Convalidacion'] || ''),
+                  anio4: parseCSVDate(row['4º INSP. ANU'] || row.CONV4 || row.CONV_4 || row.Conv4 || row['4º Convalidación'] || row['4° CONVALIDACION'] || row['4TA CONVALIDACION'] || row['4ta Convalidacion'] || ''),
+                },
+                convalidacionesDetalle: {
+                  anio1: { nroExpediente: (row.EXPEDIENTE || '').toString() },
+                  anio2: { nroExpediente: (row.EXPEDIENTE_2 || '').toString() },
+                  anio3: { nroExpediente: (row.EXPEDIENTE_3 || '').toString() },
+                  anio4: { nroExpediente: (row.EXPEDIENTE_4 || '').toString() },
                 },
                 ultimaActualizacion: new Date().toISOString()
               };
