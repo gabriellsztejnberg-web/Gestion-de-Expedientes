@@ -29,6 +29,7 @@ export const extractPlanesFromPDF = async (base64Pdf: string, activeTab: string)
         "dependencia": "Jurisdicción (ej. SLOR, SNIC, S/D)",
         "disposicion": "Número de disposición",
         "vencimiento": "YYYY-MM-DD",
+        "formatoDisposicion": "digital" o "papel" o "",
         "cuit": "",
         "domicilio": "",
         "localidad": "",
@@ -49,10 +50,10 @@ export const extractPlanesFromPDF = async (base64Pdf: string, activeTab: string)
           "anio4": "YYYY-MM-DD"
         },
         "convalidacionesDetalle": {
-          "anio1": { "nroExpediente": "Expediente 1" },
-          "anio2": { "nroExpediente": "Expediente 2" },
-          "anio3": { "nroExpediente": "Expediente 3" },
-          "anio4": { "nroExpediente": "Expediente 4" }
+          "anio1": { "nroExpediente": "Expediente 1", "nroIF": "S/D" },
+          "anio2": { "nroExpediente": "Expediente 2", "nroIF": "S/D" },
+          "anio3": { "nroExpediente": "Expediente 3", "nroIF": "S/D" },
+          "anio4": { "nroExpediente": "Expediente 4", "nroIF": "S/D" }
         }
       }
     ]
@@ -60,6 +61,8 @@ export const extractPlanesFromPDF = async (base64Pdf: string, activeTab: string)
     Reglas importantes:
     - Transforma todas las fechas al formato YYYY-MM-DD. Si solo dice el año (ej. 2026), pon "2026-01-01".
     - Si en observaciones dice "desafectado", el estado debe ser "desafectado", sino "vigente".
+    - Si la disposición tiene el año 2023 o posterior (ej. DI-2023-...), el formatoDisposicion debe ser "digital". Si es 2022 o anterior, debe ser "papel".
+    - En convalidacionesDetalle, si hay una fecha de convalidación Y un número de expediente, establece "nroIF": "S/D". Si falta alguno de los dos, no incluyas "nroIF".
     - Si un dato está vacío o no existe, usa un string vacío "".
     - Devuelve SOLO el JSON válido.
   `;
