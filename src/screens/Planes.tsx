@@ -16,6 +16,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { PlanEmergencia, AnexoTipo, User, Case, Inspeccion, TimelineEvent } from '../types';
+import { extractPlanesFromPDF } from '../services/geminiService';
 
 const ANEXOS: { id: AnexoTipo; label: string }[] = [
   { id: 'anexo_16', label: 'ANEXO 16 (Ref)' },
@@ -46,9 +47,76 @@ export const Planes: React.FC = () => {
   const [selectedPlan, setSelectedPlan] = useState<PlanEmergencia | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
 
   const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
   const isJefe = (currentUser.role || '').toLowerCase() === 'jefe' || (currentUser.role || '').toLowerCase() === 'admin';
+
+  const handleImportPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!confirm(`Se extraerán los datos del PDF usando Inteligencia Artificial y se importarán al ${activeTab.replace('_', ' ').toUpperCase()}. Este proceso puede tardar unos segundos. ¿Continuar?`)) {
+      if (pdfInputRef.current) pdfInputRef.current.value = '';
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = async () => {
+        const base64Pdf = (reader.result as string).split(',')[1];
+        
+        try {
+          const extractedPlanes = await extractPlanesFromPDF(base64Pdf, activeTab);
+          
+          if (extractedPlanes.length === 0) {
+            alert("No se encontraron registros en el PDF.");
+            setIsLoading(false);
+            return;
+          }
+
+          const existingPlanes = planes.filter(p => p.anexo === activeTab);
+          const existingKeys = new Set(existingPlanes.map(p => `${p.empresa}_${p.dependencia}`.toUpperCase()));
+          
+          let recordsAdded = 0;
+          let recordsSkipped = 0;
+          const batch = writeBatch(db);
+
+          extractedPlanes.forEach((plan) => {
+            const key = `${plan.empresa}_${plan.dependencia}`.toUpperCase();
+            if (existingKeys.has(key)) {
+              recordsSkipped++;
+              return;
+            }
+            existingKeys.add(key);
+
+            const newPlanRef = doc(collection(db, 'planes'));
+            batch.set(newPlanRef, plan);
+            recordsAdded++;
+          });
+
+          await batch.commit();
+          alert(`Importación desde PDF completada.\nAgregados: ${recordsAdded}\nOmitidos (ya existían): ${recordsSkipped}`);
+        } catch (error) {
+          console.error("Error extracting from PDF:", error);
+          alert("Error al procesar el PDF con IA. Intente de nuevo o use CSV.");
+        } finally {
+          setIsLoading(false);
+          if (pdfInputRef.current) pdfInputRef.current.value = '';
+        }
+      };
+      reader.onerror = () => {
+        alert("Error al leer el archivo PDF.");
+        setIsLoading(false);
+      };
+    } catch (error) {
+      console.error("Error reading file:", error);
+      alert("Error al leer el archivo.");
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'planes'), orderBy('empresa', 'asc'));
@@ -251,6 +319,23 @@ export const Planes: React.FC = () => {
 
     let headerCounts: Record<string, number> = {};
 
+    const normalizeKey = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+
+    const getCsvVal = (row: any, possibleNames: string[], excludeNames: string[] = []) => {
+      const normalizedNames = possibleNames.map(normalizeKey);
+      const normalizedExcludes = excludeNames.map(normalizeKey);
+      
+      for (const key of Object.keys(row)) {
+        const normKey = normalizeKey(key);
+        if (normalizedNames.some(n => normKey.includes(n))) {
+          if (!normalizedExcludes.some(e => normKey.includes(e))) {
+            return row[key];
+          }
+        }
+      }
+      return '';
+    };
+
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -291,18 +376,25 @@ export const Planes: React.FC = () => {
 
           for (const chunk of chunks) {
             const batch = writeBatch(db);
-            chunk.forEach((row) => {
-              let empresaVal = row['Empresa / Razón Social'] || row.EMPRESAS || row.EMPRESA || row.Empresa || row.empresa || 
-                               row.TITULAR || row.Titular || row.titular || 
-                               row['RAZON SOCIAL'] || row['Razon Social'] || row['Razón Social'] ||
-                               row.INSTALACION || row.Instalacion || row.NOMBRE || row.Nombre || '';
-                               
+            chunk.forEach((rawRow) => {
+              // Fix shifted rows (e.g. when first column is an ID but header is missing)
+              let row = rawRow;
+              const vals = Object.values(rawRow) as string[];
+              const keys = Object.keys(rawRow);
+              if (vals.length > 1 && /^\d+$/.test(vals[0]?.trim()) && vals[1]?.trim().length === 4) {
+                row = {};
+                for (let i = 0; i < keys.length; i++) {
+                  row[keys[i]] = vals[i + 1] || '';
+                }
+              }
+
+              let empresaVal = getCsvVal(row, ['empresa', 'titular', 'razonsocial', 'instalacion', 'nombre']);
               if (!empresaVal && Object.keys(row).length > 0) {
                  empresaVal = row[Object.keys(row)[0]];
               }
 
               const empresaFinal = (empresaVal || 'SIN NOMBRE').toString().toUpperCase().trim();
-              const dependenciaFinal = (row['JURIS.'] || row.DEPEN || row.JURISDICCION || row.Jurisdiccion || row.jurisdiccion || row.DEPENDENCIA || row.Dependencia || row.dependencia || 'S/D').toString().toUpperCase().trim();
+              const dependenciaFinal = getCsvVal(row, ['juris', 'depen']).toString().toUpperCase().trim() || 'S/D';
               
               const key = `${empresaFinal}_${dependenciaFinal}`;
               if (existingKeys.has(key)) {
@@ -312,35 +404,40 @@ export const Planes: React.FC = () => {
               existingKeys.add(key);
 
               const newPlanRef = doc(collection(db, 'planes'));
+              
+              const observaciones = getCsvVal(row, ['observaciones', 'documentacionextra', 'respuesta']).toString();
+              const isDesafectado = observaciones.toLowerCase().includes('desafectado');
+
               const plan: Partial<PlanEmergencia> = {
                 empresa: empresaFinal,
                 dependencia: dependenciaFinal,
-                disposicion: (row.DISPOSICION || row.Disposicion || row.disposicion || row.NRO_DISPO || '').toString().toUpperCase(),
-                vencimiento: parseCSVDate(row.VENCIMIENTO || row.HASTA || row.Vencimiento || row.vencimiento || row['FECHA VENCIMIENTO'] || row['Fecha Vencimiento'] || row['Fecha de Vencimiento'] || row['FECHA DE VENCIMIENTO'] || ''),
-                cuit: (row.CUIT || row.Cuit || row.cuit || '').toString(),
-                domicilio: (row.DOMICILIO || row.Domicilio || row.domicilio || '').toString().toUpperCase(),
-                localidad: (row.LOCALIDAD || row.Localidad || row.localidad || '').toString().toUpperCase(),
-                email: (row.EMAIL || row.Email || row.email || '').toString(),
-                telefono: (row.TELEFONO || row.Telefono || row.telefono || row.TEL || row.Tel || '').toString(),
-                numeroPlan: (row.PLAN || row.NRO_PLAN || row.NUMERO_PLAN || row['Nº PLAN'] || '').toString(),
-                coordenadas: (row.COORDENADAS || row.LAT_LONG || row.UBICACION || '').toString(),
-                responsablePlan: (row.RESPONSABLE || row.RESPONSABLE_PLAN || '').toString(),
-                contactoPlan: (row.CONTACTO || row.CONTACTO_PLAN || '').toString(),
-                tipoRespuesta: (row.RESPUESTA || row.TIPO_RESPUESTA || '').toString().toLowerCase().includes('tercero') ? 'terceros' : ((row.RESPUESTA || row.TIPO_RESPUESTA || '').toString().toLowerCase().includes('propia') ? 'propia' : ''),
-                empresaRespuesta: (row.EMPRESA_RESPUESTA || row.TERCERO || row.CONTRATISTA || '').toString().toUpperCase(),
-                documentacionExtra: (row.OBSERVACIONES || row.DOCUMENTACION_EXTRA || '').toString(),
+                disposicion: getCsvVal(row, ['disposicion', 'nrodispo']).toString().toUpperCase(),
+                vencimiento: parseCSVDate(getCsvVal(row, ['vencimiento', 'hasta', 'dispofecha'])),
+                cuit: getCsvVal(row, ['cuit']).toString(),
+                domicilio: getCsvVal(row, ['domicilio']).toString().toUpperCase(),
+                localidad: getCsvVal(row, ['localidad']).toString().toUpperCase(),
+                email: getCsvVal(row, ['email']).toString(),
+                telefono: getCsvVal(row, ['telefono', 'tel']).toString(),
+                numeroPlan: getCsvVal(row, ['plan', 'nroplan', 'numeroplan']).toString(),
+                coordenadas: getCsvVal(row, ['coordenadas', 'latlong', 'ubicacion']).toString(),
+                responsablePlan: getCsvVal(row, ['responsable']).toString(),
+                contactoPlan: getCsvVal(row, ['contacto']).toString(),
+                tipoRespuesta: getCsvVal(row, ['respuesta', 'tiporespuesta']).toString().toLowerCase().includes('tercero') ? 'terceros' : (getCsvVal(row, ['respuesta', 'tiporespuesta']).toString().toLowerCase().includes('propia') ? 'propia' : ''),
+                empresaRespuesta: getCsvVal(row, ['empresarespuesta', 'tercero', 'contratista']).toString().toUpperCase(),
+                documentacionExtra: observaciones,
                 anexo: activeTab,
+                estado: isDesafectado ? 'desafectado' : 'vigente',
                 convalidaciones: {
-                  anio1: parseCSVDate(row['1º CONVALIDACIÓN'] || row['1º INSP. ANU'] || row.CONV1 || row.CONV_1 || row.Conv1 || row['1º Convalidación'] || row['1° CONVALIDACION'] || row['1RA CONVALIDACION'] || row['1ra Convalidacion'] || ''),
-                  anio2: parseCSVDate(row['2º CONVALIDACIÓN'] || row['2º INSP. ANU'] || row.CONV2 || row.CONV_2 || row.Conv2 || row['2º Convalidación'] || row['2° CONVALIDACION'] || row['2DA CONVALIDACION'] || row['2da Convalidacion'] || ''),
-                  anio3: parseCSVDate(row['3º CONVALIDACIÓN'] || row['3º INSP. ANU'] || row.CONV3 || row.CONV_3 || row.Conv3 || row['3º Convalidación'] || row['3° CONVALIDACION'] || row['3RA CONVALIDACION'] || row['3ra Convalidacion'] || ''),
-                  anio4: parseCSVDate(row['4º CONVALIDACIÓN'] || row['4º INSP. ANU'] || row.CONV4 || row.CONV_4 || row.Conv4 || row['4º Convalidación'] || row['4° CONVALIDACION'] || row['4TA CONVALIDACION'] || row['4ta Convalidacion'] || ''),
+                  anio1: parseCSVDate(getCsvVal(row, ['1conv', '1insp', '1convalidacion'], ['expediente', 'exp'])),
+                  anio2: parseCSVDate(getCsvVal(row, ['2conv', '2insp', '2convalidacion'], ['expediente', 'exp'])),
+                  anio3: parseCSVDate(getCsvVal(row, ['3conv', '3insp', '3convalidacion'], ['expediente', 'exp'])),
+                  anio4: parseCSVDate(getCsvVal(row, ['4conv', '4insp', '4convalidacion'], ['expediente', 'exp'])),
                 },
                 convalidacionesDetalle: {
-                  anio1: { nroExpediente: (row['EXPEDIENTE 1° CONVALIDACIÓN'] || row.EXPEDIENTE || '').toString() },
-                  anio2: { nroExpediente: (row['EXPEDIENTE 2° CONVALIDACIÓN'] || row.EXPEDIENTE_2 || '').toString() },
-                  anio3: { nroExpediente: (row['EXPEDIENTE 3° CONVALIDACIÓN'] || row.EXPEDIENTE_3 || '').toString() },
-                  anio4: { nroExpediente: (row['EXPEDIENTE 4° CONVALIDACIÓN'] || row.EXPEDIENTE_4 || '').toString() },
+                  anio1: { nroExpediente: getCsvVal(row, ['expediente1', 'exp1', 'expediente1conv']).toString() || getCsvVal(row, ['expediente'], ['1', '2', '3', '4']).toString() },
+                  anio2: { nroExpediente: getCsvVal(row, ['expediente2', 'exp2', 'expediente2conv']).toString() },
+                  anio3: { nroExpediente: getCsvVal(row, ['expediente3', 'exp3', 'expediente3conv']).toString() },
+                  anio4: { nroExpediente: getCsvVal(row, ['expediente4', 'exp4', 'expediente4conv']).toString() },
                 },
                 ultimaActualizacion: new Date().toISOString()
               };
@@ -390,6 +487,19 @@ export const Planes: React.FC = () => {
                     <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest text-primary italic">Control de Vencimientos y Convalidaciones Anuales</p>
                 </div>
                 <div className="flex gap-2">
+                    <button 
+                      onClick={() => pdfInputRef.current?.click()}
+                      className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-all text-xs font-black uppercase shadow-lg"
+                    >
+                       <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span> Importar PDF (IA)
+                    </button>
+                    <input 
+                      type="file" 
+                      ref={pdfInputRef} 
+                      className="hidden" 
+                      accept=".pdf" 
+                      onChange={handleImportPDF} 
+                    />
                     <button 
                       onClick={() => fileInputRef.current?.click()}
                       className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 transition-all text-xs font-black uppercase shadow-lg"
@@ -461,13 +571,16 @@ export const Planes: React.FC = () => {
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                           {filteredPlanes.map((p) => (
-                              <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group">
-                                  <td className="px-4 py-4 font-bold text-primary uppercase">{p.dependencia || '-'}</td>
+                              <tr key={p.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group ${p.estado === 'desafectado' ? 'bg-orange-50 dark:bg-orange-900/20 opacity-75' : ''}`}>
+                                  <td className="px-4 py-4 font-bold text-primary uppercase">
+                                    {p.dependencia || '-'}
+                                    {p.estado === 'desafectado' && <span className="block text-[8px] text-orange-600 dark:text-orange-400 mt-1 font-black">DESAFECTADO</span>}
+                                  </td>
                                   <td className="px-4 py-4">
                                       <div className="flex flex-col">
                                         <button 
                                           onClick={() => { setSelectedPlan(p); setIsProfileOpen(true); }}
-                                          className="font-black text-slate-900 dark:text-white uppercase text-[11px] text-left hover:text-primary transition-colors"
+                                          className={`font-black uppercase text-[11px] text-left hover:text-primary transition-colors ${p.estado === 'desafectado' ? 'text-orange-800 dark:text-orange-300 line-through' : 'text-slate-900 dark:text-white'}`}
                                         >
                                           {p.empresa}
                                         </button>
