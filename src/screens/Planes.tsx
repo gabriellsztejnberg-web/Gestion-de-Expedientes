@@ -292,7 +292,7 @@ export const Planes: React.FC = () => {
           for (const chunk of chunks) {
             const batch = writeBatch(db);
             chunk.forEach((row) => {
-              let empresaVal = row.EMPRESAS || row.EMPRESA || row.Empresa || row.empresa || 
+              let empresaVal = row['Empresa / Razón Social'] || row.EMPRESAS || row.EMPRESA || row.Empresa || row.empresa || 
                                row.TITULAR || row.Titular || row.titular || 
                                row['RAZON SOCIAL'] || row['Razon Social'] || row['Razón Social'] ||
                                row.INSTALACION || row.Instalacion || row.NOMBRE || row.Nombre || '';
@@ -302,7 +302,7 @@ export const Planes: React.FC = () => {
               }
 
               const empresaFinal = (empresaVal || 'SIN NOMBRE').toString().toUpperCase().trim();
-              const dependenciaFinal = (row.DEPEN || row.JURISDICCION || row.Jurisdiccion || row.jurisdiccion || row.DEPENDENCIA || row.Dependencia || row.dependencia || 'S/D').toString().toUpperCase().trim();
+              const dependenciaFinal = (row['JURIS.'] || row.DEPEN || row.JURISDICCION || row.Jurisdiccion || row.jurisdiccion || row.DEPENDENCIA || row.Dependencia || row.dependencia || 'S/D').toString().toUpperCase().trim();
               
               const key = `${empresaFinal}_${dependenciaFinal}`;
               if (existingKeys.has(key)) {
@@ -316,7 +316,7 @@ export const Planes: React.FC = () => {
                 empresa: empresaFinal,
                 dependencia: dependenciaFinal,
                 disposicion: (row.DISPOSICION || row.Disposicion || row.disposicion || row.NRO_DISPO || '').toString().toUpperCase(),
-                vencimiento: parseCSVDate(row.HASTA || row.VENCIMIENTO || row.Vencimiento || row.vencimiento || row['FECHA VENCIMIENTO'] || row['Fecha Vencimiento'] || row['Fecha de Vencimiento'] || row['FECHA DE VENCIMIENTO'] || ''),
+                vencimiento: parseCSVDate(row.VENCIMIENTO || row.HASTA || row.Vencimiento || row.vencimiento || row['FECHA VENCIMIENTO'] || row['Fecha Vencimiento'] || row['Fecha de Vencimiento'] || row['FECHA DE VENCIMIENTO'] || ''),
                 cuit: (row.CUIT || row.Cuit || row.cuit || '').toString(),
                 domicilio: (row.DOMICILIO || row.Domicilio || row.domicilio || '').toString().toUpperCase(),
                 localidad: (row.LOCALIDAD || row.Localidad || row.localidad || '').toString().toUpperCase(),
@@ -331,16 +331,16 @@ export const Planes: React.FC = () => {
                 documentacionExtra: (row.OBSERVACIONES || row.DOCUMENTACION_EXTRA || '').toString(),
                 anexo: activeTab,
                 convalidaciones: {
-                  anio1: parseCSVDate(row['1º INSP. ANU'] || row.CONV1 || row.CONV_1 || row.Conv1 || row['1º Convalidación'] || row['1° CONVALIDACION'] || row['1RA CONVALIDACION'] || row['1ra Convalidacion'] || ''),
-                  anio2: parseCSVDate(row['2º INSP. ANU'] || row.CONV2 || row.CONV_2 || row.Conv2 || row['2º Convalidación'] || row['2° CONVALIDACION'] || row['2DA CONVALIDACION'] || row['2da Convalidacion'] || ''),
-                  anio3: parseCSVDate(row['3º INSP. ANU'] || row.CONV3 || row.CONV_3 || row.Conv3 || row['3º Convalidación'] || row['3° CONVALIDACION'] || row['3RA CONVALIDACION'] || row['3ra Convalidacion'] || ''),
-                  anio4: parseCSVDate(row['4º INSP. ANU'] || row.CONV4 || row.CONV_4 || row.Conv4 || row['4º Convalidación'] || row['4° CONVALIDACION'] || row['4TA CONVALIDACION'] || row['4ta Convalidacion'] || ''),
+                  anio1: parseCSVDate(row['1º CONVALIDACIÓN'] || row['1º INSP. ANU'] || row.CONV1 || row.CONV_1 || row.Conv1 || row['1º Convalidación'] || row['1° CONVALIDACION'] || row['1RA CONVALIDACION'] || row['1ra Convalidacion'] || ''),
+                  anio2: parseCSVDate(row['2º CONVALIDACIÓN'] || row['2º INSP. ANU'] || row.CONV2 || row.CONV_2 || row.Conv2 || row['2º Convalidación'] || row['2° CONVALIDACION'] || row['2DA CONVALIDACION'] || row['2da Convalidacion'] || ''),
+                  anio3: parseCSVDate(row['3º CONVALIDACIÓN'] || row['3º INSP. ANU'] || row.CONV3 || row.CONV_3 || row.Conv3 || row['3º Convalidación'] || row['3° CONVALIDACION'] || row['3RA CONVALIDACION'] || row['3ra Convalidacion'] || ''),
+                  anio4: parseCSVDate(row['4º CONVALIDACIÓN'] || row['4º INSP. ANU'] || row.CONV4 || row.CONV_4 || row.Conv4 || row['4º Convalidación'] || row['4° CONVALIDACION'] || row['4TA CONVALIDACION'] || row['4ta Convalidacion'] || ''),
                 },
                 convalidacionesDetalle: {
-                  anio1: { nroExpediente: (row.EXPEDIENTE || '').toString() },
-                  anio2: { nroExpediente: (row.EXPEDIENTE_2 || '').toString() },
-                  anio3: { nroExpediente: (row.EXPEDIENTE_3 || '').toString() },
-                  anio4: { nroExpediente: (row.EXPEDIENTE_4 || '').toString() },
+                  anio1: { nroExpediente: (row['EXPEDIENTE 1° CONVALIDACIÓN'] || row.EXPEDIENTE || '').toString() },
+                  anio2: { nroExpediente: (row['EXPEDIENTE 2° CONVALIDACIÓN'] || row.EXPEDIENTE_2 || '').toString() },
+                  anio3: { nroExpediente: (row['EXPEDIENTE 3° CONVALIDACIÓN'] || row.EXPEDIENTE_3 || '').toString() },
+                  anio4: { nroExpediente: (row['EXPEDIENTE 4° CONVALIDACIÓN'] || row.EXPEDIENTE_4 || '').toString() },
                 },
                 ultimaActualizacion: new Date().toISOString()
               };
