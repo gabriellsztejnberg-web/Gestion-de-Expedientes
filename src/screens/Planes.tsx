@@ -291,8 +291,13 @@ export const Planes: React.FC = () => {
       if (!dateStr) return '';
       const str = dateStr.toString().trim();
       
+      // Si es solo un año (ej. "2026")
+      if (/^20\d{2}$/.test(str)) {
+        return `${str}-01-01`;
+      }
+
       // Excel serial date (ej. 45000)
-      if (/^\d+$/.test(str)) {
+      if (/^\d{5}$/.test(str)) {
         const excelEpoch = new Date(1899, 11, 30);
         const days = parseInt(str, 10);
         const date = new Date(excelEpoch.getTime() + days * 86400000);
@@ -468,9 +473,9 @@ export const Planes: React.FC = () => {
           }
 
           alert(`Importación completada.\nAgregados: ${recordsAdded}\nOmitidos (ya existían): ${recordsSkipped}`);
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error al importar CSV:", error);
-          alert("Error al procesar el archivo. Verifique el formato.");
+          alert(`Error al procesar el archivo. Verifique el formato.\nDetalle: ${error.message}`);
         } finally {
           setIsLoading(false);
           if (fileInputRef.current) fileInputRef.current.value = '';
