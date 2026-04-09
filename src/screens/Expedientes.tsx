@@ -73,6 +73,8 @@ export const Expedientes: React.FC = () => {
     destino: '', 
     nroDisposicion: '', 
     vencimiento: '', 
+    nroPlan: '',
+    documentacionExtra: '',
     isTask: false 
   });
 
@@ -454,6 +456,12 @@ export const Expedientes: React.FC = () => {
           esTareaAutomatica = true;
           break;
 
+        case 'EmisionDispo':
+          nuevoEstado = 'guarda';
+          textoNovedad = `Se emitió nueva DISPOSICIÓN: ${movData.nroDisposicion}. Vencimiento: ${movData.vencimiento}. ${ts}.`;
+          esTareaAutomatica = false;
+          break;
+
         case 'Firma':
           // REQUERIMIENTO: Firma por otra persona o jefe = Pendiente
           nuevoEstado = 'p_dispo';
@@ -519,32 +527,54 @@ export const Expedientes: React.FC = () => {
       };
 
       // --- AUTOMATIZACIÓN: Emisión de Disposición ---
-      if ((movData.tipo === 'Conclusiones' || movData.tipo === 'Guarda') && movData.nroDisposicion && movData.vencimiento) {
+      if ((movData.tipo === 'Conclusiones' || movData.tipo === 'Guarda' || movData.tipo === 'EmisionDispo') && movData.nroDisposicion && movData.vencimiento) {
         if (editingExp.planId) {
           const planRef = doc(db, 'planes', editingExp.planId);
           const planSnap = await getDoc(planRef);
           
           if (planSnap.exists()) {
-            const approvalDate = new Date(); // Fecha de hoy como fecha de emisión
+            const planData = planSnap.data() as PlanEmergencia;
+            const historial = planData.historialDisposiciones || [];
             
-            // Calcular fechas tentativas para convalidaciones (1 año después de hoy, 2 años, etc.)
-            const calcTentative = (years: number) => {
-              const d = new Date(approvalDate);
-              d.setFullYear(d.getFullYear() + years);
-              return d.toISOString().split('T')[0];
-            };
+            // Si ya hay una disposición y se está emitiendo una nueva (o es trámite de renovación), archivamos la actual
+            if (planData.disposicion && planData.disposicion !== movData.nroDisposicion) {
+              historial.push({
+                disposicion: planData.disposicion || '',
+                vencimiento: planData.vencimiento || '',
+                formatoDisposicion: planData.formatoDisposicion || '',
+                convalidaciones: planData.convalidaciones || {},
+                convalidacionesDetalle: planData.convalidacionesDetalle || {},
+                fechaArchivo: new Date().toISOString(),
+                numeroPlan: planData.numeroPlan || '',
+                documentacionExtra: planData.documentacionExtra || ''
+              });
+            }
 
-            await updateDoc(planRef, {
+            const [y, m, dayStr] = movData.vencimiento.split('-');
+            const yNum = parseInt(y, 10);
+            let convalidaciones = {};
+            if (!isNaN(yNum)) {
+              convalidaciones = {
+                anio1: `${yNum - 4}-${m}-${dayStr}`,
+                anio2: `${yNum - 3}-${m}-${dayStr}`,
+                anio3: `${yNum - 2}-${m}-${dayStr}`,
+                anio4: `${yNum - 1}-${m}-${dayStr}`,
+              };
+            }
+
+            const planUpdates: any = {
               disposicion: movData.nroDisposicion,
               vencimiento: movData.vencimiento,
-              convalidaciones: {
-                anio1: `TENTATIVA: ${calcTentative(1)}`,
-                anio2: `TENTATIVA: ${calcTentative(2)}`,
-                anio3: `TENTATIVA: ${calcTentative(3)}`,
-                anio4: `TENTATIVA: ${calcTentative(4)}`,
-              },
+              convalidaciones,
+              convalidacionesDetalle: {}, // Limpiamos los detalles de convalidaciones al renovar
+              historialDisposiciones: historial,
               ultimaActualizacion: new Date().toISOString()
-            });
+            };
+
+            if (movData.nroPlan) planUpdates.numeroPlan = movData.nroPlan;
+            if (movData.documentacionExtra !== undefined) planUpdates.documentacionExtra = movData.documentacionExtra;
+
+            await updateDoc(planRef, planUpdates);
           }
         }
       }
@@ -1128,6 +1158,7 @@ export const Expedientes: React.FC = () => {
                     <option value="PlanillaObs">⚠️ Planilla (Observada)</option>
                     <option value="Encuesta">⚠️ Encuesta / Inspección (Carga)</option>
                     <option value="Conclusiones">⚠️ Resultado de Conclusiones (A Firma)</option>
+                    <option value="EmisionDispo">✅ Emisión / Renovación de Disposición</option>
                   </optgroup>
                   <optgroup label="Seguimiento / Pendientes">
                     <option value="Firma">⚠️ A Firma / Visado (General)</option>
@@ -1147,10 +1178,10 @@ export const Expedientes: React.FC = () => {
                   <input required placeholder="Ej: Legales, Catastro, etc." className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={movData.destino} onChange={e => setMovData({...movData, destino: e.target.value})} />
                 </div>
               )}
-              {(movData.tipo === 'Conclusiones' || movData.tipo === 'Guarda') && (
+              {(movData.tipo === 'Conclusiones' || movData.tipo === 'Guarda' || movData.tipo === 'EmisionDispo') && (
                 <div className="grid grid-cols-2 gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-900/50">
                   <div className="col-span-2">
-                    <p className="text-[9px] font-black uppercase text-blue-700 dark:text-blue-300 mb-2">Datos de la Nueva Disposición</p>
+                    <p className="text-[9px] font-black uppercase text-blue-700 dark:text-blue-300 mb-2">Datos de la Nueva Disposición y Plan</p>
                   </div>
                   <div>
                     <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Nº Disposición</label>
@@ -1169,6 +1200,24 @@ export const Expedientes: React.FC = () => {
                       value={movData.vencimiento} 
                       onChange={e => setMovData({...movData, vencimiento: e.target.value})} 
                     />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Nº de Plan (Opcional)</label>
+                    <input 
+                      placeholder="Ej: PLAN-123" 
+                      className="w-full px-2 py-1 text-xs border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-mono" 
+                      value={movData.nroPlan} 
+                      onChange={e => setMovData({...movData, nroPlan: e.target.value})} 
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Documentación Extra Aprobada (Opcional)</label>
+                    <textarea 
+                      className="w-full px-2 py-1 text-xs border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-12" 
+                      value={movData.documentacionExtra} 
+                      onChange={e => setMovData({...movData, documentacionExtra: e.target.value})} 
+                      placeholder="Anexos, Planos, etc."
+                    ></textarea>
                   </div>
                 </div>
               )}
