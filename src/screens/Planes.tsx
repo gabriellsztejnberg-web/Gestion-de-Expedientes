@@ -547,6 +547,41 @@ export const Planes: React.FC = () => {
 
   const uniqueJur = Array.from(new Set(planes.filter(p => p.anexo === activeTab).map(p => p.dependencia))).filter(Boolean).sort();
 
+  // --- DASHBOARD METRICS ---
+  const now = new Date();
+  const thirtyDaysFromNow = new Date();
+  thirtyDaysFromNow.setDate(now.getDate() + 30);
+
+  let totalEmpresas = planes.length;
+  let convalidacionesVencidas = 0;
+  let convalidacionesPorVencer = 0;
+  let planesVencidos = 0;
+  let planesPorVencer = 0;
+
+  planes.forEach(p => {
+    // Check Plan Disposicion Vencimiento
+    if (p.vencimiento && p.vencimiento !== '-' && p.vencimiento.length >= 5) {
+      const vDate = new Date(p.vencimiento);
+      if (!isNaN(vDate.getTime())) {
+        if (vDate < now) planesVencidos++;
+        else if (vDate <= thirtyDaysFromNow) planesPorVencer++;
+      }
+    }
+
+    // Check Convalidaciones
+    if (p.convalidaciones) {
+      Object.values(p.convalidaciones).forEach(dateStr => {
+        if (dateStr && dateStr !== '-' && dateStr.length >= 5) {
+          const cDate = new Date(dateStr);
+          if (!isNaN(cDate.getTime())) {
+            if (cDate < now) convalidacionesVencidas++;
+            else if (cDate <= thirtyDaysFromNow) convalidacionesPorVencer++;
+          }
+        }
+      });
+    }
+  });
+
   return (
     <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden font-display print:h-auto print:overflow-visible">
       <div className="print:hidden h-full">
@@ -594,6 +629,49 @@ export const Planes: React.FC = () => {
                        <span className="material-symbols-outlined text-[18px]">add</span> Nuevo Registro
                     </button>
                 </div>
+            </div>
+
+            {/* DASHBOARD PANEL */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 shrink-0">
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <div className="size-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                  <span className="material-symbols-outlined">corporate_fare</span>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Total Empresas</p>
+                  <p className="text-2xl font-black text-slate-900 dark:text-white leading-none">{totalEmpresas}</p>
+                </div>
+              </div>
+              
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <div className="size-10 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
+                  <span className="material-symbols-outlined">warning</span>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Planes por Vencer (30d)</p>
+                  <p className="text-2xl font-black text-slate-900 dark:text-white leading-none">{planesPorVencer}</p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <div className="size-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400">
+                  <span className="material-symbols-outlined">error</span>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Planes Vencidos</p>
+                  <p className="text-2xl font-black text-slate-900 dark:text-white leading-none">{planesVencidos}</p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <div className="size-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
+                  <span className="material-symbols-outlined">event_busy</span>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Conval. Vencidas</p>
+                  <p className="text-2xl font-black text-slate-900 dark:text-white leading-none">{convalidacionesVencidas}</p>
+                </div>
+              </div>
             </div>
 
             {/* TABS NAVEGACIÓN */}
