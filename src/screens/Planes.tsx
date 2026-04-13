@@ -330,6 +330,67 @@ export const Planes: React.FC = () => {
     }
   };
 
+  const handleSyncAuditorias = async () => {
+    if (!confirm("¿Sincronizar auditorías históricas? Esto creará registros de inspección para las convalidaciones que ya tienen auditor asignado pero no tienen inspección registrada.")) return;
+    
+    setIsLoading(true);
+    try {
+      let addedCount = 0;
+      const batch = writeBatch(db);
+      
+      for (const plan of planes) {
+        if (!plan.convalidacionesDetalle) continue;
+        
+        const years = ['anio1', 'anio2', 'anio3', 'anio4'] as const;
+        for (const year of years) {
+          const det = plan.convalidacionesDetalle[year];
+          const date = plan.convalidaciones?.[year];
+          
+          if (det?.auditorNombre && date) {
+            // Check if inspeccion already exists for this plan, year, and auditor
+            const exists = inspecciones.some(i => 
+              i.planId === plan.id && 
+              i.convalidacionNumero === parseInt(year.replace('anio', '')) &&
+              i.auditorNombre === det.auditorNombre
+            );
+            
+            if (!exists) {
+              const newInspRef = doc(collection(db, 'inspecciones'));
+              batch.set(newInspRef, {
+                fecha: date,
+                planId: plan.id,
+                empresa: plan.empresa,
+                auditorNombre: det.auditorNombre,
+                auditorId: 'S/D',
+                ubicacion: plan.localidad || 'S/D',
+                jurisdiccion: plan.dependencia || 'S/D',
+                tipo: `Convalidación ${year.replace('anio', 'Año ')}`,
+                resultado: 'APROBADO',
+                convalidacionNumero: parseInt(year.replace('anio', '')),
+                observaciones: `Auditoría sincronizada desde el historial del plan. Nro IF: ${det.nroIF || 'S/D'}, Nro Certificado: ${det.nroCertificado || 'S/D'}`,
+                anexo: plan.anexo,
+                expedienteNumero: det.nroExpediente || 'S/D'
+              });
+              addedCount++;
+            }
+          }
+        }
+      }
+      
+      if (addedCount > 0) {
+        await batch.commit();
+        alert(`Se sincronizaron ${addedCount} auditorías exitosamente.`);
+      } else {
+        alert("No se encontraron auditorías nuevas para sincronizar.");
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Error al sincronizar auditorías");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement> | { target: { files: File[] } }) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -549,22 +610,24 @@ export const Planes: React.FC = () => {
 
   // --- DASHBOARD METRICS ---
   const now = new Date();
-  const thirtyDaysFromNow = new Date();
-  thirtyDaysFromNow.setDate(now.getDate() + 30);
+  const ninetyDaysFromNow = new Date();
+  ninetyDaysFromNow.setDate(now.getDate() + 90);
 
-  let totalEmpresas = planes.length;
+  const activePlanes = planes.filter(p => p.anexo === activeTab);
+  
+  let totalEmpresas = activePlanes.length;
   let convalidacionesVencidas = 0;
   let convalidacionesPorVencer = 0;
   let planesVencidos = 0;
   let planesPorVencer = 0;
 
-  planes.forEach(p => {
+  activePlanes.forEach(p => {
     // Check Plan Disposicion Vencimiento
     if (p.vencimiento && p.vencimiento !== '-' && p.vencimiento.length >= 5) {
       const vDate = new Date(p.vencimiento);
       if (!isNaN(vDate.getTime())) {
         if (vDate < now) planesVencidos++;
-        else if (vDate <= thirtyDaysFromNow) planesPorVencer++;
+        else if (vDate <= ninetyDaysFromNow) planesPorVencer++;
       }
     }
 
@@ -575,7 +638,7 @@ export const Planes: React.FC = () => {
           const cDate = new Date(dateStr);
           if (!isNaN(cDate.getTime())) {
             if (cDate < now) convalidacionesVencidas++;
-            else if (cDate <= thirtyDaysFromNow) convalidacionesPorVencer++;
+            else if (cDate <= ninetyDaysFromNow) convalidacionesPorVencer++;
           }
         }
       });
@@ -623,6 +686,13 @@ export const Planes: React.FC = () => {
                       onChange={handleImportCSV} 
                     />
                     <button 
+                      onClick={handleSyncAuditorias}
+                      className="bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-amber-700 transition-all text-xs font-black uppercase shadow-lg"
+                      title="Sincronizar auditorías históricas"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">sync</span> Sincronizar Auditorías
+                    </button>
+                    <button 
                       onClick={() => { setEditingPlan({ convalidaciones: {} }); setIsModalOpen(true); }}
                       className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-600 transition-all text-xs font-black uppercase shadow-lg"
                     >
@@ -638,7 +708,7 @@ export const Planes: React.FC = () => {
                   <span className="material-symbols-outlined">corporate_fare</span>
                 </div>
                 <div>
-                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Total Empresas</p>
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Empresas ({ANEXOS.find(a => a.id === activeTab)?.label})</p>
                   <p className="text-2xl font-black text-slate-900 dark:text-white leading-none">{totalEmpresas}</p>
                 </div>
               </div>
@@ -648,7 +718,7 @@ export const Planes: React.FC = () => {
                   <span className="material-symbols-outlined">warning</span>
                 </div>
                 <div>
-                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Planes por Vencer (30d)</p>
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Planes por Vencer (90d)</p>
                   <p className="text-2xl font-black text-slate-900 dark:text-white leading-none">{planesPorVencer}</p>
                 </div>
               </div>
