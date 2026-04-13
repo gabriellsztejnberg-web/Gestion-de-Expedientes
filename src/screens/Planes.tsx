@@ -408,28 +408,35 @@ export const Planes: React.FC = () => {
           const years = ['anio1', 'anio2', 'anio3', 'anio4'] as const;
           for (const year of years) {
             const newDet = planData.convalidacionesDetalle[year];
-            const oldDet = oldPlan.convalidacionesDetalle?.[year];
             const newDate = planData.convalidaciones?.[year];
             
-            // If there's a new auditor name or date that wasn't there before, create an Inspeccion
-            if (newDet?.auditorNombre && newDate && (!oldDet?.auditorNombre || oldDet.auditorNombre !== newDet.auditorNombre || oldPlan.convalidaciones?.[year] !== newDate)) {
-              await ensureAuditorExists(newDet.auditorNombre);
-              const inspeccionData = {
-                fecha: newDate,
-                planId: editingPlan.id,
-                empresa: planData.empresa,
-                auditorNombre: newDet.auditorNombre,
-                auditorId: 'S/D', // We don't have the ID from the manual input
-                ubicacion: planData.localidad || 'S/D',
-                jurisdiccion: planData.dependencia || 'S/D',
-                tipo: `Convalidación ${year.replace('anio', 'Año ')}`,
-                resultado: 'APROBADO',
-                convalidacionNumero: parseInt(year.replace('anio', '')),
-                observaciones: `Auditoría registrada manualmente en el perfil de la empresa. Nro IF: ${newDet.nroIF || 'S/D'}, Nro Certificado: ${newDet.nroCertificado || 'S/D'}`,
-                anexo: activeTab,
-                expedienteNumero: newDet.nroExpediente || 'S/D'
-              };
-              await addDoc(collection(db, 'inspecciones'), inspeccionData);
+            if (newDet?.auditorNombre && newDate) {
+              // Check if inspeccion already exists for this plan, year, and auditor
+              const inspeccionExists = inspecciones.some(i => 
+                i.planId === editingPlan.id && 
+                i.convalidacionNumero === parseInt(year.replace('anio', '')) &&
+                i.auditorNombre?.toUpperCase() === newDet.auditorNombre.toUpperCase()
+              );
+
+              if (!inspeccionExists) {
+                await ensureAuditorExists(newDet.auditorNombre);
+                const inspeccionData = {
+                  fecha: newDate,
+                  planId: editingPlan.id,
+                  empresa: planData.empresa,
+                  auditorNombre: newDet.auditorNombre,
+                  auditorId: 'S/D',
+                  ubicacion: planData.localidad || 'S/D',
+                  jurisdiccion: planData.dependencia || 'S/D',
+                  tipo: `Convalidación ${year.replace('anio', 'Año ')}`,
+                  resultado: 'APROBADO',
+                  convalidacionNumero: parseInt(year.replace('anio', '')),
+                  observaciones: `Auditoría registrada manualmente en el perfil de la empresa. Nro IF: ${newDet.nroIF || 'S/D'}, Nro Certificado: ${newDet.nroCertificado || 'S/D'}`,
+                  anexo: activeTab,
+                  expedienteNumero: newDet.nroExpediente || 'S/D'
+                };
+                await addDoc(collection(db, 'inspecciones'), inspeccionData);
+              }
             }
           }
         }
@@ -542,7 +549,7 @@ export const Planes: React.FC = () => {
             const exists = inspecciones.some(i => 
               i.planId === plan.id && 
               i.convalidacionNumero === parseInt(year.replace('anio', '')) &&
-              i.auditorNombre === det.auditorNombre
+              i.auditorNombre?.toUpperCase() === det.auditorNombre.toUpperCase()
             );
             
             if (!exists) {
