@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { 
@@ -11,15 +11,16 @@ import {
   query, 
   deleteDoc 
 } from 'firebase/firestore';
-import { Auditor, Curso, EstadisticasAuditor, ESSENTIAL_COURSES } from '../types';
+import { Auditor, Curso, Inspeccion, ESSENTIAL_COURSES } from '../types';
 import { analyzeAuditorProfile } from '../services/geminiService'; // Importamos IA
 
 export const Auditores: React.FC = () => {
   const [auditores, setAuditores] = useState<Auditor[]>([]);
+  const [inspecciones, setInspecciones] = useState<Inspeccion[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAuditor, setEditingAuditor] = useState<Partial<Auditor>>({});
-  const [activeTab, setActiveTab] = useState<'general' | 'academicos' | 'stats'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'academicos' | 'stats' | 'historial'>('general');
   const [newCurso, setNewCurso] = useState<Partial<Curso>>({});
   
   // Estado para perfil IA
@@ -27,8 +28,7 @@ export const Auditores: React.FC = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, 'auditores'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubAuditores = onSnapshot(query(collection(db, 'auditores')), (snapshot) => {
       // SANITIZACIÓN DE DATOS
       const docs = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -50,8 +50,46 @@ export const Auditores: React.FC = () => {
       });
       setAuditores(docs);
     });
-    return () => unsubscribe();
+
+    const unsubInspecciones = onSnapshot(query(collection(db, 'inspecciones')), (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Inspeccion));
+      setInspecciones(docs);
+    });
+
+    return () => {
+      unsubAuditores();
+      unsubInspecciones();
+    };
   }, []);
+
+  // Calculate dynamic stats
+  const auditoresWithStats = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    
+    return auditores.map(auditor => {
+      // Find all inspecciones for this auditor (by exact name match, case insensitive)
+      const auditorInspecciones = inspecciones.filter(
+        insp => insp.auditorNombre?.toUpperCase() === auditor.nombre.toUpperCase()
+      );
+      
+      const totalHistorico = auditorInspecciones.length;
+      const anualActual = auditorInspecciones.filter(insp => {
+        if (!insp.fecha) return false;
+        const inspYear = new Date(insp.fecha).getFullYear();
+        return inspYear === currentYear;
+      }).length;
+
+      // Use calculated stats if they exist, otherwise fallback to manual stats
+      return {
+        ...auditor,
+        calculatedStats: {
+          totalHistorico: Math.max(auditor.stats.totalHistorico || 0, totalHistorico),
+          anualActual: Math.max(auditor.stats.anualActual || 0, anualActual),
+          anioReferencia: currentYear
+        }
+      };
+    });
+  }, [auditores, inspecciones]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,7 +181,7 @@ export const Auditores: React.FC = () => {
     navigator.clipboard.writeText(text);
   };
 
-  const filteredAuditores = auditores.filter(a => 
+  const filteredAuditores = auditoresWithStats.filter(a => 
     (a.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
     (a.zonaTrabajo || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -257,8 +295,8 @@ export const Auditores: React.FC = () => {
                     </td>
                     <td className="px-4 py-4 text-center">
                         <div className="flex flex-col items-center">
-                           <span className="text-xs font-black text-slate-900 dark:text-white">{a.stats.totalHistorico}</span>
-                           <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Anual: {a.stats.anualActual}</span>
+                           <span className="text-xs font-black text-slate-900 dark:text-white">{a.calculatedStats?.totalHistorico ?? a.stats.totalHistorico}</span>
+                           <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Anual: {a.calculatedStats?.anualActual ?? a.stats.anualActual}</span>
                         </div>
                     </td>
                     <td className="px-4 py-4 text-right">
@@ -285,10 +323,11 @@ export const Auditores: React.FC = () => {
               <button onClick={() => setIsModalOpen(false)}><span className="material-symbols-outlined">close</span></button>
             </div>
             
-            <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 shrink-0">
-               <button onClick={() => setActiveTab('general')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-wider border-b-2 ${activeTab === 'general' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Datos Generales</button>
-               <button onClick={() => setActiveTab('academicos')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-wider border-b-2 ${activeTab === 'academicos' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Antecedentes Académicos</button>
-               <button onClick={() => setActiveTab('stats')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-wider border-b-2 ${activeTab === 'stats' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Estadísticas</button>
+            <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 shrink-0 overflow-x-auto no-scrollbar">
+               <button onClick={() => setActiveTab('general')} className={`px-4 py-3 text-[10px] font-black uppercase tracking-wider border-b-2 whitespace-nowrap ${activeTab === 'general' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Datos Generales</button>
+               <button onClick={() => setActiveTab('academicos')} className={`px-4 py-3 text-[10px] font-black uppercase tracking-wider border-b-2 whitespace-nowrap ${activeTab === 'academicos' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Antecedentes Académicos</button>
+               <button onClick={() => setActiveTab('stats')} className={`px-4 py-3 text-[10px] font-black uppercase tracking-wider border-b-2 whitespace-nowrap ${activeTab === 'stats' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Estadísticas</button>
+               <button onClick={() => setActiveTab('historial')} className={`px-4 py-3 text-[10px] font-black uppercase tracking-wider border-b-2 whitespace-nowrap ${activeTab === 'historial' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>Historial de Auditorías</button>
             </div>
 
             <div className="p-6 overflow-y-auto flex-1">
@@ -391,18 +430,53 @@ export const Auditores: React.FC = () => {
                      <div className="grid grid-cols-2 gap-6">
                         <div className="p-6 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-900/50 text-center">
                            <h4 className="text-[10px] font-black uppercase text-blue-800 dark:text-blue-300 mb-2">Total Histórico</h4>
-                           <input type="number" min="0" className="text-3xl font-black text-center w-full bg-transparent outline-none text-blue-900 dark:text-white" value={editingAuditor.stats?.totalHistorico || 0} onChange={e => updateStats('totalHistorico', parseInt(e.target.value))} />
+                           <input type="number" min="0" className="text-3xl font-black text-center w-full bg-transparent outline-none text-blue-900 dark:text-white" value={Math.max(editingAuditor.calculatedStats?.totalHistorico || 0, editingAuditor.stats?.totalHistorico || 0)} onChange={e => updateStats('totalHistorico', parseInt(e.target.value))} />
                            <p className="text-[9px] text-blue-600 dark:text-blue-400 mt-2">Inspecciones Totales</p>
                         </div>
                         <div className="p-6 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-900/50 text-center">
                            <h4 className="text-[10px] font-black uppercase text-green-800 dark:text-green-300 mb-2">Año Actual ({new Date().getFullYear()})</h4>
-                           <input type="number" min="0" className="text-3xl font-black text-center w-full bg-transparent outline-none text-green-900 dark:text-white" value={editingAuditor.stats?.anualActual || 0} onChange={e => updateStats('anualActual', parseInt(e.target.value))} />
+                           <input type="number" min="0" className="text-3xl font-black text-center w-full bg-transparent outline-none text-green-900 dark:text-white" value={Math.max(editingAuditor.calculatedStats?.anualActual || 0, editingAuditor.stats?.anualActual || 0)} onChange={e => updateStats('anualActual', parseInt(e.target.value))} />
                            <p className="text-[9px] text-green-600 dark:text-green-400 mt-2">Inspecciones del Periodo</p>
                         </div>
                      </div>
                      <p className="text-xs text-slate-500 text-center italic">
-                        Nota: Puede corregir manualmente estos contadores si existe un desfasaje con la documentación física.
+                        {editingAuditor.calculatedStats?.totalHistorico ? 'Los contadores muestran el mayor valor entre el cálculo automático y el manual.' : 'Nota: Puede corregir manualmente estos contadores si existe un desfasaje con la documentación física.'}
                      </p>
+                  </div>
+               )}
+
+               {activeTab === 'historial' && (
+                  <div className="space-y-4">
+                     <h4 className="text-[10px] font-black uppercase text-slate-500 border-b border-slate-200 dark:border-slate-800 pb-2">Auditorías Registradas</h4>
+                     {inspecciones.filter(i => i.auditorNombre?.toUpperCase() === editingAuditor.nombre?.toUpperCase()).length === 0 ? (
+                        <p className="text-xs text-slate-500 italic text-center py-8">No hay auditorías registradas para este inspector.</p>
+                     ) : (
+                        <div className="space-y-3">
+                           {inspecciones
+                              .filter(i => i.auditorNombre?.toUpperCase() === editingAuditor.nombre?.toUpperCase())
+                              .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
+                              .map(i => (
+                                 <div key={i.id} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                                    <div className="flex justify-between items-start mb-2">
+                                       <div>
+                                          <p className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase">{i.empresa}</p>
+                                          <p className="text-[10px] text-slate-500 uppercase">{i.tipo} - {i.anexo?.replace('_', ' ')}</p>
+                                       </div>
+                                       <span className="text-[10px] font-mono font-bold text-slate-500 bg-white dark:bg-slate-900 px-2 py-1 rounded border border-slate-200 dark:border-slate-700">
+                                          {new Date(i.fecha).toLocaleDateString()}
+                                       </span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 mt-3 text-[9px]">
+                                       <p><span className="text-slate-400 font-bold uppercase">Expediente:</span> <span className="font-mono">{i.expedienteNumero || '-'}</span></p>
+                                       <p><span className="text-slate-400 font-bold uppercase">IF:</span> <span className="font-mono">{i.nroInforme || '-'}</span></p>
+                                       <p><span className="text-slate-400 font-bold uppercase">Resultado:</span> <span className={`font-black uppercase ${i.resultado?.includes('APROBADO') ? 'text-green-600' : 'text-orange-600'}`}>{i.resultado || '-'}</span></p>
+                                       <p><span className="text-slate-400 font-bold uppercase">Jurisdicción:</span> <span className="uppercase">{i.jurisdiccion || '-'}</span></p>
+                                    </div>
+                                 </div>
+                              ))
+                           }
+                        </div>
+                     )}
                   </div>
                )}
             </div>
