@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import Papa from 'papaparse';
@@ -19,6 +20,7 @@ import { PlanEmergencia, AnexoTipo, User, Case, Inspeccion, TimelineEvent } from
 import { extractPlanesFromPDF } from '../services/geminiService';
 
 const ANEXOS: { id: AnexoTipo; label: string }[] = [
+  { id: 'anexo_15', label: 'ANEXO 15 (Zonales/Locales)' },
   { id: 'anexo_16', label: 'ANEXO 16 (Ref)' },
   { id: 'anexo_17', label: 'ANEXO 17 (Termap/Oil)' },
   { id: 'anexo_18', label: 'ANEXO 18 (Buques/Barcazas)' },
@@ -27,6 +29,8 @@ const ANEXOS: { id: AnexoTipo; label: string }[] = [
 ];
 
 export const Planes: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [planes, setPlanes] = useState<PlanEmergencia[]>([]);
   const [activeTab, setActiveTab] = useState<AnexoTipo>('anexo_18');
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,6 +49,19 @@ export const Planes: React.FC = () => {
   // Modal de Perfil
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PlanEmergencia | null>(null);
+
+  useEffect(() => {
+    if (location.state?.openPlanId && planes.length > 0) {
+      const plan = planes.find(p => p.id === location.state.openPlanId);
+      if (plan) {
+        setSelectedPlan(plan);
+        setIsProfileOpen(true);
+        setActiveTab(plan.anexo);
+        // Clear state to avoid reopening on refresh
+        navigate(location.pathname, { replace: true, state: {} });
+      }
+    }
+  }, [location.state, planes, navigate, location.pathname]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -222,7 +239,38 @@ export const Planes: React.FC = () => {
 
     try {
       if (editingPlan.id) {
+        const oldPlan = planes.find(p => p.id === editingPlan.id);
         await updateDoc(doc(db, 'planes', editingPlan.id), planData);
+
+        // Check if there are new convalidacionesDetalle to create Inspecciones
+        if (oldPlan && planData.convalidacionesDetalle) {
+          const years = ['anio1', 'anio2', 'anio3', 'anio4'] as const;
+          for (const year of years) {
+            const newDet = planData.convalidacionesDetalle[year];
+            const oldDet = oldPlan.convalidacionesDetalle?.[year];
+            const newDate = planData.convalidaciones?.[year];
+            
+            // If there's a new auditor name or date that wasn't there before, create an Inspeccion
+            if (newDet?.auditorNombre && newDate && (!oldDet?.auditorNombre || oldDet.auditorNombre !== newDet.auditorNombre || oldPlan.convalidaciones?.[year] !== newDate)) {
+              const inspeccionData = {
+                fecha: newDate,
+                planId: editingPlan.id,
+                empresa: planData.empresa,
+                auditorNombre: newDet.auditorNombre,
+                auditorId: 'S/D', // We don't have the ID from the manual input
+                ubicacion: planData.localidad || 'S/D',
+                jurisdiccion: planData.dependencia || 'S/D',
+                tipo: `Convalidación ${year.replace('anio', 'Año ')}`,
+                resultado: 'APROBADO',
+                convalidacionNumero: parseInt(year.replace('anio', '')),
+                observaciones: `Auditoría registrada manualmente en el perfil de la empresa. Nro IF: ${newDet.nroIF || 'S/D'}, Nro Certificado: ${newDet.nroCertificado || 'S/D'}`,
+                anexo: activeTab,
+                expedienteNumero: newDet.nroExpediente || 'S/D'
+              };
+              await addDoc(collection(db, 'inspecciones'), inspeccionData);
+            }
+          }
+        }
       } else {
         await addDoc(collection(db, 'planes'), planData);
       }
@@ -500,9 +548,11 @@ export const Planes: React.FC = () => {
   const uniqueJur = Array.from(new Set(planes.filter(p => p.anexo === activeTab).map(p => p.dependencia))).filter(Boolean).sort();
 
   return (
-    <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden font-display">
-      <Sidebar activePage="planes" />
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
+    <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden font-display print:h-auto print:overflow-visible">
+      <div className="print:hidden h-full">
+        <Sidebar activePage="planes" />
+      </div>
+      <div className="flex-1 flex flex-col h-full overflow-hidden print:hidden">
         <main className="flex-1 flex flex-col p-6 overflow-hidden">
             
             <div className="flex justify-between items-center mb-6 shrink-0">
@@ -994,24 +1044,29 @@ export const Planes: React.FC = () => {
       )}
       {/* MODAL PERFIL DE EMPRESA */}
       {isProfileOpen && selectedPlan && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col">
-            <div className="bg-slate-900 text-white px-6 py-5 flex justify-between items-center shrink-0">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4 print:static print:bg-transparent print:p-0 print:block">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col print:shadow-none print:border-none print:max-h-none print:overflow-visible">
+            <div className="bg-slate-900 text-white px-6 py-5 flex justify-between items-center shrink-0 print:bg-white print:text-black print:border-b print:border-slate-300">
               <div className="flex items-center gap-4">
-                <div className="size-12 bg-primary/20 rounded-xl flex items-center justify-center">
-                  <span className="material-symbols-outlined text-primary text-3xl">corporate_fare</span>
+                <div className="size-12 bg-primary/20 rounded-xl flex items-center justify-center print:bg-transparent print:border print:border-slate-300">
+                  <span className="material-symbols-outlined text-primary text-3xl print:text-black">corporate_fare</span>
                 </div>
                 <div>
                   <h2 className="text-lg font-black uppercase tracking-tight leading-none mb-1">{selectedPlan.empresa}</h2>
-                  <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">Perfil Consolidado de la Empresa</p>
+                  <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest print:text-slate-600">Perfil Consolidado de la Empresa</p>
                 </div>
               </div>
-              <button onClick={() => setIsProfileOpen(false)} className="hover:bg-white/10 p-2 rounded-full transition-colors">
-                <span className="material-symbols-outlined">close</span>
-              </button>
+              <div className="flex items-center gap-2 print:hidden">
+                <button onClick={() => window.print()} className="hover:bg-white/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold uppercase">
+                  <span className="material-symbols-outlined text-[18px]">print</span> Imprimir / PDF
+                </button>
+                <button onClick={() => setIsProfileOpen(false)} className="hover:bg-white/10 p-2 rounded-full transition-colors">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-6 print:overflow-visible print:p-0 print:mt-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 
                 {/* Columna Info General */}
@@ -1050,7 +1105,16 @@ export const Planes: React.FC = () => {
                     </div>
                   </section>
 
-                  <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  {selectedPlan.observaciones && (
+                    <section className="mt-6">
+                      <h3 className="text-[10px] font-black uppercase text-primary mb-3 border-b border-primary/20 pb-1">Observaciones</h3>
+                      <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{selectedPlan.observaciones}</p>
+                      </div>
+                    </section>
+                  )}
+
+                  <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 mt-6">
                     <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Estado del Plan</h3>
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
