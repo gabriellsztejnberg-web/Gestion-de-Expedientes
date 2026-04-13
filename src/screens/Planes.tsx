@@ -4,6 +4,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import Papa from 'papaparse';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { 
   collection, 
   onSnapshot, 
@@ -19,6 +22,127 @@ import {
 import { PlanEmergencia, AnexoTipo, User, Case, Inspeccion, TimelineEvent } from '../types';
 import { extractPlanesFromPDF } from '../services/geminiService';
 
+// Fix for default marker icon in Leaflet
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
+// Helper to parse coordinates
+const parseCoordinates = (coordStr?: string): [number, number][] => {
+  if (!coordStr) return [];
+
+  const results: [number, number][] = [];
+  const parts = coordStr.split(/[;|\n]/).map(p => p.trim()).filter(Boolean);
+
+  for (const part of parts) {
+    let cleanStr = part.toUpperCase();
+    cleanStr = cleanStr.replace(/LATITUD[E]?|LONGITUD[E]?|LAT|LNG|LON/g, '');
+    cleanStr = cleanStr.replace(/[´’`]/g, "'").replace(/[”]/g, '"').replace(/''/g, '"');
+
+    if (!/[NSEWO]/.test(cleanStr)) {
+      const decMatch = cleanStr.match(/(-?\d+(?:[\.,]\d+)?)[^\d-]+(-?\d+(?:[\.,]\d+)?)/);
+      if (decMatch) {
+        let lat = parseFloat(decMatch[1].replace(',', '.'));
+        let lng = parseFloat(decMatch[2].replace(',', '.'));
+        if (!isNaN(lat) && !isNaN(lng)) {
+           if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
+              results.push([lng, lat]);
+              continue;
+           }
+           results.push([lat, lng]);
+           continue;
+        }
+      }
+    }
+
+    const tokenRegex = /([NSEWO])|(-?\d+(?:[\.,]\d+)?)/g;
+    const tokens = [...cleanStr.matchAll(tokenRegex)].map(m => m[0]);
+
+    if (tokens.length >= 2) {
+      let latTokens: string[] = [];
+      let lngTokens: string[] = [];
+      
+      let firstHemiIndex = -1;
+      let secondHemiIndex = -1;
+      
+      for (let i = 0; i < tokens.length; i++) {
+        if (/[NSEWO]/.test(tokens[i])) {
+          if (firstHemiIndex === -1) firstHemiIndex = i;
+          else if (secondHemiIndex === -1) secondHemiIndex = i;
+        }
+      }
+
+      if (firstHemiIndex !== -1 && secondHemiIndex !== -1) {
+         let splitAt = firstHemiIndex + 1;
+         if (firstHemiIndex === 0) {
+            splitAt = secondHemiIndex;
+         }
+         latTokens = tokens.slice(0, splitAt);
+         lngTokens = tokens.slice(splitAt);
+      } else {
+         const half = Math.floor(tokens.length / 2);
+         latTokens = tokens.slice(0, half);
+         lngTokens = tokens.slice(half);
+      }
+
+      const parseGroup = (tks: string[]): number | null => {
+        let val = 0;
+        let hemi = '';
+        let numIndex = 0;
+        let isNegative = false;
+        
+        for (const t of tks) {
+          if (/[NSEWO]/.test(t)) {
+            hemi = t;
+          } else {
+            let n = parseFloat(t.replace(',', '.'));
+            if (n < 0) {
+              isNegative = true;
+              n = Math.abs(n);
+            }
+            
+            if (numIndex === 0) val += n;
+            else if (numIndex === 1) val += n / 60;
+            else if (numIndex === 2) val += n / 3600;
+            numIndex++;
+          }
+        }
+        
+        if (numIndex === 0) return null;
+        
+        if (hemi === 'S' || hemi === 'W' || hemi === 'O' || isNegative) {
+          val = -val;
+        }
+        return val;
+      };
+
+      let lat = parseGroup(latTokens);
+      let lng = parseGroup(lngTokens);
+
+      if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
+         const latHemi = latTokens.find(t => /[NSEWO]/.test(t));
+         const lngHemi = lngTokens.find(t => /[NSEWO]/.test(t));
+         
+         if (latHemi && /[EWO]/.test(latHemi)) {
+            const temp = lat; lat = lng; lng = temp;
+         } else if (lngHemi && /[NS]/.test(lngHemi)) {
+            const temp = lat; lat = lng; lng = temp;
+         } else if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
+            const temp = lat; lat = lng; lng = temp;
+         }
+         
+         results.push([lat, lng]);
+         continue;
+      }
+    }
+  }
+
+  return results;
+};
+
 const ANEXOS: { id: AnexoTipo; label: string }[] = [
   { id: 'anexo_15', label: 'ANEXO 15 (Zonales/Locales)' },
   { id: 'anexo_16', label: 'ANEXO 16 (Ref)' },
@@ -32,7 +156,8 @@ export const Planes: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [planes, setPlanes] = useState<PlanEmergencia[]>([]);
-  const [activeTab, setActiveTab] = useState<AnexoTipo>('anexo_18');
+  const [auditores, setAuditores] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<AnexoTipo | 'general'>('general');
   const [searchTerm, setSearchTerm] = useState('');
   const [jurisdictionFilter, setJurisdictionFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -155,10 +280,14 @@ export const Planes: React.FC = () => {
     const unsubMov = onSnapshot(collection(db, 'movimientos'), (snap) => {
       setMovimientos(snap.docs.map(d => ({ id: d.id, ...d.data() } as TimelineEvent)));
     });
+    const unsubAuditores = onSnapshot(collection(db, 'auditores'), (snap) => {
+      setAuditores(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
     return () => {
       unsubExp();
       unsubInsp();
       unsubMov();
+      unsubAuditores();
     };
   }, []);
 
@@ -213,6 +342,38 @@ export const Planes: React.FC = () => {
     return 'bg-green-100 text-green-700 border-green-200'; // Vigente
   };
 
+  // Keep track of newly created auditors to prevent duplicates during loops
+  const newlyCreatedAuditores = useRef<Set<string>>(new Set());
+
+  const ensureAuditorExists = async (auditorNombre: string) => {
+    if (!auditorNombre) return;
+    const nameUpper = auditorNombre.toUpperCase();
+    const exists = auditores.some(a => a.nombre.toUpperCase() === nameUpper) || newlyCreatedAuditores.current.has(nameUpper);
+    if (!exists) {
+      newlyCreatedAuditores.current.add(nameUpper);
+      try {
+        await addDoc(collection(db, 'auditores'), {
+          nombre: nameUpper,
+          dni: '',
+          email: '',
+          telefono: '',
+          jurisdiccion: '',
+          estado: 'activo',
+          stats: {
+            totalHistorico: 0,
+            anualActual: 0,
+            aprobadas: 0,
+            rechazadas: 0
+          },
+          cursos: []
+        });
+      } catch (error) {
+        console.error("Error creating auditor:", error);
+        newlyCreatedAuditores.current.delete(nameUpper);
+      }
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingPlan?.empresa) return alert("La empresa es obligatoria");
@@ -252,6 +413,7 @@ export const Planes: React.FC = () => {
             
             // If there's a new auditor name or date that wasn't there before, create an Inspeccion
             if (newDet?.auditorNombre && newDate && (!oldDet?.auditorNombre || oldDet.auditorNombre !== newDet.auditorNombre || oldPlan.convalidaciones?.[year] !== newDate)) {
+              await ensureAuditorExists(newDet.auditorNombre);
               const inspeccionData = {
                 fecha: newDate,
                 planId: editingPlan.id,
@@ -272,7 +434,36 @@ export const Planes: React.FC = () => {
           }
         }
       } else {
-        await addDoc(collection(db, 'planes'), planData);
+        const newPlanRef = await addDoc(collection(db, 'planes'), planData);
+        
+        // Create inspecciones for new plan if it has convalidacionesDetalle
+        if (planData.convalidacionesDetalle) {
+          const years = ['anio1', 'anio2', 'anio3', 'anio4'] as const;
+          for (const year of years) {
+            const det = planData.convalidacionesDetalle[year];
+            const date = planData.convalidaciones?.[year];
+            
+            if (det?.auditorNombre && date) {
+              await ensureAuditorExists(det.auditorNombre);
+              const inspeccionData = {
+                fecha: date,
+                planId: newPlanRef.id,
+                empresa: planData.empresa,
+                auditorNombre: det.auditorNombre,
+                auditorId: 'S/D',
+                ubicacion: planData.localidad || 'S/D',
+                jurisdiccion: planData.dependencia || 'S/D',
+                tipo: `Convalidación ${year.replace('anio', 'Año ')}`,
+                resultado: 'APROBADO',
+                convalidacionNumero: parseInt(year.replace('anio', '')),
+                observaciones: `Auditoría registrada manualmente en el perfil de la empresa. Nro IF: ${det.nroIF || 'S/D'}, Nro Certificado: ${det.nroCertificado || 'S/D'}`,
+                anexo: activeTab,
+                expedienteNumero: det.nroExpediente || 'S/D'
+              };
+              await addDoc(collection(db, 'inspecciones'), inspeccionData);
+            }
+          }
+        }
       }
       setIsModalOpen(false);
       setEditingPlan(null);
@@ -355,6 +546,7 @@ export const Planes: React.FC = () => {
             );
             
             if (!exists) {
+              await ensureAuditorExists(det.auditorNombre);
               const newInspRef = doc(collection(db, 'inspecciones'));
               batch.set(newInspRef, {
                 fecha: date,
@@ -540,6 +732,11 @@ export const Planes: React.FC = () => {
               const anio3Exp = getCsvVal(row, ['expediente3', 'exp3', 'expediente3conv']).toString();
               const anio4Exp = getCsvVal(row, ['expediente4', 'exp4', 'expediente4conv']).toString();
 
+              const anio1Auditor = getCsvVal(row, ['auditor1', 'inspector1']).toString().toUpperCase();
+              const anio2Auditor = getCsvVal(row, ['auditor2', 'inspector2']).toString().toUpperCase();
+              const anio3Auditor = getCsvVal(row, ['auditor3', 'inspector3']).toString().toUpperCase();
+              const anio4Auditor = getCsvVal(row, ['auditor4', 'inspector4']).toString().toUpperCase();
+
               const plan: Partial<PlanEmergencia> = {
                 empresa: empresaFinal,
                 dependencia: dependenciaFinal,
@@ -567,16 +764,42 @@ export const Planes: React.FC = () => {
                   anio4: anio4Date,
                 },
                 convalidacionesDetalle: {
-                  anio1: { nroExpediente: anio1Exp, nroIF: anio1Date && anio1Exp ? 'S/D' : '' },
-                  anio2: { nroExpediente: anio2Exp, nroIF: anio2Date && anio2Exp ? 'S/D' : '' },
-                  anio3: { nroExpediente: anio3Exp, nroIF: anio3Date && anio3Exp ? 'S/D' : '' },
-                  anio4: { nroExpediente: anio4Exp, nroIF: anio4Date && anio4Exp ? 'S/D' : '' },
+                  anio1: { nroExpediente: anio1Exp, nroIF: anio1Date && anio1Exp ? 'S/D' : '', auditorNombre: anio1Auditor },
+                  anio2: { nroExpediente: anio2Exp, nroIF: anio2Date && anio2Exp ? 'S/D' : '', auditorNombre: anio2Auditor },
+                  anio3: { nroExpediente: anio3Exp, nroIF: anio3Date && anio3Exp ? 'S/D' : '', auditorNombre: anio3Auditor },
+                  anio4: { nroExpediente: anio4Exp, nroIF: anio4Date && anio4Exp ? 'S/D' : '', auditorNombre: anio4Auditor },
                 },
                 ultimaActualizacion: new Date().toISOString()
               };
               
               batch.set(newPlanRef, plan);
               recordsAdded++;
+
+              // Create inspecciones and auditores for imported data
+              const years = ['anio1', 'anio2', 'anio3', 'anio4'] as const;
+              for (const year of years) {
+                const det = plan.convalidacionesDetalle![year];
+                const date = plan.convalidaciones![year];
+                if (det?.auditorNombre && date) {
+                  ensureAuditorExists(det.auditorNombre); // Fire and forget to not block batch
+                  const newInspRef = doc(collection(db, 'inspecciones'));
+                  batch.set(newInspRef, {
+                    fecha: date,
+                    planId: newPlanRef.id,
+                    empresa: plan.empresa,
+                    auditorNombre: det.auditorNombre,
+                    auditorId: 'S/D',
+                    ubicacion: plan.localidad || 'S/D',
+                    jurisdiccion: plan.dependencia || 'S/D',
+                    tipo: `Convalidación ${year.replace('anio', 'Año ')}`,
+                    resultado: 'APROBADO',
+                    convalidacionNumero: parseInt(year.replace('anio', '')),
+                    observaciones: `Auditoría importada desde CSV. Nro IF: ${det.nroIF || 'S/D'}`,
+                    anexo: activeTab,
+                    expedienteNumero: det.nroExpediente || 'S/D'
+                  });
+                }
+              }
             });
             await batch.commit();
           }
@@ -599,21 +822,21 @@ export const Planes: React.FC = () => {
   };
 
   const filteredPlanes = planes.filter(p => {
-    if (p.anexo !== activeTab) return false;
+    if (activeTab !== 'general' && p.anexo !== activeTab) return false;
     const matchSearch = p.empresa.toLowerCase().includes(searchTerm.toLowerCase()) || 
                         (p.disposicion || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchJur = jurisdictionFilter ? p.dependencia === jurisdictionFilter : true;
     return matchSearch && matchJur;
   });
 
-  const uniqueJur = Array.from(new Set(planes.filter(p => p.anexo === activeTab).map(p => p.dependencia))).filter(Boolean).sort();
+  const uniqueJur = Array.from(new Set(planes.filter(p => activeTab === 'general' || p.anexo === activeTab).map(p => p.dependencia))).filter(Boolean).sort();
 
   // --- DASHBOARD METRICS ---
   const now = new Date();
   const ninetyDaysFromNow = new Date();
   ninetyDaysFromNow.setDate(now.getDate() + 90);
 
-  const activePlanes = planes.filter(p => p.anexo === activeTab);
+  const activePlanes = activeTab === 'general' ? planes : planes.filter(p => p.anexo === activeTab);
   
   let totalEmpresas = activePlanes.length;
   let convalidacionesVencidas = 0;
@@ -708,7 +931,7 @@ export const Planes: React.FC = () => {
                   <span className="material-symbols-outlined">corporate_fare</span>
                 </div>
                 <div>
-                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Empresas ({ANEXOS.find(a => a.id === activeTab)?.label})</p>
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Empresas ({activeTab === 'general' ? 'Total' : ANEXOS.find(a => a.id === activeTab)?.label})</p>
                   <p className="text-2xl font-black text-slate-900 dark:text-white leading-none">{totalEmpresas}</p>
                 </div>
               </div>
@@ -746,6 +969,12 @@ export const Planes: React.FC = () => {
 
             {/* TABS NAVEGACIÓN */}
             <div className="flex border-b border-slate-200 dark:border-slate-800 mb-6 overflow-x-auto no-scrollbar gap-1">
+                <button 
+                    onClick={() => setActiveTab('general')}
+                    className={`px-4 py-3 text-[10px] font-black uppercase tracking-widest whitespace-nowrap border-b-2 transition-colors ${activeTab === 'general' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                >
+                    Panel General
+                </button>
                 {ANEXOS.map(tab => (
                     <button 
                         key={tab.id} 
@@ -860,6 +1089,13 @@ export const Planes: React.FC = () => {
             </div>
         </main>
       </div>
+
+      {/* DATALIST PARA AUDITORES */}
+      <datalist id="auditores-list">
+        {auditores.map(a => (
+          <option key={a.id} value={a.nombre} />
+        ))}
+      </datalist>
 
       {/* MODAL DE EDICIÓN */}
       {isModalOpen && (
@@ -1093,6 +1329,7 @@ export const Planes: React.FC = () => {
                                     <div className="flex-1 min-w-[200px]">
                                       <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">Auditor / Inspector</label>
                                       <input 
+                                        list="auditores-list"
                                         className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase"
                                         value={det.auditorNombre || ''}
                                         onChange={e => setEditingPlan({
@@ -1215,11 +1452,11 @@ export const Planes: React.FC = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 print:overflow-visible print:p-0 print:mt-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 print:grid-cols-2 gap-6">
                 
                 {/* Columna Info General */}
                 <div className="space-y-6">
-                  <section>
+                  <section className="print:break-inside-avoid">
                     <h3 className="text-[10px] font-black uppercase text-primary mb-3 border-b border-primary/20 pb-1">Datos de Contacto</h3>
                     <div className="space-y-3">
                       <div className="flex items-center gap-3">
@@ -1254,7 +1491,7 @@ export const Planes: React.FC = () => {
                   </section>
 
                   {selectedPlan.observaciones && (
-                    <section className="mt-6">
+                    <section className="mt-6 print:break-inside-avoid">
                       <h3 className="text-[10px] font-black uppercase text-primary mb-3 border-b border-primary/20 pb-1">Observaciones</h3>
                       <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
                         <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{selectedPlan.observaciones}</p>
@@ -1262,7 +1499,7 @@ export const Planes: React.FC = () => {
                     </section>
                   )}
 
-                  <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 mt-6">
+                  <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 mt-6 print:break-inside-avoid">
                     <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Estado del Plan</h3>
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
@@ -1284,7 +1521,7 @@ export const Planes: React.FC = () => {
                     </div>
                   </section>
 
-                  <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 print:break-inside-avoid">
                     <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Detalles Operativos</h3>
                     <div className="space-y-3">
                       <div>
@@ -1321,46 +1558,31 @@ export const Planes: React.FC = () => {
                       </div>
                     </div>
                   </section>
-
-                  <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Registro de Convalidaciones</h3>
-                    <div className="space-y-3">
-                      {(['anio1', 'anio2', 'anio3', 'anio4'] as const).map((y, i) => {
-                        const dateVal = (selectedPlan.convalidaciones as any)?.[y];
-                        const det = (selectedPlan.convalidacionesDetalle as any)?.[y];
-                        if (!dateVal && !det) return null;
-                        
-                        return (
-                          <div key={y} className="border-l-2 border-primary pl-3 py-1">
-                            <div className="flex justify-between items-center mb-1">
-                              <span className="text-[10px] font-black uppercase text-slate-700 dark:text-slate-300">{i+1}º Convalidación</span>
-                              <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${getStatusColor(dateVal, true, !!(det?.nroIF && det?.nroExpediente))}`}>
-                                {!!(det?.nroIF && det?.nroExpediente) ? `✅ CONVALIDADO (${formatDate(dateVal)})` : formatDate(dateVal)}
-                              </span>
-                            </div>
-                            {det?.auditorNombre && (
-                              <div className="mt-2 space-y-1 text-[9px] bg-white dark:bg-slate-900 p-2 rounded border border-slate-100 dark:border-slate-800">
-                                {det.auditorNombre && <p><span className="text-slate-400 font-bold uppercase">Auditor:</span> <span className="font-bold uppercase">{det.auditorNombre}</span></p>}
-                                {selectedPlan.formatoDisposicion === 'digital' && det.nroCertificado && (
-                                  <p><span className="text-slate-400 font-bold uppercase">Certificado:</span> <span className="font-mono">{det.nroCertificado}</span></p>
-                                )}
-                                {det.nroIF && <p><span className="text-slate-400 font-bold uppercase">IF:</span> <span className="font-mono">{det.nroIF}</span></p>}
-                                {det.nroExpediente && <p><span className="text-slate-400 font-bold uppercase">Expediente:</span> <span className="font-mono">{det.nroExpediente}</span></p>}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {(!selectedPlan.convalidaciones || Object.values(selectedPlan.convalidaciones).every(v => !v)) && (
-                        <p className="text-[10px] text-slate-400 italic">No hay convalidaciones registradas.</p>
-                      )}
-                    </div>
-                  </section>
                 </div>
 
                 {/* Columna Historial / Timeline */}
-                <div className="md:col-span-2 space-y-6">
-                  <section>
+                <div className="md:col-span-2 print:col-span-1 space-y-6">
+                  {parseCoordinates(selectedPlan.coordenadas).length > 0 && (
+                    <section className="mb-6 print:break-inside-avoid">
+                      <h3 className="text-[10px] font-black uppercase text-primary mb-3 border-b border-primary/20 pb-1">Ubicación Geográfica</h3>
+                      <div className="h-48 w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 z-0 relative">
+                        <MapContainer 
+                          center={parseCoordinates(selectedPlan.coordenadas)[0]} 
+                          zoom={12} 
+                          style={{ height: '100%', width: '100%', zIndex: 0 }}
+                          zoomControl={false}
+                          attributionControl={false}
+                        >
+                          <TileLayer url="https://wms.ign.gob.ar/geoserver/gwc/service/tms/1.0.0/capabaseargenmap@EPSG%3A3857@png/{z}/{x}/{-y}.png" />
+                          {parseCoordinates(selectedPlan.coordenadas).map((coord, idx) => (
+                            <Marker key={idx} position={coord} />
+                          ))}
+                        </MapContainer>
+                      </div>
+                    </section>
+                  )}
+
+                  <section className="print:break-inside-avoid">
                     <div className="flex justify-between items-end mb-4 border-b border-primary/20 pb-1">
                       <h3 className="text-[10px] font-black uppercase text-primary">Historial de Expedientes y Auditorías</h3>
                     </div>
@@ -1370,7 +1592,7 @@ export const Planes: React.FC = () => {
                         <h4 className="text-[9px] font-black uppercase text-slate-500 mb-2">Disposiciones Archivadas</h4>
                         <div className="space-y-2">
                           {selectedPlan.historialDisposiciones.map((hist, idx) => (
-                            <div key={idx} className="bg-slate-50 dark:bg-slate-800/30 p-3 rounded-lg border border-slate-200 dark:border-slate-700 flex justify-between items-start">
+                            <div key={idx} className="bg-slate-50 dark:bg-slate-800/30 p-3 rounded-lg border border-slate-200 dark:border-slate-700 flex justify-between items-start print:break-inside-avoid">
                               <div>
                                 <p className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300">Dispo: {hist.disposicion || 'S/D'}</p>
                                 <p className="text-[9px] text-slate-500 uppercase">Vencimiento: {formatDate(hist.vencimiento)}</p>
@@ -1386,7 +1608,7 @@ export const Planes: React.FC = () => {
 
                     <div className="space-y-4">
                       {cases.filter(c => c.empresa.toUpperCase() === selectedPlan.empresa.toUpperCase() || c.planId === selectedPlan.id).map(c => (
-                        <div key={c.id} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <div key={c.id} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 print:break-inside-avoid">
                           <div className="flex justify-between items-center mb-2">
                             <span className="font-black text-blue-600 dark:text-blue-400 text-xs uppercase tracking-tight">{c.numero}</span>
                             <span className="text-[9px] font-mono font-bold text-slate-400">{new Date(c.creadoEn).toLocaleDateString()}</span>
@@ -1446,6 +1668,44 @@ export const Planes: React.FC = () => {
                           <span className="material-symbols-outlined text-3xl text-slate-300 mb-2">folder_off</span>
                           <p className="text-slate-400 italic text-xs uppercase font-bold tracking-widest">Sin expedientes registrados</p>
                         </div>
+                      )}
+                    </div>
+                  </section>
+                </div>
+
+                {/* Registro de Convalidaciones (Full Width) */}
+                <div className="md:col-span-3 print:col-span-2">
+                  <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 print:break-inside-avoid">
+                    <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Registro de Convalidaciones</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {(['anio1', 'anio2', 'anio3', 'anio4'] as const).map((y, i) => {
+                        const dateVal = (selectedPlan.convalidaciones as any)?.[y];
+                        const det = (selectedPlan.convalidacionesDetalle as any)?.[y];
+                        if (!dateVal && !det) return null;
+                        
+                        return (
+                          <div key={y} className="border-l-2 border-primary pl-3 py-1 print:break-inside-avoid">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-[10px] font-black uppercase text-slate-700 dark:text-slate-300">{i+1}º Convalidación</span>
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${getStatusColor(dateVal, true, !!(det?.nroIF && det?.nroExpediente))}`}>
+                                {!!(det?.nroIF && det?.nroExpediente) ? `✅ CONVALIDADO (${formatDate(dateVal)})` : formatDate(dateVal)}
+                              </span>
+                            </div>
+                            {det?.auditorNombre && (
+                              <div className="mt-2 space-y-1 text-[9px] bg-white dark:bg-slate-900 p-2 rounded border border-slate-100 dark:border-slate-800">
+                                {det.auditorNombre && <p><span className="text-slate-400 font-bold uppercase">Auditor:</span> <span className="font-bold uppercase">{det.auditorNombre}</span></p>}
+                                {selectedPlan.formatoDisposicion === 'digital' && det.nroCertificado && (
+                                  <p><span className="text-slate-400 font-bold uppercase">Certificado:</span> <span className="font-mono">{det.nroCertificado}</span></p>
+                                )}
+                                {det.nroIF && <p><span className="text-slate-400 font-bold uppercase">IF:</span> <span className="font-mono">{det.nroIF}</span></p>}
+                                {det.nroExpediente && <p><span className="text-slate-400 font-bold uppercase">Expediente:</span> <span className="font-mono">{det.nroExpediente}</span></p>}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {(!selectedPlan.convalidaciones || Object.values(selectedPlan.convalidaciones).every(v => !v)) && (
+                        <p className="text-[10px] text-slate-400 italic col-span-full">No hay convalidaciones registradas.</p>
                       )}
                     </div>
                   </section>
