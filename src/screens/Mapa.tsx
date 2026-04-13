@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, onSnapshot, query } from 'firebase/firestore';
@@ -20,6 +21,26 @@ let DefaultIcon = L.icon({
     iconAnchor: [12, 41]
 });
 L.Marker.prototype.options.icon = DefaultIcon;
+
+const getMarkerIcon = (anexo: string) => {
+  let color = '#3b82f6'; // default blue
+  switch (anexo) {
+    case 'anexo_15': color = '#8b5cf6'; break; // purple
+    case 'anexo_16': color = '#ef4444'; break; // red
+    case 'anexo_17': color = '#f97316'; break; // orange
+    case 'anexo_18': color = '#eab308'; break; // yellow
+    case 'anexo_19': color = '#22c55e'; break; // green
+    case 'anexo_20': color = '#06b6d4'; break; // cyan
+  }
+
+  return L.divIcon({
+    className: 'custom-div-icon',
+    html: `<div style="background-color: ${color}; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"></div>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+    popupAnchor: [0, -10]
+  });
+};
 
 // Helper to parse coordinates
 const parseCoordinates = (coordStr?: string): [number, number] | null => {
@@ -148,6 +169,7 @@ const formatDate = (dateStr?: string) => {
 };
 
 export const Mapa: React.FC = () => {
+  const navigate = useNavigate();
   const [planes, setPlanes] = useState<(PlanEmergencia & { lat: number, lng: number })[]>([]);
 
   useEffect(() => {
@@ -268,21 +290,27 @@ export const Mapa: React.FC = () => {
             className="h-full w-full"
           >
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.ign.gob.ar/">Instituto Geográfico Nacional de la República Argentina</a>'
+              url="https://wms.ign.gob.ar/geoserver/gwc/service/tms/1.0.0/capabaseargenmap@EPSG%3A3857@png/{z}/{x}/{-y}.png"
             />
             {planes.map(p => (
-              <Marker key={p.id} position={[p.lat, p.lng]}>
+              <Marker key={p.id} position={[p.lat, p.lng]} icon={getMarkerIcon(p.anexo)}>
                 <Popup className="custom-popup">
                   <div className="p-1">
                     <h3 className="font-black text-slate-800 uppercase text-xs mb-2 border-b pb-1">{p.empresa}</h3>
-                    <div className="space-y-1 text-[10px] text-slate-600">
+                    <div className="space-y-1 text-[10px] text-slate-600 mb-3">
                       <p><span className="font-bold uppercase">Anexo:</span> {p.anexo.replace('_', ' ').toUpperCase()}</p>
                       <p><span className="font-bold uppercase">Nº Plan:</span> {p.numeroPlan || 'S/D'}</p>
                       <p><span className="font-bold uppercase">Disposición:</span> {p.disposicion || 'S/D'}</p>
                       <p><span className="font-bold uppercase">Vencimiento:</span> {formatDate(p.vencimiento)}</p>
                       <p><span className="font-bold uppercase">Dependencia:</span> {p.dependencia || 'S/D'}</p>
                     </div>
+                    <button 
+                      onClick={() => navigate('/planes', { state: { openPlanId: p.id } })}
+                      className="w-full bg-primary text-white text-[10px] font-black uppercase py-1.5 rounded hover:bg-blue-600 transition-colors"
+                    >
+                      Ver Perfil Completo
+                    </button>
                   </div>
                 </Popup>
               </Marker>
