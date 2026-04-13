@@ -43,113 +43,121 @@ const getMarkerIcon = (anexo: string) => {
 };
 
 // Helper to parse coordinates
-const parseCoordinates = (coordStr?: string): [number, number] | null => {
-  if (!coordStr) return null;
+const parseCoordinates = (coordStr?: string): [number, number][] => {
+  if (!coordStr) return [];
 
-  let cleanStr = coordStr.toUpperCase().trim();
-  // Remove common words that might interfere (like N in LONGITUD)
-  cleanStr = cleanStr.replace(/LATITUD[E]?|LONGITUD[E]?|LAT|LNG|LON/g, '');
-  // Normalize quotes
-  cleanStr = cleanStr.replace(/[´’`]/g, "'").replace(/[”]/g, '"').replace(/''/g, '"');
+  const results: [number, number][] = [];
+  const parts = coordStr.split(/[;|\n]/).map(p => p.trim()).filter(Boolean);
 
-  // 1. Try pure Decimal Degrees with comma or dot (e.g., "-34.1234, -58.1234" or "-34,1234; -58,1234")
-  // It must not contain N, S, E, W, O
-  if (!/[NSEWO]/.test(cleanStr)) {
-    const decMatch = cleanStr.match(/(-?\d+(?:[\.,]\d+)?)[^\d-]+(-?\d+(?:[\.,]\d+)?)/);
-    if (decMatch) {
-      let lat = parseFloat(decMatch[1].replace(',', '.'));
-      let lng = parseFloat(decMatch[2].replace(',', '.'));
-      if (!isNaN(lat) && !isNaN(lng)) {
-         if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
-            return [lng, lat];
-         }
-         return [lat, lng];
-      }
-    }
-  }
+  for (const part of parts) {
+    let cleanStr = part.toUpperCase();
+    // Remove common words that might interfere (like N in LONGITUD)
+    cleanStr = cleanStr.replace(/LATITUD[E]?|LONGITUD[E]?|LAT|LNG|LON/g, '');
+    // Normalize quotes
+    cleanStr = cleanStr.replace(/[´’`]/g, "'").replace(/[”]/g, '"').replace(/''/g, '"');
 
-  // 2. Tokenize for DMS / DMM
-  const tokenRegex = /([NSEWO])|(-?\d+(?:[\.,]\d+)?)/g;
-  const tokens = [...cleanStr.matchAll(tokenRegex)].map(m => m[0]);
-
-  if (tokens.length >= 2) {
-    let latTokens: string[] = [];
-    let lngTokens: string[] = [];
-    
-    let firstHemiIndex = -1;
-    let secondHemiIndex = -1;
-    
-    for (let i = 0; i < tokens.length; i++) {
-      if (/[NSEWO]/.test(tokens[i])) {
-        if (firstHemiIndex === -1) firstHemiIndex = i;
-        else if (secondHemiIndex === -1) secondHemiIndex = i;
-      }
-    }
-
-    if (firstHemiIndex !== -1 && secondHemiIndex !== -1) {
-       let splitAt = firstHemiIndex + 1;
-       if (firstHemiIndex === 0) {
-          splitAt = secondHemiIndex;
-       }
-       latTokens = tokens.slice(0, splitAt);
-       lngTokens = tokens.slice(splitAt);
-    } else {
-       const half = Math.floor(tokens.length / 2);
-       latTokens = tokens.slice(0, half);
-       lngTokens = tokens.slice(half);
-    }
-
-    const parseGroup = (tks: string[]): number | null => {
-      let val = 0;
-      let hemi = '';
-      let numIndex = 0;
-      let isNegative = false;
-      
-      for (const t of tks) {
-        if (/[NSEWO]/.test(t)) {
-          hemi = t;
-        } else {
-          let n = parseFloat(t.replace(',', '.'));
-          if (n < 0) {
-            isNegative = true;
-            n = Math.abs(n);
-          }
-          
-          if (numIndex === 0) val += n;
-          else if (numIndex === 1) val += n / 60;
-          else if (numIndex === 2) val += n / 3600;
-          numIndex++;
+    // 1. Try pure Decimal Degrees with comma or dot (e.g., "-34.1234, -58.1234" or "-34,1234; -58,1234")
+    // It must not contain N, S, E, W, O
+    if (!/[NSEWO]/.test(cleanStr)) {
+      const decMatch = cleanStr.match(/(-?\d+(?:[\.,]\d+)?)[^\d-]+(-?\d+(?:[\.,]\d+)?)/);
+      if (decMatch) {
+        let lat = parseFloat(decMatch[1].replace(',', '.'));
+        let lng = parseFloat(decMatch[2].replace(',', '.'));
+        if (!isNaN(lat) && !isNaN(lng)) {
+           if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
+              results.push([lng, lat]);
+              continue;
+           }
+           results.push([lat, lng]);
+           continue;
         }
       }
+    }
+
+    // 2. Tokenize for DMS / DMM
+    const tokenRegex = /([NSEWO])|(-?\d+(?:[\.,]\d+)?)/g;
+    const tokens = [...cleanStr.matchAll(tokenRegex)].map(m => m[0]);
+
+    if (tokens.length >= 2) {
+      let latTokens: string[] = [];
+      let lngTokens: string[] = [];
       
-      if (numIndex === 0) return null;
+      let firstHemiIndex = -1;
+      let secondHemiIndex = -1;
       
-      if (hemi === 'S' || hemi === 'W' || hemi === 'O' || isNegative) {
-        val = -val;
+      for (let i = 0; i < tokens.length; i++) {
+        if (/[NSEWO]/.test(tokens[i])) {
+          if (firstHemiIndex === -1) firstHemiIndex = i;
+          else if (secondHemiIndex === -1) secondHemiIndex = i;
+        }
       }
-      return val;
-    };
 
-    let lat = parseGroup(latTokens);
-    let lng = parseGroup(lngTokens);
+      if (firstHemiIndex !== -1 && secondHemiIndex !== -1) {
+         let splitAt = firstHemiIndex + 1;
+         if (firstHemiIndex === 0) {
+            splitAt = secondHemiIndex;
+         }
+         latTokens = tokens.slice(0, splitAt);
+         lngTokens = tokens.slice(splitAt);
+      } else {
+         const half = Math.floor(tokens.length / 2);
+         latTokens = tokens.slice(0, half);
+         lngTokens = tokens.slice(half);
+      }
 
-    if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
-       const latHemi = latTokens.find(t => /[NSEWO]/.test(t));
-       const lngHemi = lngTokens.find(t => /[NSEWO]/.test(t));
-       
-       if (latHemi && /[EWO]/.test(latHemi)) {
-          const temp = lat; lat = lng; lng = temp;
-       } else if (lngHemi && /[NS]/.test(lngHemi)) {
-          const temp = lat; lat = lng; lng = temp;
-       } else if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
-          const temp = lat; lat = lng; lng = temp;
-       }
-       
-       return [lat, lng];
+      const parseGroup = (tks: string[]): number | null => {
+        let val = 0;
+        let hemi = '';
+        let numIndex = 0;
+        let isNegative = false;
+        
+        for (const t of tks) {
+          if (/[NSEWO]/.test(t)) {
+            hemi = t;
+          } else {
+            let n = parseFloat(t.replace(',', '.'));
+            if (n < 0) {
+              isNegative = true;
+              n = Math.abs(n);
+            }
+            
+            if (numIndex === 0) val += n;
+            else if (numIndex === 1) val += n / 60;
+            else if (numIndex === 2) val += n / 3600;
+            numIndex++;
+          }
+        }
+        
+        if (numIndex === 0) return null;
+        
+        if (hemi === 'S' || hemi === 'W' || hemi === 'O' || isNegative) {
+          val = -val;
+        }
+        return val;
+      };
+
+      let lat = parseGroup(latTokens);
+      let lng = parseGroup(lngTokens);
+
+      if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
+         const latHemi = latTokens.find(t => /[NSEWO]/.test(t));
+         const lngHemi = lngTokens.find(t => /[NSEWO]/.test(t));
+         
+         if (latHemi && /[EWO]/.test(latHemi)) {
+            const temp = lat; lat = lng; lng = temp;
+         } else if (lngHemi && /[NS]/.test(lngHemi)) {
+            const temp = lat; lat = lng; lng = temp;
+         } else if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
+            const temp = lat; lat = lng; lng = temp;
+         }
+         
+         results.push([lat, lng]);
+         continue;
+      }
     }
   }
 
-  return null;
+  return results;
 };
 
 const formatDate = (dateStr?: string) => {
@@ -170,20 +178,26 @@ const formatDate = (dateStr?: string) => {
 
 export const Mapa: React.FC = () => {
   const navigate = useNavigate();
-  const [planes, setPlanes] = useState<(PlanEmergencia & { lat: number, lng: number })[]>([]);
+  const [planes, setPlanes] = useState<(PlanEmergencia & { lat: number, lng: number, originalId: string })[]>([]);
 
   useEffect(() => {
     const q = query(collection(db, 'planes'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlanEmergencia));
       
-      const mappedPlanes = docs.map(p => {
-        const coords = parseCoordinates(p.coordenadas);
-        if (coords) {
-          return { ...p, lat: coords[0], lng: coords[1] };
+      const mappedPlanes = docs.flatMap(p => {
+        const coordsArray = parseCoordinates(p.coordenadas);
+        if (coordsArray && coordsArray.length > 0) {
+          return coordsArray.map((coords, index) => ({
+            ...p,
+            id: `${p.id}_${index}`, // Unique ID for each marker
+            originalId: p.id, // Keep original ID for navigation
+            lat: coords[0],
+            lng: coords[1]
+          }));
         }
-        return null;
-      }).filter(Boolean) as (PlanEmergencia & { lat: number, lng: number })[];
+        return [];
+      }) as (PlanEmergencia & { lat: number, lng: number, originalId: string })[];
       
       setPlanes(mappedPlanes);
     });
@@ -306,7 +320,7 @@ export const Mapa: React.FC = () => {
                       <p><span className="font-bold uppercase">Dependencia:</span> {p.dependencia || 'S/D'}</p>
                     </div>
                     <button 
-                      onClick={() => navigate('/planes', { state: { openPlanId: p.id } })}
+                      onClick={() => navigate('/planes', { state: { openPlanId: p.originalId } })}
                       className="w-full bg-primary text-white text-[10px] font-black uppercase py-1.5 rounded hover:bg-blue-600 transition-colors"
                     >
                       Ver Perfil Completo
