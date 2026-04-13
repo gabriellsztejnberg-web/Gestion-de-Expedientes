@@ -173,7 +173,7 @@ export interface MOI {
 
 // --- NUEVOS TIPOS PARA PLANES DE EMERGENCIA ---
 
-export type AnexoTipo = 'anexo_16' | 'anexo_17' | 'anexo_18' | 'anexo_19' | 'anexo_20';
+export type AnexoTipo = 'anexo_15' | 'anexo_16' | 'anexo_17' | 'anexo_18' | 'anexo_19' | 'anexo_20';
 
 export interface ConvalidacionDetalle {
   auditorNombre?: string;
@@ -190,6 +190,7 @@ export interface PlanEmergencia {
   disposicion: string; // Número de disposición de aprobación
   vencimiento: string; // Fecha de vencimiento (YYYY-MM-DD)
   formatoDisposicion?: 'digital' | 'papel' | ''; // Aplica a la disposición y sus convalidaciones
+  estado?: 'vigente' | 'desafectado'; // Estado del plan
   convalidaciones: {
     anio1?: string;
     anio2?: string;
