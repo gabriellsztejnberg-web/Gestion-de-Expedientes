@@ -311,7 +311,18 @@ export const Mapa: React.FC = () => {
               <Marker key={p.id} position={[p.lat, p.lng]} icon={getMarkerIcon(p.anexo)}>
                 <Popup className="custom-popup">
                   <div className="p-1">
-                    <h3 className="font-black text-slate-800 uppercase text-xs mb-2 border-b pb-1">{p.empresa}</h3>
+                    <div className="flex items-center gap-3 mb-2 border-b pb-2">
+                      {p.logoUrl ? (
+                        <div className="w-10 h-10 shrink-0 bg-slate-100 rounded overflow-hidden border border-slate-200 flex items-center justify-center">
+                          <img src={p.logoUrl} alt="Logo" className="w-full h-full object-contain p-0.5" />
+                        </div>
+                      ) : (
+                        <div className="w-10 h-10 shrink-0 bg-slate-100 rounded overflow-hidden border border-slate-200 flex items-center justify-center">
+                          <span className="material-symbols-outlined text-slate-400 text-xl">corporate_fare</span>
+                        </div>
+                      )}
+                      <h3 className="font-black text-slate-800 uppercase text-xs leading-tight">{p.empresa}</h3>
+                    </div>
                     <div className="space-y-1 text-[10px] text-slate-600 mb-3">
                       <p><span className="font-bold uppercase">Anexo:</span> {p.anexo.replace('_', ' ').toUpperCase()}</p>
                       <p><span className="font-bold uppercase">Nº Plan:</span> {p.numeroPlan || 'S/D'}</p>
