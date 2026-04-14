@@ -88,6 +88,7 @@ export interface Auditor {
   nivel?: 'I' | 'II' | 'III'; // Nuevo campo Nivel
   cursos: Curso[];
   stats: EstadisticasAuditor;
+  calculatedStats?: EstadisticasAuditor;
   ultimaActualizacion: string;
 }
 
@@ -185,6 +186,7 @@ export interface ConvalidacionDetalle {
 export interface PlanEmergencia {
   id: string;
   empresa: string;
+  logoUrl?: string;
   anexo: AnexoTipo;
   dependencia: string; // Jurisdicción
   disposicion: string; // Número de disposición de aprobación
