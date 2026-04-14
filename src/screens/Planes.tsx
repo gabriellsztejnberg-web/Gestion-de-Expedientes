@@ -706,7 +706,7 @@ export const Planes: React.FC = () => {
           
           // Obtener registros existentes para evitar duplicados (misma empresa + misma dependencia)
           const existingPlanes = planes.filter(p => p.anexo === activeTab);
-          const existingKeys = new Set(existingPlanes.map(p => `${p.empresa}_${p.dependencia}`.toUpperCase()));
+          const existingMap = new Map(existingPlanes.map(p => [`${p.empresa}_${p.dependencia}`.toUpperCase(), p]));
           
           const chunks = [];
           for (let i = 0; i < data.length; i += 500) {
@@ -714,7 +714,7 @@ export const Planes: React.FC = () => {
           }
 
           let recordsAdded = 0;
-          let recordsSkipped = 0;
+          let recordsUpdated = 0;
 
           for (const chunk of chunks) {
             const batch = writeBatch(db);
@@ -739,14 +739,15 @@ export const Planes: React.FC = () => {
               const dependenciaFinal = getCsvVal(row, ['juris', 'depen']).toString().toUpperCase().trim() || 'S/D';
               
               const key = `${empresaFinal}_${dependenciaFinal}`;
-              if (existingKeys.has(key)) {
-                recordsSkipped++;
-                return; // Saltar duplicado
-              }
-              existingKeys.add(key);
-
-              const newPlanRef = doc(collection(db, 'planes'));
+              const existingPlan = existingMap.get(key);
               
+              let planRef;
+              if (existingPlan) {
+                planRef = doc(db, 'planes', existingPlan.id);
+              } else {
+                planRef = doc(collection(db, 'planes'));
+              }
+
               const observaciones = getCsvVal(row, ['observaciones', 'documentacionextra', 'respuesta']).toString();
               const isDesafectado = observaciones.toLowerCase().includes('desafectado');
 
@@ -773,60 +774,81 @@ export const Planes: React.FC = () => {
               const anio3Auditor = getCsvVal(row, ['auditor3', 'inspector3']).toString().toUpperCase();
               const anio4Auditor = getCsvVal(row, ['auditor4', 'inspector4']).toString().toUpperCase();
 
-              const plan: Partial<PlanEmergencia> = {
+              const planData: Partial<PlanEmergencia> = {
                 empresa: empresaFinal,
                 dependencia: dependenciaFinal,
-                disposicion: disposicionStr,
-                vencimiento: parseCSVDate(getCsvVal(row, ['vencimiento', 'hasta', 'dispofecha'])),
-                formatoDisposicion,
-                cuit: getCsvVal(row, ['cuit']).toString(),
-                domicilio: getCsvVal(row, ['domicilio']).toString().toUpperCase(),
-                localidad: getCsvVal(row, ['localidad']).toString().toUpperCase(),
-                email: getCsvVal(row, ['email']).toString(),
-                telefono: getCsvVal(row, ['telefono', 'tel']).toString(),
-                numeroPlan: getCsvVal(row, ['plan', 'nroplan', 'numeroplan']).toString(),
-                coordenadas: getCsvVal(row, ['coordenadas', 'latlong', 'ubicacion']).toString(),
-                responsablePlan: getCsvVal(row, ['responsable']).toString(),
-                contactoPlan: getCsvVal(row, ['contacto']).toString(),
-                tipoRespuesta: getCsvVal(row, ['respuesta', 'tiporespuesta']).toString().toLowerCase().includes('tercero') ? 'terceros' : (getCsvVal(row, ['respuesta', 'tiporespuesta']).toString().toLowerCase().includes('propia') ? 'propia' : ''),
-                empresaRespuesta: getCsvVal(row, ['empresarespuesta', 'tercero', 'contratista']).toString().toUpperCase(),
-                documentacionExtra: observaciones,
+                disposicion: disposicionStr || existingPlan?.disposicion || '',
+                vencimiento: parseCSVDate(getCsvVal(row, ['vencimiento', 'hasta', 'dispofecha'])) || existingPlan?.vencimiento || '',
+                formatoDisposicion: formatoDisposicion || existingPlan?.formatoDisposicion || '',
+                cuit: getCsvVal(row, ['cuit']).toString() || existingPlan?.cuit || '',
+                domicilio: getCsvVal(row, ['domicilio']).toString().toUpperCase() || existingPlan?.domicilio || '',
+                localidad: getCsvVal(row, ['localidad']).toString().toUpperCase() || existingPlan?.localidad || '',
+                email: getCsvVal(row, ['email']).toString() || existingPlan?.email || '',
+                telefono: getCsvVal(row, ['telefono', 'tel']).toString() || existingPlan?.telefono || '',
+                numeroPlan: getCsvVal(row, ['plan', 'nroplan', 'numeroplan']).toString() || existingPlan?.numeroPlan || '',
+                coordenadas: getCsvVal(row, ['coordenadas', 'latlong', 'ubicacion']).toString() || existingPlan?.coordenadas || '',
+                responsablePlan: getCsvVal(row, ['responsable']).toString() || existingPlan?.responsablePlan || '',
+                contactoPlan: getCsvVal(row, ['contacto']).toString() || existingPlan?.contactoPlan || '',
+                tipoRespuesta: getCsvVal(row, ['respuesta', 'tiporespuesta']).toString().toLowerCase().includes('tercero') ? 'terceros' : (getCsvVal(row, ['respuesta', 'tiporespuesta']).toString().toLowerCase().includes('propia') ? 'propia' : (existingPlan?.tipoRespuesta || '')),
+                empresaRespuesta: getCsvVal(row, ['empresarespuesta', 'tercero', 'contratista']).toString().toUpperCase() || existingPlan?.empresaRespuesta || '',
+                documentacionExtra: observaciones || existingPlan?.documentacionExtra || '',
                 anexo: activeTab,
-                estado: isDesafectado ? 'desafectado' : 'vigente',
+                estado: isDesafectado ? 'desafectado' : (existingPlan?.estado || 'vigente'),
                 convalidaciones: {
-                  anio1: anio1Date,
-                  anio2: anio2Date,
-                  anio3: anio3Date,
-                  anio4: anio4Date,
+                  anio1: anio1Date || existingPlan?.convalidaciones?.anio1 || '',
+                  anio2: anio2Date || existingPlan?.convalidaciones?.anio2 || '',
+                  anio3: anio3Date || existingPlan?.convalidaciones?.anio3 || '',
+                  anio4: anio4Date || existingPlan?.convalidaciones?.anio4 || '',
                 },
                 convalidacionesDetalle: {
-                  anio1: { nroExpediente: anio1Exp, nroIF: anio1Date && anio1Exp ? 'S/D' : '', auditorNombre: anio1Auditor },
-                  anio2: { nroExpediente: anio2Exp, nroIF: anio2Date && anio2Exp ? 'S/D' : '', auditorNombre: anio2Auditor },
-                  anio3: { nroExpediente: anio3Exp, nroIF: anio3Date && anio3Exp ? 'S/D' : '', auditorNombre: anio3Auditor },
-                  anio4: { nroExpediente: anio4Exp, nroIF: anio4Date && anio4Exp ? 'S/D' : '', auditorNombre: anio4Auditor },
+                  anio1: { 
+                    nroExpediente: anio1Exp || existingPlan?.convalidacionesDetalle?.anio1?.nroExpediente || '', 
+                    nroIF: (anio1Date && anio1Exp ? 'S/D' : '') || existingPlan?.convalidacionesDetalle?.anio1?.nroIF || '', 
+                    auditorNombre: anio1Auditor || existingPlan?.convalidacionesDetalle?.anio1?.auditorNombre || '' 
+                  },
+                  anio2: { 
+                    nroExpediente: anio2Exp || existingPlan?.convalidacionesDetalle?.anio2?.nroExpediente || '', 
+                    nroIF: (anio2Date && anio2Exp ? 'S/D' : '') || existingPlan?.convalidacionesDetalle?.anio2?.nroIF || '', 
+                    auditorNombre: anio2Auditor || existingPlan?.convalidacionesDetalle?.anio2?.auditorNombre || '' 
+                  },
+                  anio3: { 
+                    nroExpediente: anio3Exp || existingPlan?.convalidacionesDetalle?.anio3?.nroExpediente || '', 
+                    nroIF: (anio3Date && anio3Exp ? 'S/D' : '') || existingPlan?.convalidacionesDetalle?.anio3?.nroIF || '', 
+                    auditorNombre: anio3Auditor || existingPlan?.convalidacionesDetalle?.anio3?.auditorNombre || '' 
+                  },
+                  anio4: { 
+                    nroExpediente: anio4Exp || existingPlan?.convalidacionesDetalle?.anio4?.nroExpediente || '', 
+                    nroIF: (anio4Date && anio4Exp ? 'S/D' : '') || existingPlan?.convalidacionesDetalle?.anio4?.nroIF || '', 
+                    auditorNombre: anio4Auditor || existingPlan?.convalidacionesDetalle?.anio4?.auditorNombre || '' 
+                  },
                 },
                 ultimaActualizacion: new Date().toISOString()
               };
               
-              batch.set(newPlanRef, plan);
-              recordsAdded++;
+              if (existingPlan) {
+                batch.update(planRef, planData);
+                recordsUpdated++;
+              } else {
+                batch.set(planRef, planData);
+                recordsAdded++;
+              }
 
               // Create inspecciones and auditores for imported data
               const years = ['anio1', 'anio2', 'anio3', 'anio4'] as const;
               for (const year of years) {
-                const det = plan.convalidacionesDetalle![year];
-                const date = plan.convalidaciones![year];
+                const det = planData.convalidacionesDetalle![year];
+                const date = planData.convalidaciones![year];
                 if (det?.auditorNombre && date) {
                   ensureAuditorExists(det.auditorNombre); // Fire and forget to not block batch
                   const newInspRef = doc(collection(db, 'inspecciones'));
                   batch.set(newInspRef, {
                     fecha: date,
-                    planId: newPlanRef.id,
-                    empresa: plan.empresa,
+                    planId: planRef.id,
+                    empresa: planData.empresa,
                     auditorNombre: det.auditorNombre,
                     auditorId: 'S/D',
-                    ubicacion: plan.localidad || 'S/D',
-                    jurisdiccion: plan.dependencia || 'S/D',
+                    ubicacion: planData.localidad || 'S/D',
+                    jurisdiccion: planData.dependencia || 'S/D',
                     tipo: `Convalidación ${year.replace('anio', 'Año ')}`,
                     resultado: 'APROBADO',
                     convalidacionNumero: parseInt(year.replace('anio', '')),
@@ -840,7 +862,7 @@ export const Planes: React.FC = () => {
             await batch.commit();
           }
 
-          alert(`Importación completada.\nAgregados: ${recordsAdded}\nOmitidos (ya existían): ${recordsSkipped}`);
+          alert(`Importación completada.\nAgregados: ${recordsAdded}\nActualizados: ${recordsUpdated}`);
         } catch (error: any) {
           console.error("Error al importar CSV:", error);
           alert(`Error al procesar el archivo. Verifique el formato.\nDetalle: ${error.message}`);
