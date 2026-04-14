@@ -9,6 +9,15 @@ export interface Instancia {
   color: string;
 }
 
+export const ANEXOS: { id: AnexoTipo; label: string }[] = [
+  { id: 'anexo_15', label: 'ANEXO 15 (Zonales/Locales)' },
+  { id: 'anexo_16', label: 'ANEXO 16 (Ref)' },
+  { id: 'anexo_17', label: 'ANEXO 17 (Termap/Oil)' },
+  { id: 'anexo_18', label: 'ANEXO 18 (Buques/Barcazas)' },
+  { id: 'anexo_19', label: 'ANEXO 19 (Puertos Ref)' },
+  { id: 'anexo_20', label: 'ANEXO 20 (Plataformas)' },
+];
+
 export interface Case {
   id: string;
   numero: string; // GDE
