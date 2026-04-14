@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, query, getDocs, orderBy } from 'firebase/firestore';
-import { TimelineEvent, Case, Mail, MOI } from '../types';
+import { TimelineEvent, Case, Mail, MOI, ANEXOS } from '../types';
 import { summarizeReportRow } from '../services/geminiService'; // Importamos servicio IA
 
 export const Reports: React.FC = () => {
@@ -195,7 +195,7 @@ export const Reports: React.FC = () => {
       empresa: exp?.empresa || 'S/D',
       tramite: exp?.tramite || 'N/A',
       ordenanza: exp?.ordenanza || '-',
-      anexo: exp?.categoria || '-',
+      anexo: exp?.categoria ? (ANEXOS.find(a => a.id === exp.categoria)?.label || exp.categoria) : '-',
       resumenOriginal: resumenCrudo,
       responsables: Array.from(new Set(eventosExp.map(e => e.usuario))).join(', ')
     };
