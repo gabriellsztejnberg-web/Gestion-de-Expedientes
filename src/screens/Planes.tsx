@@ -19,7 +19,7 @@ import {
   getDocs,
   writeBatch
 } from 'firebase/firestore';
-import { PlanEmergencia, AnexoTipo, User, Case, Inspeccion, TimelineEvent } from '../types';
+import { PlanEmergencia, AnexoTipo, User, Case, Inspeccion, TimelineEvent, ANEXOS } from '../types';
 import { extractPlanesFromPDF } from '../services/geminiService';
 
 // Fix for default marker icon in Leaflet
@@ -142,15 +142,6 @@ const parseCoordinates = (coordStr?: string): [number, number][] => {
 
   return results;
 };
-
-const ANEXOS: { id: AnexoTipo; label: string }[] = [
-  { id: 'anexo_15', label: 'ANEXO 15 (Zonales/Locales)' },
-  { id: 'anexo_16', label: 'ANEXO 16 (Ref)' },
-  { id: 'anexo_17', label: 'ANEXO 17 (Termap/Oil)' },
-  { id: 'anexo_18', label: 'ANEXO 18 (Buques/Barcazas)' },
-  { id: 'anexo_19', label: 'ANEXO 19 (Puertos Ref)' },
-  { id: 'anexo_20', label: 'ANEXO 20 (Plataformas)' },
-];
 
 export const Planes: React.FC = () => {
   const location = useLocation();
@@ -420,11 +411,15 @@ export const Planes: React.FC = () => {
 
     const planData = {
       ...editingPlan,
-      anexo: activeTab,
+      anexo: editingPlan.anexo || activeTab,
       ultimaActualizacion: new Date().toISOString(),
       convalidaciones: editingPlan.convalidaciones || {},
       convalidacionesDetalle: editingPlan.convalidacionesDetalle || {}
     };
+
+    if (planData.anexo === 'general' || !planData.anexo) {
+      return alert("Debe seleccionar un anexo válido para la empresa.");
+    }
 
     try {
       if (editingPlan.id) {
@@ -619,6 +614,12 @@ export const Planes: React.FC = () => {
   };
 
   const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement> | { target: { files: File[] } }) => {
+    if (activeTab === 'general') {
+      alert("Por favor, seleccione un anexo específico antes de importar un CSV.");
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -951,7 +952,7 @@ export const Planes: React.FC = () => {
                       <span className="material-symbols-outlined text-[18px]">sync</span> Sincronizar Auditorías
                     </button>
                     <button 
-                      onClick={() => { setEditingPlan({ convalidaciones: {} }); setIsModalOpen(true); }}
+                      onClick={() => { setEditingPlan({ convalidaciones: {}, anexo: activeTab === 'general' ? '' : activeTab }); setIsModalOpen(true); }}
                       className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-600 transition-all text-xs font-black uppercase shadow-lg"
                     >
                        <span className="material-symbols-outlined text-[18px]">add</span> Nuevo Registro
@@ -1147,6 +1148,20 @@ export const Planes: React.FC = () => {
                   
                   <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto flex-1">
                       <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="md:col-span-1">
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Anexo</label>
+                          <select 
+                            required
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase font-bold" 
+                            value={editingPlan?.anexo || ''} 
+                            onChange={e => setEditingPlan({...editingPlan!, anexo: e.target.value as AnexoTipo})}
+                          >
+                            <option value="">Seleccionar Anexo...</option>
+                            {ANEXOS.map(a => (
+                              <option key={a.id} value={a.id}>{a.label}</option>
+                            ))}
+                          </select>
+                        </div>
                         <div className="md:col-span-2">
                           <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa / Razón Social</label>
                           <input 
@@ -1501,18 +1516,26 @@ export const Planes: React.FC = () => {
                 {/* Columna Info General */}
                 <div className="space-y-6">
                   {/* Foto de Perfil Placeholder */}
-                  <section className="print:break-inside-avoid flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/50 relative group cursor-pointer hover:border-primary/50 transition-colors">
-                    <div className="size-24 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center mb-2 overflow-hidden shadow-inner">
-                      {selectedPlan.logoUrl ? (
-                        <img src={selectedPlan.logoUrl} alt="Logo" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="material-symbols-outlined text-4xl text-slate-400 group-hover:text-primary transition-colors">add_photo_alternate</span>
-                      )}
-                    </div>
-                    <p className="text-[9px] font-bold uppercase text-slate-400 text-center group-hover:text-primary transition-colors">Cargar Logo / Foto</p>
+                  <section className="print:break-inside-avoid flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/50 relative group cursor-pointer hover:border-primary/50 transition-colors overflow-hidden aspect-square">
+                    {selectedPlan.logoUrl ? (
+                      <>
+                        <img src={selectedPlan.logoUrl} alt="Logo" className="absolute inset-0 w-full h-full object-contain bg-white dark:bg-slate-900 p-2" />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center z-10">
+                          <span className="material-symbols-outlined text-3xl text-white mb-1">edit</span>
+                          <p className="text-[9px] font-bold uppercase text-white text-center">Cambiar Logo</p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="size-24 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center mb-2 overflow-hidden shadow-inner">
+                          <span className="material-symbols-outlined text-4xl text-slate-400 group-hover:text-primary transition-colors">add_photo_alternate</span>
+                        </div>
+                        <p className="text-[9px] font-bold uppercase text-slate-400 text-center group-hover:text-primary transition-colors">Cargar Logo / Foto</p>
+                      </>
+                    )}
                     <input 
                       type="file" 
-                      className="absolute inset-0 opacity-0 cursor-pointer" 
+                      className="absolute inset-0 opacity-0 cursor-pointer z-20" 
                       accept="image/*" 
                       title="Cargar imagen" 
                       onChange={(e) => handleLogoUpload(e, selectedPlan.id)}
