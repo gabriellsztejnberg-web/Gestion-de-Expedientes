@@ -374,6 +374,34 @@ export const Planes: React.FC = () => {
     }
   };
 
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>, planId: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 1024 * 1024) { // 1MB limit
+      alert("La imagen es demasiado grande. El tamaño máximo es 1MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64String = reader.result as string;
+      try {
+        await updateDoc(doc(db, 'planes', planId), {
+          logoUrl: base64String
+        });
+        // Update local state for immediate feedback
+        if (selectedPlan && selectedPlan.id === planId) {
+          setSelectedPlan({ ...selectedPlan, logoUrl: base64String });
+        }
+      } catch (error) {
+        console.error("Error uploading logo:", error);
+        alert("Error al guardar la imagen.");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingPlan?.empresa) return alert("La empresa es obligatoria");
@@ -1440,11 +1468,20 @@ export const Planes: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col print:shadow-none print:border-none print:max-h-none print:overflow-visible">
             <div className="bg-slate-900 text-white px-6 py-5 flex justify-between items-center shrink-0 print:bg-white print:text-black print:border-b print:border-slate-300">
               <div className="flex items-center gap-4">
-                <div className="size-12 bg-primary/20 rounded-xl flex items-center justify-center print:bg-transparent print:border print:border-slate-300">
-                  <span className="material-symbols-outlined text-primary text-3xl print:text-black">corporate_fare</span>
+                <div className="size-12 bg-primary/20 rounded-xl flex items-center justify-center overflow-hidden print:bg-transparent print:border print:border-slate-300">
+                  {selectedPlan.logoUrl ? (
+                    <img src={selectedPlan.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="material-symbols-outlined text-primary text-3xl print:text-black">corporate_fare</span>
+                  )}
                 </div>
                 <div>
-                  <h2 className="text-lg font-black uppercase tracking-tight leading-none mb-1">{selectedPlan.empresa}</h2>
+                  <div className="flex items-center gap-3 mb-1">
+                    <h2 className="text-lg font-black uppercase tracking-tight leading-none">{selectedPlan.empresa}</h2>
+                    <span className="bg-primary/20 text-primary px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest border border-primary/30 print:border-slate-300 print:text-slate-600 print:bg-transparent">
+                      {selectedPlan.anexo.replace('_', ' ')}
+                    </span>
+                  </div>
                   <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest print:text-slate-600">Perfil Consolidado de la Empresa</p>
                 </div>
               </div>
@@ -1463,6 +1500,25 @@ export const Planes: React.FC = () => {
                 
                 {/* Columna Info General */}
                 <div className="space-y-6">
+                  {/* Foto de Perfil Placeholder */}
+                  <section className="print:break-inside-avoid flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/50 relative group cursor-pointer hover:border-primary/50 transition-colors">
+                    <div className="size-24 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center mb-2 overflow-hidden shadow-inner">
+                      {selectedPlan.logoUrl ? (
+                        <img src={selectedPlan.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="material-symbols-outlined text-4xl text-slate-400 group-hover:text-primary transition-colors">add_photo_alternate</span>
+                      )}
+                    </div>
+                    <p className="text-[9px] font-bold uppercase text-slate-400 text-center group-hover:text-primary transition-colors">Cargar Logo / Foto</p>
+                    <input 
+                      type="file" 
+                      className="absolute inset-0 opacity-0 cursor-pointer" 
+                      accept="image/*" 
+                      title="Cargar imagen" 
+                      onChange={(e) => handleLogoUpload(e, selectedPlan.id)}
+                    />
+                  </section>
+
                   <section className="print:break-inside-avoid">
                     <h3 className="text-[10px] font-black uppercase text-primary mb-3 border-b border-primary/20 pb-1">Datos de Contacto</h3>
                     <div className="space-y-3">
