@@ -450,9 +450,9 @@ export const Expedientes: React.FC = () => {
           break;
 
         case 'EmisionDispo':
-          nuevoEstado = 'guarda';
           textoNovedad = `Se emitió nueva DISPOSICIÓN: ${movData.nroDisposicion}. Vencimiento: ${movData.vencimiento}. ${ts}.`;
           esTareaAutomatica = false;
+          await syncExpedienteToPlan(editingExp as Case);
           break;
 
         case 'Firma':
@@ -521,8 +521,22 @@ export const Expedientes: React.FC = () => {
 
       // --- AUTOMATIZACIÓN: Emisión de Disposición ---
       if ((movData.tipo === 'Conclusiones' || movData.tipo === 'Guarda' || movData.tipo === 'EmisionDispo') && movData.nroDisposicion && movData.vencimiento) {
-        if (editingExp.planId) {
-          const planRef = doc(db, 'planes', editingExp.planId);
+        let targetPlanId = editingExp.planId;
+        
+        if (!targetPlanId && editingExp.empresa && editingExp.categoria) {
+          const q = query(
+            collection(db, 'planes'), 
+            where('empresa', '==', editingExp.empresa),
+            where('anexo', '==', editingExp.categoria)
+          );
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            targetPlanId = snap.docs[0].id;
+          }
+        }
+
+        if (targetPlanId) {
+          const planRef = doc(db, 'planes', targetPlanId);
           const planSnap = await getDoc(planRef);
           
           if (planSnap.exists()) {
