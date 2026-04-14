@@ -231,7 +231,7 @@ export const Inspecciones: React.FC = () => {
           const planData = planSnap.data() as PlanEmergencia;
           const convalidaciones = { ...(planData.convalidaciones || {}) };
           
-          if (dataToSave.tipo === 'CONVALIDACIÓN ANUAL' || dataToSave.tipo === 'RENOVACIÓN') {
+          if (dataToSave.tipo === 'CONVALIDACIÓN ANUAL') {
             const num = dataToSave.convalidacionNumero;
             if (num === 1) convalidaciones.anio1 = dataToSave.fecha;
             else if (num === 2) convalidaciones.anio2 = dataToSave.fecha;
@@ -316,7 +316,7 @@ export const Inspecciones: React.FC = () => {
           const planData = planSnap.data() as PlanEmergencia;
           const convalidaciones = { ...(planData.convalidaciones || {}) };
           
-          if (subsanarTarget.tipo === 'CONVALIDACIÓN ANUAL' || subsanarTarget.tipo === 'RENOVACIÓN') {
+          if (subsanarTarget.tipo === 'CONVALIDACIÓN ANUAL') {
             const num = subsanarTarget.convalidacionNumero;
             const fechaHoy = new Date().toISOString().split('T')[0];
 
@@ -542,7 +542,7 @@ export const Inspecciones: React.FC = () => {
                     </select>
                   </div>
 
-                  {(editingInsp.tipo === 'CONVALIDACIÓN ANUAL' || editingInsp.tipo === 'RENOVACIÓN') && (
+                  {editingInsp.tipo === 'CONVALIDACIÓN ANUAL' && (
                     <div className="animate-in fade-in slide-in-from-top-1 duration-200">
                       <label className="block text-[10px] font-black uppercase text-primary mb-1">Nº de Convalidación</label>
                       <select 
