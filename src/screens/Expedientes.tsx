@@ -16,7 +16,7 @@ import {
   where,
   getDoc
 } from 'firebase/firestore';
-import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI, PlanEmergencia, AnexoTipo } from '../types';
+import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI, PlanEmergencia, AnexoTipo, ANEXOS } from '../types';
 import { analyzeExpedienteHistory } from '../services/geminiService'; // Importamos servicio IA
 
 const INSTANCIAS: Instancia[] = [
@@ -220,7 +220,7 @@ export const Expedientes: React.FC = () => {
               registradoPor: currentUser.name
           };
           await addDoc(collection(db, 'mails'), mailData);
-          await addHistoryEntry('MAILS_GENERAL', `Ingreso Mail de: ${mailData.remitente}. Asunto: ${mailData.asunto}`, 'Comunicación', true);
+          await addHistoryEntry('MAILS_GENERAL', `Ingreso Mail de: ${mailData.remitente}\nAsunto: ${mailData.asunto}\nDetalle: ${mailData.cuerpo}`, 'Comunicación', true);
           setIsMailModalOpen(false);
           setNewMail({});
       } catch (err) {
@@ -339,14 +339,8 @@ export const Expedientes: React.FC = () => {
     // Solo sincronizamos si tiene empresa y anexo (categoria)
     if (!c.empresa || !c.categoria) return;
 
-    // Normalizar el anexo
-    let anexoKey: AnexoTipo = 'anexo_18'; // Default
-    const cat = c.categoria.toLowerCase();
-    if (cat.includes('16')) anexoKey = 'anexo_16';
-    else if (cat.includes('17')) anexoKey = 'anexo_17';
-    else if (cat.includes('18')) anexoKey = 'anexo_18';
-    else if (cat.includes('19')) anexoKey = 'anexo_19';
-    else if (cat.includes('20')) anexoKey = 'anexo_20';
+    // Normalizar el anexo (ahora categoria es directamente el id del anexo)
+    let anexoKey: AnexoTipo = c.categoria as AnexoTipo;
 
     try {
       let planDoc = null;
@@ -367,16 +361,15 @@ export const Expedientes: React.FC = () => {
         if (!snap.empty) planDoc = snap.docs[0];
       }
       
-      const planData: Partial<PlanEmergencia> = {
-        empresa: c.empresa,
-        anexo: anexoKey,
-        expedienteOrigenId: c.id,
-        ultimaActualizacion: new Date().toISOString(),
-        disposicion: c.numero, 
-      };
-
       if (!planDoc) {
         // Crear nuevo plan
+        const planData: Partial<PlanEmergencia> = {
+          empresa: c.empresa,
+          anexo: anexoKey,
+          expedienteOrigenId: c.id,
+          ultimaActualizacion: new Date().toISOString(),
+          disposicion: '', 
+        };
         await addDoc(collection(db, 'planes'), {
           ...planData,
           convalidaciones: {},
@@ -396,7 +389,7 @@ export const Expedientes: React.FC = () => {
         }
 
         await updateDoc(doc(db, 'planes', planDoc.id), {
-          ...planData,
+          expedienteOrigenId: c.id,
           convalidaciones,
           ultimaActualizacion: new Date().toISOString()
         });
@@ -831,7 +824,7 @@ export const Expedientes: React.FC = () => {
                             </button>
                           </div>
                           <span className="text-[9px] text-slate-500 font-bold uppercase leading-none italic">
-                            {c.tramite} {c.ordenanza ? ` | ORD: ${c.ordenanza}` : ''} {c.categoria ? ` | ANEXO: ${c.categoria}` : ''}
+                            {c.tramite} {c.ordenanza ? ` | ORD: ${c.ordenanza}` : ''} {c.categoria ? ` | ${ANEXOS.find(a => a.id === c.categoria)?.label || c.categoria}` : ''}
                           </span>
                         </div>
                       </td>
@@ -889,7 +882,7 @@ export const Expedientes: React.FC = () => {
                                 <td className="px-4 py-4">
                                     <div className="flex flex-col">
                                         <span className="uppercase font-bold text-slate-700 dark:text-slate-300">{m.asunto}</span>
-                                        {m.cuerpo && <span className="text-[10px] text-slate-500 italic truncate max-w-xs">{m.cuerpo}</span>}
+                                        {m.cuerpo && <span className="text-[10px] text-slate-500 italic whitespace-pre-wrap mt-1">{m.cuerpo}</span>}
                                     </div>
                                 </td>
                                 <td className="px-4 py-4">
@@ -1049,7 +1042,17 @@ export const Expedientes: React.FC = () => {
               </div>
               <div className="col-span-2">
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Anexo / Categoría</label>
-                <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingExp?.categoria || ''} onChange={e => setEditingExp({...editingExp, categoria: e.target.value})} placeholder="Ej: II" />
+                <select 
+                  required
+                  className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold" 
+                  value={editingExp?.categoria || ''} 
+                  onChange={e => setEditingExp({...editingExp, categoria: e.target.value})}
+                >
+                  <option value="">Seleccionar Anexo...</option>
+                  {ANEXOS.map(a => (
+                    <option key={a.id} value={a.id}>{a.label}</option>
+                  ))}
+                </select>
               </div>
               
               {isJefe && (
