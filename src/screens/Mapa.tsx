@@ -310,32 +310,41 @@ export const Mapa: React.FC = () => {
             {planes.map(p => (
               <Marker key={p.id} position={[p.lat, p.lng]} icon={getMarkerIcon(p.anexo)}>
                 <Popup className="custom-popup">
-                  <div className="p-1">
-                    <div className="flex items-center gap-3 mb-2 border-b pb-2">
-                      {p.logoUrl ? (
-                        <div className="w-10 h-10 shrink-0 bg-slate-100 rounded overflow-hidden border border-slate-200 flex items-center justify-center">
-                          <img src={p.logoUrl} alt="Logo" className="w-full h-full object-contain p-0.5" />
-                        </div>
-                      ) : (
-                        <div className="w-10 h-10 shrink-0 bg-slate-100 rounded overflow-hidden border border-slate-200 flex items-center justify-center">
-                          <span className="material-symbols-outlined text-slate-400 text-xl">corporate_fare</span>
-                        </div>
-                      )}
-                      <h3 className="font-black text-slate-800 uppercase text-xs leading-tight">{p.empresa}</h3>
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2 p-3 border-b border-slate-200 bg-white">
+                      <div className="w-6 h-6 shrink-0 bg-blue-100 rounded flex items-center justify-center">
+                        <span className="material-symbols-outlined text-blue-600 text-[14px]">corporate_fare</span>
+                      </div>
+                      <h3 className="font-black text-slate-800 uppercase text-sm leading-tight truncate">{p.empresa}</h3>
                     </div>
-                    <div className="space-y-1 text-[10px] text-slate-600 mb-3">
-                      <p><span className="font-bold uppercase">Anexo:</span> {p.anexo.replace('_', ' ').toUpperCase()}</p>
-                      <p><span className="font-bold uppercase">Nº Plan:</span> {p.numeroPlan || 'S/D'}</p>
-                      <p><span className="font-bold uppercase">Disposición:</span> {p.disposicion || 'S/D'}</p>
-                      <p><span className="font-bold uppercase">Vencimiento:</span> {formatDate(p.vencimiento)}</p>
-                      <p><span className="font-bold uppercase">Dependencia:</span> {p.dependencia || 'S/D'}</p>
+                    
+                    {p.logoUrl ? (
+                      <div className="w-full h-40 bg-slate-100 flex items-center justify-center overflow-hidden border-b border-slate-200">
+                        <img src={p.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="w-full h-24 bg-slate-100 flex flex-col items-center justify-center border-b border-slate-200 text-slate-400">
+                        <span className="material-symbols-outlined text-4xl mb-1">image_not_supported</span>
+                        <span className="text-[9px] font-bold uppercase">Sin imagen</span>
+                      </div>
+                    )}
+
+                    <div className="p-3 bg-white">
+                      <div className="space-y-1.5 text-[10px] text-slate-600 mb-3">
+                        <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Anexo:</span> <span className="font-bold text-slate-700">{p.anexo.replace('_', ' ').toUpperCase()}</span></p>
+                        <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Nº Plan:</span> <span className="font-bold text-slate-700">{p.numeroPlan || 'S/D'}</span></p>
+                        <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Disposición:</span> <span className="font-bold text-slate-700">{p.disposicion || 'S/D'}</span></p>
+                        <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Vencimiento:</span> <span className="font-bold text-slate-700">{formatDate(p.vencimiento)}</span></p>
+                        <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Dependencia:</span> <span className="font-bold text-slate-700 truncate max-w-[120px]" title={p.dependencia}>{p.dependencia || 'S/D'}</span></p>
+                      </div>
+                      <button 
+                        onClick={() => navigate('/planes', { state: { openPlanId: p.originalId } })}
+                        className="w-full bg-primary text-white text-[10px] font-black uppercase py-2 rounded hover:bg-blue-600 transition-colors flex items-center justify-center gap-1 shadow-sm"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">visibility</span>
+                        Ver Perfil Completo
+                      </button>
                     </div>
-                    <button 
-                      onClick={() => navigate('/planes', { state: { openPlanId: p.originalId } })}
-                      className="w-full bg-primary text-white text-[10px] font-black uppercase py-1.5 rounded hover:bg-blue-600 transition-colors"
-                    >
-                      Ver Perfil Completo
-                    </button>
                   </div>
                 </Popup>
               </Marker>
