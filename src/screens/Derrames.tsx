@@ -1,0 +1,713 @@
+import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Sidebar } from '../components/Sidebar';
+import { db } from '../firebase';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { 
+  collection, 
+  onSnapshot, 
+  addDoc, 
+  updateDoc, 
+  doc, 
+  query, 
+  deleteDoc,
+  orderBy
+} from 'firebase/firestore';
+import { EmpresaControlDerrame, BaseOperativa, Case, Inspeccion, TimelineEvent, User } from '../types';
+
+// Fix for default marker icons in React-Leaflet
+// @ts-ignore
+import icon from 'leaflet/dist/images/marker-icon.png';
+// @ts-ignore
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+    iconUrl: icon,
+    shadowUrl: iconShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+L.Marker.prototype.options.icon = DefaultIcon;
+
+const formatDate = (dateStr?: string) => {
+  if (!dateStr || dateStr === '-' || dateStr.length < 5) return dateStr || '-';
+  let d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const userTimezoneOffset = d.getTimezoneOffset() * 60000;
+  const adjustedDate = new Date(d.getTime() + userTimezoneOffset);
+  return `${adjustedDate.getDate().toString().padStart(2, '0')}/${(adjustedDate.getMonth() + 1).toString().padStart(2, '0')}/${adjustedDate.getFullYear()}`;
+};
+
+export const Derrames: React.FC = () => {
+  const navigate = useNavigate();
+  const [empresas, setEmpresas] = useState<EmpresaControlDerrame[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Modal de Edición Empresa
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingEmpresa, setEditingEmpresa] = useState<Partial<EmpresaControlDerrame> | null>(null);
+
+  // Modal de Edición Base
+  const [isBaseModalOpen, setIsBaseModalOpen] = useState(false);
+  const [editingBase, setEditingBase] = useState<Partial<BaseOperativa> | null>(null);
+  const [selectedEmpresaId, setSelectedEmpresaId] = useState<string>('');
+
+  // Perfil View
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaControlDerrame | null>(null);
+
+  const [cases, setCases] = useState<Case[]>([]);
+  const [inspecciones, setInspecciones] = useState<Inspeccion[]>([]);
+  
+  const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
+  const isJefe = (currentUser.role || '').toLowerCase() === 'jefe' || (currentUser.role || '').toLowerCase() === 'admin';
+
+  useEffect(() => {
+    const q = query(collection(db, 'control_derrames'), orderBy('empresa', 'asc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmpresaControlDerrame));
+      setEmpresas(docs);
+      if (selectedEmpresa) {
+        const updated = docs.find(d => d.id === selectedEmpresa.id);
+        if (updated) setSelectedEmpresa(updated);
+      }
+      setIsLoading(false);
+    });
+
+    const qCases = query(collection(db, 'expedientes'));
+    const unsubCases = onSnapshot(qCases, (snapshot) => {
+      setCases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case)));
+    });
+
+    const qInsp = query(collection(db, 'inspecciones'), orderBy('fecha', 'desc'));
+    const unsubInsp = onSnapshot(qInsp, (snapshot) => {
+       setInspecciones(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Inspeccion)));
+    });
+
+    return () => {
+      unsubscribe();
+      unsubCases();
+      unsubInsp();
+    };
+  }, [selectedEmpresa?.id]);
+
+  const handleSaveEmpresa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEmpresa) return;
+
+    try {
+      const dataToSave = {
+        empresa: (editingEmpresa.empresa || '').toUpperCase(),
+        dependencia: (editingEmpresa.dependencia || '').toUpperCase(),
+        disposicion: (editingEmpresa.disposicion || '').toUpperCase(),
+        vencimiento: editingEmpresa.vencimiento || '',
+        cuit: editingEmpresa.cuit || '',
+        domicilio: editingEmpresa.domicilio || '',
+        localidad: editingEmpresa.localidad || '',
+        email: editingEmpresa.email || '',
+        telefono: editingEmpresa.telefono || '',
+        responsable: editingEmpresa.responsable || '',
+        logoUrl: editingEmpresa.logoUrl || '',
+        notas: editingEmpresa.notas || '',
+        basesOperativas: editingEmpresa.basesOperativas || [],
+        ultimaActualizacion: new Date().toISOString()
+      };
+
+      if (editingEmpresa.id) {
+        await updateDoc(doc(db, 'control_derrames', editingEmpresa.id), dataToSave);
+      } else {
+        await addDoc(collection(db, 'control_derrames'), dataToSave);
+      }
+      setIsModalOpen(false);
+      setEditingEmpresa(null);
+    } catch (error) {
+      console.error(error);
+      alert("Error al guardar empresa");
+    }
+  };
+
+  const handleSaveBase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBase || !selectedEmpresaId) return;
+
+    try {
+      const empresaDoc = empresas.find(e => e.id === selectedEmpresaId);
+      if (!empresaDoc) return;
+
+      const currentBases = [...(empresaDoc.basesOperativas || [])];
+      
+      const newBaseData: BaseOperativa = {
+        id: editingBase.id || Math.random().toString(36).substr(2, 9),
+        nombre: (editingBase.nombre || '').toUpperCase(),
+        coordenadas: editingBase.coordenadas || '',
+        materiales: editingBase.materiales || '',
+        observaciones: editingBase.observaciones || ''
+      };
+
+      if (editingBase.id) {
+        const index = currentBases.findIndex(b => b.id === editingBase.id);
+        if (index > -1) currentBases[index] = newBaseData;
+      } else {
+        currentBases.push(newBaseData);
+      }
+
+      await updateDoc(doc(db, 'control_derrames', selectedEmpresaId), {
+        basesOperativas: currentBases,
+        ultimaActualizacion: new Date().toISOString()
+      });
+
+      setIsBaseModalOpen(false);
+      setEditingBase(null);
+    } catch (error) {
+      console.error(error);
+      alert("Error al guardar base operativa");
+    }
+  };
+
+  const handleDeleteBase = async (empresaId: string, baseId: string) => {
+    if (!confirm("¿Eliminar base operativa?")) return;
+    const empresaDoc = empresas.find(e => e.id === empresaId);
+    if (!empresaDoc) return;
+
+    const currentBases = (empresaDoc.basesOperativas || []).filter(b => b.id !== baseId);
+    await updateDoc(doc(db, 'control_derrames', empresaId), {
+      basesOperativas: currentBases,
+      ultimaActualizacion: new Date().toISOString()
+    });
+  };
+
+  const handleDeleteEmpresa = async (id: string) => {
+    if (!confirm("¿Eliminar empresa permanentemente?")) return;
+    try {
+      await deleteDoc(doc(db, 'control_derrames', id));
+    } catch (error) {
+      alert("Error al eliminar");
+    }
+  };
+
+  const openNewEmpresa = () => {
+    setEditingEmpresa({ basesOperativas: [] });
+    setIsModalOpen(true);
+  };
+
+  const openEditEmpresa = (empresa: EmpresaControlDerrame) => {
+    setEditingEmpresa(empresa);
+    setIsModalOpen(true);
+  };
+
+  const openNewBase = (empresaId: string) => {
+    setSelectedEmpresaId(empresaId);
+    setEditingBase({});
+    setIsBaseModalOpen(true);
+  };
+
+  const openEditBase = (empresaId: string, base: BaseOperativa) => {
+    setSelectedEmpresaId(empresaId);
+    setEditingBase(base);
+    setIsBaseModalOpen(true);
+  };
+
+  const viewProfile = (empresa: EmpresaControlDerrame) => {
+    setSelectedEmpresa(empresa);
+    setIsProfileOpen(true);
+  };
+
+  // Helper to parse coordinates
+  const parseCoordinates = (coordStr?: string): [number, number] | null => {
+    if (!coordStr) return null;
+    let cleanStr = coordStr.toUpperCase().replace(/LATITUD[E]?|LONGITUD[E]?|LAT|LNG|LON/g, '').replace(/[´’`]/g, "'").replace(/[”]/g, '"').replace(/''/g, '"');
+    
+    // Simplest parse for decimal
+    const decMatch = cleanStr.match(/(-?\d+(?:[\.,]\d+)?)[^\d-]+(-?\d+(?:[\.,]\d+)?)/);
+    if (decMatch) {
+      let lat = parseFloat(decMatch[1].replace(',', '.'));
+      let lng = parseFloat(decMatch[2].replace(',', '.'));
+      if (!isNaN(lat) && !isNaN(lng)) {
+         if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) return [lng, lat];
+         return [lat, lng];
+      }
+    }
+    return null;
+  };
+
+  const filteredEmpresas = empresas.filter(e => 
+    e.empresa.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    e.dependencia.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
+      <Sidebar activePage="derrames" />
+      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+        <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-8 py-5 flex justify-between items-center shrink-0">
+          <div>
+            <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Control de Derrames</h1>
+            <p className="text-sm font-bold text-slate-500 mt-1 uppercase tracking-widest">
+              Gestión de Empresas (OSRO) y Bases Operativas
+            </p>
+          </div>
+          <div className="flex gap-3">
+             <button onClick={openNewEmpresa} className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors shadow-sm">
+               <span className="material-symbols-outlined text-[18px]">add_circle</span>
+               Nueva Empresa
+             </button>
+          </div>
+        </header>
+        
+        <div className="flex-1 overflow-auto p-4 md:p-8">
+           <div className="bg-white dark:bg-slate-900 rounded-lg p-3 border border-slate-200 dark:border-slate-800 mb-6 shadow-sm">
+             <div className="relative flex items-center">
+               <span className="absolute left-3 text-slate-400 material-symbols-outlined text-[20px]">search</span>
+               <input className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary" placeholder="Buscar por Nombre de Empresa o Jurisdicción..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
+             </div>
+           </div>
+
+           {isLoading ? (
+              <div className="flex items-center justify-center py-20 text-slate-400">
+                <span className="material-symbols-outlined animate-spin text-4xl mb-4">refresh</span>
+              </div>
+           ) : (
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredEmpresas.map(empresa => (
+                  <div key={empresa.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
+                     <div className="p-5 flex-1 relative group cursor-pointer" onClick={() => viewProfile(empresa)}>
+                        <div className="flex items-start justify-between mb-4">
+                           <div className="flex items-center gap-3">
+                             {empresa.logoUrl ? (
+                               <div className="w-12 h-12 rounded bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200">
+                                 <img src={empresa.logoUrl} alt="Logo" className="w-full h-full object-contain p-0.5"/>
+                               </div>
+                             ) : (
+                               <div className="w-12 h-12 rounded bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
+                                 <span className="material-symbols-outlined text-2xl">water_drop</span>
+                               </div>
+                             )}
+                             <div>
+                               <h3 className="font-black text-slate-800 dark:text-white uppercase tracking-tight text-sm leading-tight max-w-[200px]">{empresa.empresa}</h3>
+                               <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1 mt-0.5"><span className="material-symbols-outlined text-[12px]">location_on</span> {empresa.dependencia || 'S/D'}</p>
+                             </div>
+                           </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-[11px]">
+                          <div>
+                            <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] mb-0.5">Disposición</p>
+                            <p className="font-black text-slate-700 dark:text-slate-200">{empresa.disposicion || 'S/D'}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] mb-0.5">Vencimiento</p>
+                            <p className={`font-black uppercase flex items-center gap-1 ${
+                              !empresa.vencimiento ? 'text-slate-700 dark:text-slate-200' :
+                              new Date(empresa.vencimiento) < new Date() ? 'text-red-600' :
+                              new Date(empresa.vencimiento) < new Date(Date.now() + 90*24*60*60*1000) ? 'text-amber-600' :
+                              'text-emerald-600'
+                            }`}>
+                              {formatDate(empresa.vencimiento) || 'S/D'}
+                              {empresa.vencimiento && new Date(empresa.vencimiento) < new Date() && <span className="material-symbols-outlined text-[14px]">warning</span>}
+                            </p>
+                          </div>
+                          <div className="col-span-2">
+                             <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] mb-0.5">Bases Operativas</p>
+                             <div className="flex gap-1 flex-wrap mt-1">
+                                {(empresa.basesOperativas || []).length > 0 ? (
+                                   (empresa.basesOperativas || []).map(b => (
+                                     <span key={b.id} className="bg-slate-100 text-slate-600 text-[9px] font-black uppercase px-2 py-0.5 rounded border border-slate-200">{b.nombre}</span>
+                                   ))
+                                ) : (
+                                   <span className="text-slate-400 italic font-medium text-[10px]">Sin bases registradas</span>
+                                )}
+                             </div>
+                          </div>
+                        </div>
+
+                        {/* Quick actions on hover */}
+                        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity flex bg-white dark:bg-slate-800 shadow-md rounded border border-slate-200 dark:border-slate-700 p-0.5">
+                           {isJefe && (
+                             <button 
+                               onClick={(e) => { e.stopPropagation(); openEditEmpresa(empresa); }} 
+                               className="p-1.5 text-slate-400 hover:text-primary transition-colors rounded"
+                               title="Editar Empresa"
+                             >
+                                <span className="material-symbols-outlined text-[16px]">edit</span>
+                             </button>
+                           )}
+                        </div>
+                     </div>
+                     <div className="bg-slate-50 dark:bg-slate-800/50 px-5 py-3 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                        <span className="text-[10px] text-slate-500 font-bold flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px]">update</span>
+                          {formatDate(empresa.ultimaActualizacion)}
+                        </span>
+                        <button onClick={() => viewProfile(empresa)} className="text-[10px] font-black text-primary uppercase flex items-center gap-1 hover:text-blue-700">Ver Perfil <span className="material-symbols-outlined text-[14px]">chevron_right</span></button>
+                     </div>
+                  </div>
+                ))}
+             </div>
+           )}
+        </div>
+      </main>
+
+      {/* MODAL EDITAR EMPRESA */}
+      {isModalOpen && editingEmpresa && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden border border-slate-200 dark:border-slate-800">
+             <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+              <span className="text-xs font-black uppercase tracking-widest">{editingEmpresa.id ? 'Editar OSRO' : 'Nueva Empresa OSRO'}</span>
+              <button onClick={() => setIsModalOpen(false)}><span className="material-symbols-outlined">close</span></button>
+            </div>
+            
+            <form onSubmit={handleSaveEmpresa} className="p-6 overflow-y-auto max-h-[80vh] bg-slate-50 dark:bg-slate-900">
+               <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm mb-6">
+                 <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2 flex items-center gap-2"><span className="material-symbols-outlined text-primary text-[18px]">business</span> Datos Principales</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div className="col-span-2">
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nombre de la Empresa</label>
+                     <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold" value={editingEmpresa.empresa || ''} onChange={e => setEditingEmpresa({...editingEmpresa, empresa: e.target.value})} placeholder="Ej. LÍNEAS MARÍTIMAS S.A."/>
+                   </div>
+                   <div>
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Jurisdicción (Dependencia)</label>
+                     <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={editingEmpresa.dependencia || ''} onChange={e => setEditingEmpresa({...editingEmpresa, dependencia: e.target.value})} placeholder="PNA..."/>
+                   </div>
+                   <div className="col-span-2">
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">URL Logo (Opcional)</label>
+                     <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingEmpresa.logoUrl || ''} onChange={e => setEditingEmpresa({...editingEmpresa, logoUrl: e.target.value})} placeholder="https://..."/>
+                   </div>
+                 </div>
+               </div>
+
+               <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm mb-6">
+                 <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2 flex items-center gap-2"><span className="material-symbols-outlined text-primary text-[18px]">gavel</span> Disposición y Habilitación</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div>
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nº Disposición</label>
+                     <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-mono uppercase" value={editingEmpresa.disposicion || ''} onChange={e => setEditingEmpresa({...editingEmpresa, disposicion: e.target.value})}/>
+                   </div>
+                   <div>
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Vencimiento (3 años)</label>
+                     <input type="date" className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold" value={editingEmpresa.vencimiento || ''} onChange={e => setEditingEmpresa({...editingEmpresa, vencimiento: e.target.value})}/>
+                   </div>
+                 </div>
+               </div>
+
+               <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm mb-6">
+                 <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2 flex items-center gap-2"><span className="material-symbols-outlined text-primary text-[18px]">contact_mail</span> Contacto</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Responsable</label>
+                     <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={editingEmpresa.responsable || ''} onChange={e => setEditingEmpresa({...editingEmpresa, responsable: e.target.value})}/>
+                   </div>
+                   <div>
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">CUIT</label>
+                     <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingEmpresa.cuit || ''} onChange={e => setEditingEmpresa({...editingEmpresa, cuit: e.target.value})}/>
+                   </div>
+                   <div className="col-span-2">
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Domicilio Principal</label>
+                     <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingEmpresa.domicilio || ''} onChange={e => setEditingEmpresa({...editingEmpresa, domicilio: e.target.value})}/>
+                   </div>
+                   <div>
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Email</label>
+                     <input type="email" className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingEmpresa.email || ''} onChange={e => setEditingEmpresa({...editingEmpresa, email: e.target.value})}/>
+                   </div>
+                   <div>
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Teléfonos</label>
+                     <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingEmpresa.telefono || ''} onChange={e => setEditingEmpresa({...editingEmpresa, telefono: e.target.value})}/>
+                   </div>
+                 </div>
+               </div>
+
+               <div className="flex justify-between items-center mt-8">
+                  {editingEmpresa.id && isJefe ? (
+                    <button type="button" onClick={() => handleDeleteEmpresa(editingEmpresa.id!)} className="text-xs font-black text-red-500 hover:text-red-700 uppercase tracking-widest flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">delete</span> Eliminar OSRO</button>
+                  ) : <div/>}
+                  <div className="flex gap-3">
+                    <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-3 rounded text-sm font-black text-slate-600 hover:bg-slate-100 uppercase tracking-widest transition-colors">Cancelar</button>
+                    <button type="submit" className="px-6 py-3 rounded text-sm font-black text-white bg-primary hover:bg-blue-600 uppercase tracking-widest shadow-lg shadow-blue-500/30 transition-all flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[18px]">save</span> Confirmar
+                    </button>
+                  </div>
+                </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PERFIL EMPRESA COMPLETO */}
+      {isProfileOpen && selectedEmpresa && (
+         <div className="fixed inset-0 bg-slate-100 dark:bg-slate-900 z-50 flex flex-col h-screen overflow-hidden">
+            <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 flex justify-between items-center shrink-0 shadow-sm z-10">
+               <div className="flex items-center gap-4">
+                 <button onClick={() => setIsProfileOpen(false)} className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors">
+                   <span className="material-symbols-outlined">arrow_back</span>
+                 </button>
+                 <div className="flex items-center gap-3">
+                   {selectedEmpresa.logoUrl ? (
+                      <div className="w-24 h-24 bg-white rounded border border-slate-200 p-0.5 overflow-hidden flex items-center justify-center">
+                         <img src={selectedEmpresa.logoUrl} alt="Logo" className="w-full h-full object-contain" />
+                      </div>
+                   ) : (
+                      <div className="w-24 h-24 bg-blue-100 rounded text-blue-600 flex items-center justify-center">
+                         <span className="material-symbols-outlined text-4xl">water_drop</span>
+                      </div>
+                   )}
+                   <div>
+                     <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight leading-none mb-1">{selectedEmpresa.empresa}</h2>
+                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">OSRO <span className="w-1 h-1 bg-slate-300 rounded-full"></span> JURISDICCIÓN: {selectedEmpresa.dependencia || 'S/D'}</p>
+                   </div>
+                 </div>
+               </div>
+               
+               <div className="flex gap-2">
+                 {isJefe && (
+                    <button onClick={() => openEditEmpresa(selectedEmpresa)} className="px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded text-xs font-black uppercase text-slate-600 flex items-center gap-2 transition-colors">
+                      <span className="material-symbols-outlined text-[16px]">edit</span> Editar Empresa
+                    </button>
+                 )}
+               </div>
+            </header>
+
+            <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 pb-20">
+               <div className="max-w-6xl mx-auto space-y-8">
+                  
+                  {/* METRICAS Y DISPOSICION */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 relative overflow-hidden">
+                       <div className="absolute -right-4 -top-4 text-blue-50 opacity-50 z-0">
+                         <span className="material-symbols-outlined text-9xl">gavel</span>
+                       </div>
+                       <div className="relative z-10">
+                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Disposición Habilitante</p>
+                         <h3 className="text-3xl font-black text-slate-800 mb-2">{selectedEmpresa.disposicion || 'S/D'}</h3>
+                         <div className="flex gap-4 items-center">
+                           <div>
+                             <span className="text-[10px] font-bold text-slate-500 uppercase">Vencimiento (3 Años)</span>
+                             <p className={`font-black uppercase flex items-center gap-1 ${
+                                !selectedEmpresa.vencimiento ? 'text-slate-800' :
+                                new Date(selectedEmpresa.vencimiento) < new Date() ? 'text-red-600' :
+                                new Date(selectedEmpresa.vencimiento) < new Date(Date.now() + 90*24*60*60*1000) ? 'text-amber-600' :
+                                'text-emerald-600'
+                              }`}>
+                                {formatDate(selectedEmpresa.vencimiento) || 'No registra'}
+                                {selectedEmpresa.vencimiento && new Date(selectedEmpresa.vencimiento) < new Date() && <span className="material-symbols-outlined text-[14px]">warning</span>}
+                              </p>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+
+                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 border-b border-slate-100 pb-2">Inspección Intermedia</p>
+                        {selectedEmpresa.inspeccionIntermedia?.fecha ? (
+                           <div>
+                             <p className="text-2xl font-black text-emerald-600 mb-1 flex items-center gap-2"><span className="material-symbols-outlined">check_circle</span> REALIZADA</p>
+                             <p className="text-[11px] font-bold text-slate-600 uppercase">Fecha: <span className="text-slate-800">{formatDate(selectedEmpresa.inspeccionIntermedia.fecha)}</span></p>
+                             <p className="text-[11px] font-bold text-slate-600 uppercase">Auditor: <span className="text-slate-800">{selectedEmpresa.inspeccionIntermedia.auditorNombre}</span></p>
+                           </div>
+                        ) : (
+                           <div className="flex flex-col items-center justify-center h-20 text-slate-400">
+                             <span className="material-symbols-outlined mb-1">pending_actions</span>
+                             <p className="text-xs font-bold uppercase">Pendiente</p>
+                           </div>
+                        )}
+                     </div>
+
+                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 border-b border-slate-100 pb-2">Expedientes Asociados</p>
+                        <div className="flex items-end gap-3">
+                          <span className="text-4xl font-black text-indigo-600 leading-none">
+                            {cases.filter(c => c.categoria === 'derrames' && c.planId === selectedEmpresa.id).length}
+                          </span>
+                          <span className="text-xs font-bold text-slate-500 uppercase pb-1">Trámites<br/>Registrados</span>
+                        </div>
+                     </div>
+                  </div>
+
+                  {/* BASES Y MAPA GRID */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* BASES OPERATIVAS LIST */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                        <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                          <span className="material-symbols-outlined text-primary">warehouse</span> Bases Operativas
+                        </h4>
+                        <button onClick={() => openNewBase(selectedEmpresa.id)} className="bg-white border border-slate-200 hover:bg-slate-50 text-primary text-[10px] font-black uppercase px-3 py-1.5 rounded flex items-center gap-1 shadow-sm transition-colors">
+                          <span className="material-symbols-outlined text-[14px]">add</span> Añadir Base
+                        </button>
+                      </div>
+                      <div className="flex-1 p-4 overflow-y-auto max-h-[500px]">
+                        {(selectedEmpresa.basesOperativas || []).length > 0 ? (
+                           <div className="space-y-4">
+                             {(selectedEmpresa.basesOperativas || []).map(base => {
+                               const coords = parseCoordinates(base.coordenadas);
+                               return (
+                                 <div key={base.id} className="border border-slate-200 rounded-lg p-4 hover:border-blue-300 transition-colors group relative">
+                                    <div className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                                       <button onClick={() => openEditBase(selectedEmpresa.id, base)} className="p-1 rounded bg-slate-100 hover:bg-white text-slate-500 hover:text-primary transition-all border border-transparent hover:border-slate-300"><span className="material-symbols-outlined text-[16px]">edit</span></button>
+                                       <button onClick={() => handleDeleteBase(selectedEmpresa.id, base.id)} className="p-1 rounded bg-slate-100 hover:bg-white text-slate-500 hover:text-red-600 transition-all border border-transparent hover:border-slate-300"><span className="material-symbols-outlined text-[16px]">delete</span></button>
+                                    </div>
+                                    <h5 className="font-black text-slate-800 uppercase text-sm mb-1">{base.nombre}</h5>
+                                    {coords ? (
+                                      <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1 mb-3">
+                                        <span className="material-symbols-outlined text-[14px] text-blue-500">location_on</span> 
+                                        {coords[0].toFixed(4)}, {coords[1].toFixed(4)}
+                                      </p>
+                                    ) : (
+                                      <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1 mb-3">
+                                        <span className="material-symbols-outlined text-[14px] text-slate-400">location_off</span> Sin coordenadas válidas
+                                      </p>
+                                    )}
+                                    <div className="bg-slate-50 rounded p-3 text-xs text-slate-700 whitespace-pre-wrap font-medium border border-slate-100">
+                                      <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Equipamiento y Materiales</p>
+                                      {base.materiales || <span className="italic text-slate-400">No se detalló equipamiento.</span>}
+                                    </div>
+                                    {base.observaciones && (
+                                      <p className="mt-2 text-[10px] text-slate-500"><span className="font-bold uppercase">Obs:</span> {base.observaciones}</p>
+                                    )}
+                                 </div>
+                               );
+                             })}
+                           </div>
+                        ) : (
+                           <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                             <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4 border border-slate-100 text-slate-300">
+                               <span className="material-symbols-outlined text-3xl">warehouse</span>
+                             </div>
+                             <p className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-2">Sin bases registradas</p>
+                             <p className="text-xs max-w-sm text-center">Añade las bases operativas (galpones, depósitos, oficinas) donde la empresa almacena su equipamiento.</p>
+                           </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* MAPA DE BASES */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[600px] lg:h-auto">
+                      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                        <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                          <span className="material-symbols-outlined text-primary">map</span> Mapa de Despliegue
+                        </h4>
+                      </div>
+                      <div className="flex-1 w-full relative z-0">
+                         {selectedEmpresa.basesOperativas && selectedEmpresa.basesOperativas.some(b => parseCoordinates(b.coordenadas)) ? (
+                           <MapContainer 
+                             center={parseCoordinates(selectedEmpresa.basesOperativas.find(b => parseCoordinates(b.coordenadas))?.coordenadas) || [-34.6037, -58.3816]} 
+                             zoom={6} 
+                             className="h-full w-full"
+                           >
+                             <TileLayer
+                               attribution='&copy; IGN Argentina'
+                               url="https://wms.ign.gob.ar/geoserver/gwc/service/tms/1.0.0/capabaseargenmap@EPSG%3A3857@png/{z}/{x}/{-y}.png"
+                             />
+                             {selectedEmpresa.basesOperativas.map(base => {
+                               const coords = parseCoordinates(base.coordenadas);
+                               if (!coords) return null;
+                               return (
+                                 <Marker key={base.id} position={coords}>
+                                   <Popup>
+                                     <div className="p-1 min-w-[200px]">
+                                       {selectedEmpresa.logoUrl && (
+                                          <div className="w-full flex justify-center mb-2">
+                                            <img src={selectedEmpresa.logoUrl} className="h-10 object-contain" alt="Logo de empresa" />
+                                          </div>
+                                       )}
+                                       <h4 className="font-black text-slate-800 uppercase text-xs mb-1 border-b border-slate-200 pb-1 text-center">{base.nombre}</h4>
+                                       <p className="text-[10px] font-bold text-slate-500 uppercase mt-2 mb-1">Equipamiento:</p>
+                                       <div className="text-[10px] text-slate-600 max-h-[100px] overflow-y-auto w-full break-words">
+                                         {base.materiales || 'Sin detalle.'}
+                                       </div>
+                                     </div>
+                                   </Popup>
+                                 </Marker>
+                               );
+                             })}
+                           </MapContainer>
+                         ) : (
+                           <div className="h-full w-full flex items-center justify-center bg-slate-50 text-slate-400 p-8 text-center flex-col">
+                             <span className="material-symbols-outlined text-5xl mb-4 opacity-50">wrong_location</span>
+                             <p className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-2">No se puede mostrar el mapa</p>
+                             <p className="text-xs max-w-sm">No existen bases operativas con coordenadas geográficas válidas cargadas en el sistema para esta empresa.</p>
+                           </div>
+                         )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* INFO DE CONTACTO */}
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                     <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                        <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                          <span className="material-symbols-outlined text-primary">contact_mail</span> Datos de Contacto y Facturación
+                        </h4>
+                     </div>
+                     <div className="p-6">
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 text-sm">
+                           <div>
+                             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Responsable</p>
+                             <p className="font-bold text-slate-800 uppercase">{selectedEmpresa.responsable || 'S/D'}</p>
+                           </div>
+                           <div>
+                             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Email</p>
+                             <p className="font-bold text-slate-800">{selectedEmpresa.email || 'S/D'}</p>
+                           </div>
+                           <div>
+                             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Teléfonos</p>
+                             <p className="font-bold text-slate-800">{selectedEmpresa.telefono || 'S/D'}</p>
+                           </div>
+                           <div>
+                             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">CUIT</p>
+                             <p className="font-bold text-slate-800">{selectedEmpresa.cuit || 'S/D'}</p>
+                           </div>
+                           <div className="col-span-2 lg:col-span-4">
+                             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Domicilio Principal</p>
+                             <p className="font-bold text-slate-800 uppercase">{selectedEmpresa.domicilio || 'S/D'}</p>
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+
+               </div>
+            </div>
+         </div>
+      )}
+
+      {/* MODAL BASE OPERATIVA */}
+      {isBaseModalOpen && editingBase && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
+            <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+              <span className="text-xs font-black uppercase tracking-widest">{editingBase.id ? 'Editar Base Operativa' : 'Nueva Base Operativa'}</span>
+              <button onClick={() => setIsBaseModalOpen(false)}><span className="material-symbols-outlined">close</span></button>
+            </div>
+            <form onSubmit={handleSaveBase} className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nombre / Identificador de la Base</label>
+                  <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold" value={editingBase.nombre || ''} onChange={e => setEditingBase({...editingBase, nombre: e.target.value})} placeholder="Ej. GALPÓN COMODORO RIVADAVIA"/>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Coordenadas</label>
+                  <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingBase.coordenadas || ''} onChange={e => setEditingBase({...editingBase, coordenadas: e.target.value})} placeholder="-45.8641, -67.4965"/>
+                  <span className="text-[9px] text-slate-400 mt-1 block">Acepta formatos como "-45.8641, -67.4965" o grados/minutos/segundos.</span>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Materiales y Equipamiento Disponibles</label>
+                  <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none min-h-[120px]" value={editingBase.materiales || ''} onChange={e => setEditingBase({...editingBase, materiales: e.target.value})} placeholder="Ej: 50mts Barreras Cilíndricas, 2 skimmers Manta Ray, 1 lancha rápida..."/>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Información Adicional (Opcional)</label>
+                  <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none min-h-[60px]" value={editingBase.observaciones || ''} onChange={e => setEditingBase({...editingBase, observaciones: e.target.value})} placeholder="Horarios, personal, accesos..."/>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button type="button" onClick={() => setIsBaseModalOpen(false)} className="px-4 py-2 font-black uppercase text-xs text-slate-600 hover:bg-slate-100 rounded">Cancelar</button>
+                <button type="submit" className="px-4 py-2 font-black uppercase text-xs bg-primary text-white rounded hover:bg-blue-600 shadow-sm flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">save</span> Guardar Base</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
