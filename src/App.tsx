@@ -10,6 +10,7 @@ import { Users } from './screens/Users';
 import { Auditores } from './screens/Auditores';
 import { Inspecciones } from './screens/Inspecciones';
 import { Planes } from './screens/Planes';
+import { Derrames } from './screens/Derrames';
 import { Mapa } from './screens/Mapa';
 import { Asistencia } from './screens/Asistencia';
 import { Configuracion } from './screens/Configuracion';
@@ -23,6 +24,7 @@ const App: React.FC = () => {
         <Route path="/asistencia" element={<Asistencia />} />
         <Route path="/expedientes" element={<Expedientes />} />
         <Route path="/planes" element={<Planes />} />
+        <Route path="/derrames" element={<Derrames />} />
         <Route path="/mapa" element={<Mapa />} />
         <Route path="/auditores" element={<Auditores />} />
         <Route path="/inspecciones" element={<Inspecciones />} />
@@ -37,3 +39,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+
