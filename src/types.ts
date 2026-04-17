@@ -187,10 +187,12 @@ export interface MOI {
 // --- NUEVOS TIPOS PARA PLANES DE EMERGENCIA ---
 
 export interface ConvalidacionDetalle {
+  fecha?: string;
   auditorNombre?: string;
   nroCertificado?: string;
   nroIF?: string;
   nroExpediente?: string;
+  nroCertificadoConvalidacion?: string; // Nuevo: Certificado de convalidación específico
 }
 
 export interface PlanEmergencia {
@@ -245,6 +247,7 @@ export interface PlanEmergencia {
   contactoPlan?: string;
   tipoRespuesta?: 'propia' | 'terceros' | '';
   empresaRespuesta?: string;
+  cantidadBarreras?: number | string; // Nuevo: para cuando la respuesta es propia
 }
 
 // --- NUEVOS TIPOS PARA EMPRESAS CONTROL DE DERRAMES ---
@@ -254,7 +257,10 @@ export interface BaseOperativa {
   nombre: string;
   coordenadas: string; // Ej: -34.6037, -58.3816
   materiales: string;
-  cantidadBarreras?: number | string;
+  cantidadBarreras?: number | string; // Suma total de barreras
+  barrerasPuerto?: number | string; // INT. DE PUERTO
+  barrerasFluvial?: number | string; // FLUV. Y LACUSTRE
+  barrerasMaritima?: number | string; // MARITIMAS
   skimmers?: number | string;
   embarcaciones?: number | string;
   metrosAbsorbentes?: number | string;
@@ -298,13 +304,8 @@ export interface EmpresaControlDerrame {
   ultimaActualizacion: string;
   expedienteOrigenId?: string;
   
-  cuit?: string;
-  domicilio?: string;
   localidad?: string;
-  email?: string;
-  telefono?: string;
   notas?: string;
-  
   documentacionExtra?: string;
   responsable?: string;
   contacto?: string;
