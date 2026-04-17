@@ -9,6 +9,8 @@ export interface Instancia {
   color: string;
 }
 
+export type AnexoTipo = 'anexo_15' | 'anexo_16' | 'anexo_17' | 'anexo_18' | 'anexo_19' | 'anexo_20' | 'derrames';
+
 export const ANEXOS: { id: AnexoTipo; label: string }[] = [
   { id: 'anexo_15', label: 'ANEXO 15 (Zonales/Locales)' },
   { id: 'anexo_16', label: 'ANEXO 16 (Ref)' },
@@ -16,6 +18,7 @@ export const ANEXOS: { id: AnexoTipo; label: string }[] = [
   { id: 'anexo_18', label: 'ANEXO 18 (Buques/Barcazas)' },
   { id: 'anexo_19', label: 'ANEXO 19 (Puertos Ref)' },
   { id: 'anexo_20', label: 'ANEXO 20 (Plataformas)' },
+  { id: 'derrames', label: 'CONTROL DE DERRAMES' }
 ];
 
 export interface Case {
@@ -183,8 +186,6 @@ export interface MOI {
 
 // --- NUEVOS TIPOS PARA PLANES DE EMERGENCIA ---
 
-export type AnexoTipo = 'anexo_15' | 'anexo_16' | 'anexo_17' | 'anexo_18' | 'anexo_19' | 'anexo_20';
-
 export interface ConvalidacionDetalle {
   auditorNombre?: string;
   nroCertificado?: string;
@@ -244,4 +245,54 @@ export interface PlanEmergencia {
   contactoPlan?: string;
   tipoRespuesta?: 'propia' | 'terceros' | '';
   empresaRespuesta?: string;
+}
+
+// --- NUEVOS TIPOS PARA EMPRESAS CONTROL DE DERRAMES ---
+
+export interface BaseOperativa {
+  id: string;
+  nombre: string;
+  coordenadas: string; // Ej: -34.6037, -58.3816
+  materiales: string;
+  observaciones?: string;
+}
+
+export interface EmpresaControlDerrame {
+  id: string;
+  empresa: string;
+  logoUrl?: string;
+  dependencia: string; // Jurisdicción
+  disposicion: string; // Número de disposición de habilitación
+  vencimiento: string; // Vencimiento (3 años)
+  formatoDisposicion?: 'digital' | 'papel' | '';
+  estado?: 'vigente' | 'desafectado';
+  inspeccionIntermedia?: {
+    fecha?: string;
+    auditorNombre?: string;
+    nroCertificado?: string;
+    nroExpediente?: string;
+  };
+  basesOperativas: BaseOperativa[];
+  historialDisposiciones?: {
+    disposicion: string;
+    vencimiento: string;
+    formatoDisposicion?: 'digital' | 'papel' | '';
+    fechaArchivo: string;
+    inspeccionIntermedia: any;
+    documentacionExtra?: string;
+  }[];
+  observaciones?: string;
+  ultimaActualizacion: string;
+  expedienteOrigenId?: string;
+  
+  cuit?: string;
+  domicilio?: string;
+  localidad?: string;
+  email?: string;
+  telefono?: string;
+  notas?: string;
+  
+  documentacionExtra?: string;
+  responsable?: string;
+  contacto?: string;
 }
