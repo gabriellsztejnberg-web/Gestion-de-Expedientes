@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import Papa from 'papaparse';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
@@ -13,7 +14,8 @@ import {
   doc, 
   query, 
   deleteDoc,
-  orderBy
+  orderBy,
+  writeBatch
 } from 'firebase/firestore';
 import { EmpresaControlDerrame, BaseOperativa, Case, Inspeccion, TimelineEvent, User } from '../types';
 
@@ -42,6 +44,7 @@ const formatDate = (dateStr?: string) => {
 
 export const Derrames: React.FC = () => {
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [empresas, setEmpresas] = useState<EmpresaControlDerrame[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -104,6 +107,7 @@ export const Derrames: React.FC = () => {
         dependencia: (editingEmpresa.dependencia || '').toUpperCase(),
         disposicion: (editingEmpresa.disposicion || '').toUpperCase(),
         vencimiento: editingEmpresa.vencimiento || '',
+        convalidacionesDetalle: editingEmpresa.convalidacionesDetalle || {},
         cuit: editingEmpresa.cuit || '',
         domicilio: editingEmpresa.domicilio || '',
         localidad: editingEmpresa.localidad || '',
@@ -144,6 +148,7 @@ export const Derrames: React.FC = () => {
         nombre: (editingBase.nombre || '').toUpperCase(),
         coordenadas: editingBase.coordenadas || '',
         materiales: editingBase.materiales || '',
+        cantidadBarreras: editingBase.cantidadBarreras || 0,
         observaciones: editingBase.observaciones || ''
       };
 
@@ -233,6 +238,178 @@ export const Derrames: React.FC = () => {
     return null;
   };
 
+  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement> | { target: { files: File[] } }) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const parseCSVDate = (dateStr: string): string => {
+      if (!dateStr) return '';
+      const str = dateStr.toString().trim();
+      
+      if (/^20\d{2}$/.test(str)) return `${str}-01-01`;
+
+      if (/^\d{5}$/.test(str)) {
+        const excelEpoch = new Date(1899, 11, 30);
+        const days = parseInt(str, 10);
+        const date = new Date(excelEpoch.getTime() + days * 86400000);
+        if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
+      }
+      
+      const parts = str.split(/[\/\-]/);
+      if (parts.length === 3) {
+        if (parts[0].length <= 2 && parts[2].length === 4) {
+          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+        if (parts[0].length === 4) {
+          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        }
+      }
+      
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+      return str;
+    };
+
+    let headerCounts: Record<string, number> = {};
+    const normalizeKey = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+
+    const getCsvVal = (row: any, possibleNames: string[], excludeNames: string[] = []) => {
+      const normalizedNames = possibleNames.map(normalizeKey);
+      const normalizedExcludes = excludeNames.map(normalizeKey);
+      
+      for (const key of Object.keys(row)) {
+        const normKey = normalizeKey(key);
+        if (normalizedNames.some(n => normKey.includes(n))) {
+          if (!normalizedExcludes.some(e => normKey.includes(e))) {
+            return row[key];
+          }
+        }
+      }
+      return '';
+    };
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (header) => {
+        const h = header.trim();
+        if (headerCounts[h]) {
+          headerCounts[h]++;
+          return `${h}_${headerCounts[h]}`;
+        } else {
+          headerCounts[h] = 1;
+          return h;
+        }
+      },
+      complete: async (results) => {
+        try {
+          const data = results.data as any[];
+          if (data.length === 0) return alert("El archivo CSV está vacío");
+
+          if (!confirm(`Se importarán ${data.length} empresas de control de derrames junto con sus bases operativas. ¿Continuar?`)) {
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+          }
+
+          setIsLoading(true);
+          const existingMap = new Map<string, EmpresaControlDerrame>(empresas.map(e => [e.empresa.toUpperCase(), e]));
+          
+          let recordsAdded = 0;
+          let recordsUpdated = 0;
+
+          const chunks = [];
+          for (let i = 0; i < data.length; i += 500) {
+            chunks.push(data.slice(i, i + 500));
+          }
+
+          for (const chunk of chunks) {
+            const batch = writeBatch(db);
+            chunk.forEach(row => {
+              const empresaFinal = getCsvVal(row, ['empresa']).toString().toUpperCase().trim();
+              if (!empresaFinal) return;
+              
+              const existingEmpresa = existingMap.get(empresaFinal);
+              const empresaRef = existingEmpresa ? doc(db, 'control_derrames', existingEmpresa.id) : doc(collection(db, 'control_derrames'));
+              
+              const basesOperativas: BaseOperativa[] = existingEmpresa?.basesOperativas || [];
+              
+              // Dynamic Bases Extraction
+              Object.keys(row).forEach(key => {
+                const lowerKey = key.toLowerCase();
+                if (lowerKey.startsWith('base') && !lowerKey.includes('coordenadas') && !lowerKey.includes('cantidad') && !lowerKey.includes('equipamiento')) {
+                  const baseName = row[key]?.toString().trim();
+                  if (baseName) {
+                    const suffixMatch = lowerKey.match(/base\s*(.*)/);
+                    const suffix = suffixMatch ? suffixMatch[1].trim() : '';
+                    
+                    const coords = getCsvVal(row, [`coordenadas base ${suffix}`, `coordenadas base_${suffix}`]).toString().trim();
+                    const qty = parseInt(getCsvVal(row, [`cantidad de barreras base ${suffix}`, `cantidad de barreras base_${suffix}`]).toString().trim(), 10) || 0;
+                    const items = getCsvVal(row, [`otros equipamientos base ${suffix}`, `otros equipamientos base_${suffix}`]).toString().trim();
+                    
+                    if (!basesOperativas.some(b => b.nombre.toUpperCase() === baseName.toUpperCase())) {
+                      basesOperativas.push({
+                        id: Math.random().toString(36).substr(2, 9),
+                        nombre: baseName.toUpperCase(),
+                        coordenadas: coords,
+                        cantidadBarreras: qty,
+                        materiales: items,
+                        observaciones: ''
+                      });
+                    }
+                  }
+                }
+              });
+
+              const anio1Date = parseCSVDate(getCsvVal(row, ['1 conv'], ['ex']));
+              const anio1Exp = getCsvVal(row, ['ex 1 conv']).toString();
+              const anio2Date = parseCSVDate(getCsvVal(row, ['2 conv'], ['ex']));
+              const anio2Exp = getCsvVal(row, ['ex 2 conv']).toString();
+
+              const dataToSave = {
+                categoria: getCsvVal(row, ['categoria']).toString().toUpperCase() || existingEmpresa?.categoria || '',
+                empresa: empresaFinal,
+                cuit: getCsvVal(row, ['cuit']).toString() || existingEmpresa?.cuit || '',
+                domicilio: getCsvVal(row, ['direccion', 'domicilio']).toString().toUpperCase() || existingEmpresa?.domicilio || '',
+                email: getCsvVal(row, ['mail', 'e-mail', 'email']).toString() || existingEmpresa?.email || '',
+                telefono: getCsvVal(row, ['tel']).toString() || existingEmpresa?.telefono || '',
+                disposicion: getCsvVal(row, ['disposicion']).toString() || existingEmpresa?.disposicion || '',
+                vencimiento: parseCSVDate(getCsvVal(row, ['vencimiento'])) || existingEmpresa?.vencimiento || '',
+                convalidacionesDetalle: {
+                   anio1: { fecha: anio1Date || existingEmpresa?.convalidacionesDetalle?.anio1?.fecha || '', nroExpediente: anio1Exp || existingEmpresa?.convalidacionesDetalle?.anio1?.nroExpediente || '', auditorNombre: existingEmpresa?.convalidacionesDetalle?.anio1?.auditorNombre || '' },
+                   anio2: { fecha: anio2Date || existingEmpresa?.convalidacionesDetalle?.anio2?.fecha || '', nroExpediente: anio2Exp || existingEmpresa?.convalidacionesDetalle?.anio2?.nroExpediente || '', auditorNombre: existingEmpresa?.convalidacionesDetalle?.anio2?.auditorNombre || '' }
+                },
+                basesOperativas,
+                ultimaActualizacion: new Date().toISOString()
+              };
+
+              if (existingEmpresa) {
+                batch.update(empresaRef, dataToSave);
+                recordsUpdated++;
+              } else {
+                batch.set(empresaRef, dataToSave);
+                recordsAdded++;
+              }
+            });
+            await batch.commit();
+          }
+
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          alert(`Importación completada:\n- Creados: ${recordsAdded}\n- Actualizados: ${recordsUpdated}`);
+        } catch (error) {
+          console.error(error);
+          alert("Error procesando CSV.");
+        } finally {
+          setIsLoading(false);
+        }
+      },
+      error: (error) => {
+        console.error(error);
+        alert("Error leyendo CSV");
+        setIsLoading(false);
+      }
+    });
+  };
+
   const filteredEmpresas = empresas.filter(e => 
     e.empresa.toLowerCase().includes(searchTerm.toLowerCase()) ||
     e.dependencia.toLowerCase().includes(searchTerm.toLowerCase())
@@ -250,6 +427,11 @@ export const Derrames: React.FC = () => {
             </p>
           </div>
           <div className="flex gap-3">
+             <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
+             <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors shadow-sm">
+               <span className="material-symbols-outlined text-[18px]">upload_file</span>
+               Importar CSV
+             </button>
              <button onClick={openNewEmpresa} className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors shadow-sm">
                <span className="material-symbols-outlined text-[18px]">add_circle</span>
                Nueva Empresa
@@ -270,6 +452,61 @@ export const Derrames: React.FC = () => {
                 <span className="material-symbols-outlined animate-spin text-4xl mb-4">refresh</span>
               </div>
            ) : (
+             <>
+               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 shrink-0">
+                 <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                   <div className="size-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                     <span className="material-symbols-outlined">corporate_fare</span>
+                   </div>
+                   <div>
+                     <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Empresas Activas</p>
+                     <p className="text-2xl font-black text-slate-800 dark:text-white leading-none">{filteredEmpresas.length}</p>
+                   </div>
+                 </div>
+                 
+                 <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                   <div className="size-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                     <span className="material-symbols-outlined">warehouse</span>
+                   </div>
+                   <div>
+                     <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Bases Operativas</p>
+                     <p className="text-2xl font-black text-slate-800 dark:text-white leading-none">
+                       {filteredEmpresas.reduce((acc, curr) => acc + (curr.basesOperativas?.length || 0), 0)}
+                     </p>
+                   </div>
+                 </div>
+
+                 <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                   <div className="size-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                     <span className="material-symbols-outlined">waves</span>
+                   </div>
+                   <div>
+                     <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Total Barreras</p>
+                     <p className="text-2xl font-black text-slate-800 dark:text-white leading-none">
+                       {filteredEmpresas.reduce((acc, curr) => acc + (curr.basesOperativas?.reduce((bAcc, base) => bAcc + Number(base.cantidadBarreras || 0), 0) || 0), 0).toLocaleString()}
+                     </p>
+                   </div>
+                 </div>
+
+                 <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                   <div className="size-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                     <span className="material-symbols-outlined">warning</span>
+                   </div>
+                   <div>
+                     <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Venc. / Conv. Ptes</p>
+                     <p className="text-2xl font-black text-slate-800 dark:text-white leading-none">
+                       {filteredEmpresas.filter(e => {
+                         const vDate = new Date(e.vencimiento);
+                         const isExpired = e.vencimiento && !isNaN(vDate.getTime()) && vDate < new Date();
+                         // They have 3 years, so they need 1st and 2nd Conv. If they don't have it, it's missing.
+                         const missingConv = !(e.convalidacionesDetalle as any)?.anio1?.fecha || !(e.convalidacionesDetalle as any)?.anio2?.fecha;
+                         return isExpired || missingConv;
+                       }).length}
+                     </p>
+                   </div>
+                 </div>
+               </div>
+
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredEmpresas.map(empresa => (
                   <div key={empresa.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
@@ -346,6 +583,7 @@ export const Derrames: React.FC = () => {
                   </div>
                 ))}
              </div>
+             </>
            )}
         </div>
       </main>
@@ -388,6 +626,23 @@ export const Derrames: React.FC = () => {
                    <div>
                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Vencimiento (3 años)</label>
                      <input type="date" className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold" value={editingEmpresa.vencimiento || ''} onChange={e => setEditingEmpresa({...editingEmpresa, vencimiento: e.target.value})}/>
+                   </div>
+                   <div className="col-span-2">
+                     <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Convalidaciones y Visitas</p>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                       <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2">
+                         <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">1º Año de Operación</label>
+                         <input type="date" className="w-full px-2 py-1.5 text-[10px] bg-white border border-slate-200 rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={(editingEmpresa.convalidacionesDetalle as any)?.anio1?.fecha || ''} onChange={e => setEditingEmpresa({...editingEmpresa, convalidacionesDetalle: { ...editingEmpresa.convalidacionesDetalle, anio1: { ...(editingEmpresa.convalidacionesDetalle as any)?.anio1, fecha: e.target.value } }})}/>
+                         <input className="w-full px-2 py-1.5 text-[10px] bg-white border border-slate-200 rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase placeholder:capitalize" placeholder="Inspector/Auditor" value={(editingEmpresa.convalidacionesDetalle as any)?.anio1?.auditorNombre || ''} onChange={e => setEditingEmpresa({...editingEmpresa, convalidacionesDetalle: { ...editingEmpresa.convalidacionesDetalle, anio1: { ...(editingEmpresa.convalidacionesDetalle as any)?.anio1, auditorNombre: e.target.value } }})}/>
+                         <input className="w-full px-2 py-1.5 text-[10px] bg-white border border-slate-200 rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" placeholder="Nº Expediente" value={(editingEmpresa.convalidacionesDetalle as any)?.anio1?.nroExpediente || ''} onChange={e => setEditingEmpresa({...editingEmpresa, convalidacionesDetalle: { ...editingEmpresa.convalidacionesDetalle, anio1: { ...(editingEmpresa.convalidacionesDetalle as any)?.anio1, nroExpediente: e.target.value } }})}/>
+                       </div>
+                       <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2">
+                         <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">2º Año de Operación</label>
+                         <input type="date" className="w-full px-2 py-1.5 text-[10px] bg-white border border-slate-200 rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={(editingEmpresa.convalidacionesDetalle as any)?.anio2?.fecha || ''} onChange={e => setEditingEmpresa({...editingEmpresa, convalidacionesDetalle: { ...editingEmpresa.convalidacionesDetalle, anio2: { ...(editingEmpresa.convalidacionesDetalle as any)?.anio2, fecha: e.target.value } }})}/>
+                         <input className="w-full px-2 py-1.5 text-[10px] bg-white border border-slate-200 rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase placeholder:capitalize" placeholder="Inspector/Auditor" value={(editingEmpresa.convalidacionesDetalle as any)?.anio2?.auditorNombre || ''} onChange={e => setEditingEmpresa({...editingEmpresa, convalidacionesDetalle: { ...editingEmpresa.convalidacionesDetalle, anio2: { ...(editingEmpresa.convalidacionesDetalle as any)?.anio2, auditorNombre: e.target.value } }})}/>
+                         <input className="w-full px-2 py-1.5 text-[10px] bg-white border border-slate-200 rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" placeholder="Nº Expediente" value={(editingEmpresa.convalidacionesDetalle as any)?.anio2?.nroExpediente || ''} onChange={e => setEditingEmpresa({...editingEmpresa, convalidacionesDetalle: { ...editingEmpresa.convalidacionesDetalle, anio2: { ...(editingEmpresa.convalidacionesDetalle as any)?.anio2, nroExpediente: e.target.value } }})}/>
+                       </div>
+                     </div>
                    </div>
                  </div>
                </div>
@@ -497,20 +752,30 @@ export const Derrames: React.FC = () => {
                        </div>
                      </div>
 
-                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 border-b border-slate-100 pb-2">Inspección Intermedia</p>
-                        {selectedEmpresa.inspeccionIntermedia?.fecha ? (
-                           <div>
-                             <p className="text-2xl font-black text-emerald-600 mb-1 flex items-center gap-2"><span className="material-symbols-outlined">check_circle</span> REALIZADA</p>
-                             <p className="text-[11px] font-bold text-slate-600 uppercase">Fecha: <span className="text-slate-800">{formatDate(selectedEmpresa.inspeccionIntermedia.fecha)}</span></p>
-                             <p className="text-[11px] font-bold text-slate-600 uppercase">Auditor: <span className="text-slate-800">{selectedEmpresa.inspeccionIntermedia.auditorNombre}</span></p>
-                           </div>
-                        ) : (
-                           <div className="flex flex-col items-center justify-center h-20 text-slate-400">
-                             <span className="material-symbols-outlined mb-1">pending_actions</span>
-                             <p className="text-xs font-bold uppercase">Pendiente</p>
-                           </div>
-                        )}
+                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 col-span-1 md:col-span-2 lg:col-span-1">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 border-b border-slate-100 pb-2">Convalidaciones y Visitas Anuales</p>
+                        <div className="grid grid-cols-2 gap-4">
+                          {[1, 2].map(year => {
+                             const det = (selectedEmpresa.convalidacionesDetalle as any)?.[`anio${year}`];
+                             return (
+                               <div key={year} className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded border border-slate-100 dark:border-slate-700">
+                                 <p className="text-[9px] font-black uppercase text-slate-400 mb-1">{year}º Año Operación</p>
+                                 {det?.fecha ? (
+                                    <>
+                                      <p className="text-sm font-black text-emerald-600 mb-1">{formatDate(det.fecha)}</p>
+                                      {det.auditorNombre && <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">person</span> {det.auditorNombre}</p>}
+                                      {det.nroExpediente && <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1 mt-1"><span className="material-symbols-outlined text-[12px]">folder</span> {det.nroExpediente}</p>}
+                                    </>
+                                 ) : (
+                                    <div className="flex items-center gap-1 text-slate-400 mt-2">
+                                       <span className="material-symbols-outlined text-[14px]">pending_actions</span>
+                                       <span className="text-[10px] font-bold uppercase">Pendiente</span>
+                                    </div>
+                                 )}
+                               </div>
+                             );
+                          })}
+                        </div>
                      </div>
 
                      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
@@ -560,6 +825,7 @@ export const Derrames: React.FC = () => {
                                     )}
                                     <div className="bg-slate-50 rounded p-3 text-xs text-slate-700 whitespace-pre-wrap font-medium border border-slate-100">
                                       <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Equipamiento y Materiales</p>
+                                      {base.cantidadBarreras ? <p className="mb-2 font-bold flex items-center gap-1 text-emerald-600"><span className="material-symbols-outlined text-[14px]">waves</span> Cantidad de Barreras: {base.cantidadBarreras} mts.</p> : null}
                                       {base.materiales || <span className="italic text-slate-400">No se detalló equipamiento.</span>}
                                     </div>
                                     {base.observaciones && (
@@ -689,6 +955,10 @@ export const Derrames: React.FC = () => {
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Coordenadas</label>
                   <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingBase.coordenadas || ''} onChange={e => setEditingBase({...editingBase, coordenadas: e.target.value})} placeholder="-45.8641, -67.4965"/>
                   <span className="text-[9px] text-slate-400 mt-1 block">Acepta formatos como "-45.8641, -67.4965" o grados/minutos/segundos.</span>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Cantidad de Barreras</label>
+                  <input type="number" className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingBase.cantidadBarreras || ''} onChange={e => setEditingBase({...editingBase, cantidadBarreras: e.target.value})} placeholder="0"/>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Materiales y Equipamiento Disponibles</label>
