@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, onSnapshot, query } from 'firebase/firestore';
-import { PlanEmergencia } from '../types';
+import { PlanEmergencia, EmpresaControlDerrame } from '../types';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -11,7 +11,9 @@ import L from 'leaflet';
 import shpwrite from 'shp-write';
 
 // Fix for default marker icons in React-Leaflet
+// @ts-ignore
 import icon from 'leaflet/dist/images/marker-icon.png';
+// @ts-ignore
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 
 let DefaultIcon = L.icon({
@@ -39,6 +41,16 @@ const getMarkerIcon = (anexo: string) => {
     iconSize: [20, 20],
     iconAnchor: [10, 10],
     popupAnchor: [0, -10]
+  });
+};
+
+const getOsroIcon = () => {
+  return L.divIcon({
+    className: 'custom-div-icon',
+    html: `<div style="background-color: #0f172a; width: 22px; height: 22px; border-radius: 4px; border: 2px solid #334155; box-shadow: 0 2px 5px rgba(0,0,0,0.5); display: flex; items-center; justify-center; color: white;"><span class="material-symbols-outlined" style="font-size: 14px;">warehouse</span></div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+    popupAnchor: [0, -11]
   });
 };
 
@@ -179,10 +191,12 @@ const formatDate = (dateStr?: string) => {
 export const Mapa: React.FC = () => {
   const navigate = useNavigate();
   const [planes, setPlanes] = useState<(PlanEmergencia & { lat: number, lng: number, originalId: string })[]>([]);
+  const [osros, setOsros] = useState<(any)[]>([]);
 
   useEffect(() => {
-    const q = query(collection(db, 'planes'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    // Suscripción a Planes
+    const qPlanes = query(collection(db, 'planes'));
+    const unsubscribePlanes = onSnapshot(qPlanes, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlanEmergencia));
       
       const mappedPlanes = docs.flatMap(p => {
@@ -190,18 +204,44 @@ export const Mapa: React.FC = () => {
         if (coordsArray && coordsArray.length > 0) {
           return coordsArray.map((coords, index) => ({
             ...p,
-            id: `${p.id}_${index}`, // Unique ID for each marker
-            originalId: p.id, // Keep original ID for navigation
+            id: `${p.id}_${index}`,
+            originalId: p.id,
             lat: coords[0],
             lng: coords[1]
           }));
         }
         return [];
-      }) as (PlanEmergencia & { lat: number, lng: number, originalId: string })[];
-      
-      setPlanes(mappedPlanes);
+      });
+      setPlanes(mappedPlanes as any);
     });
-    return () => unsubscribe();
+
+    // Suscripción a Empresas de Control de Derrames
+    const qOsros = query(collection(db, 'empresas_derrames'));
+    const unsubscribeOsros = onSnapshot(qOsros, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmpresaControlDerrame));
+      
+      const mappedOsros = docs.flatMap(o => {
+        return (o.basesOperativas || []).flatMap(base => {
+          const coordsArray = parseCoordinates(base.coordenadas);
+          return coordsArray.map((coords, index) => ({
+            ...base,
+            id: `${o.id}_${base.id}_${index}`,
+            empresa: o.empresa,
+            empresaId: o.id,
+            logoUrl: o.logoUrl,
+            categoria: o.categoria,
+            lat: coords[0],
+            lng: coords[1]
+          }));
+        });
+      });
+      setOsros(mappedOsros);
+    });
+
+    return () => {
+      unsubscribePlanes();
+      unsubscribeOsros();
+    };
   }, []);
 
   const handleExportKML = () => {
@@ -312,15 +352,15 @@ export const Mapa: React.FC = () => {
                 <Popup className="custom-popup">
                   <div className="flex flex-col">
                     <div className="flex items-center gap-2 p-3 border-b border-slate-200 bg-white">
-                      <div className="w-6 h-6 shrink-0 bg-blue-100 rounded flex items-center justify-center">
-                        <span className="material-symbols-outlined text-blue-600 text-[14px]">corporate_fare</span>
+                      <div className="w-6 h-6 shrink-0 bg-blue-100 rounded flex items-center justify-center text-blue-600">
+                        <span className="material-symbols-outlined text-[14px]">corporate_fare</span>
                       </div>
                       <h3 className="font-black text-slate-800 uppercase text-sm leading-tight truncate">{p.empresa}</h3>
                     </div>
                     
                     {p.logoUrl ? (
-                      <div className="w-full h-40 bg-slate-100 flex items-center justify-center overflow-hidden border-b border-slate-200">
-                        <img src={p.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                      <div className="w-full h-32 bg-white flex items-center justify-center overflow-hidden border-b border-slate-200 p-2">
+                        <img src={p.logoUrl} alt="Logo" className="w-full h-full object-contain" />
                       </div>
                     ) : (
                       <div className="w-full h-24 bg-slate-100 flex flex-col items-center justify-center border-b border-slate-200 text-slate-400">
@@ -333,17 +373,61 @@ export const Mapa: React.FC = () => {
                       <div className="space-y-1.5 text-[10px] text-slate-600 mb-3">
                         <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Anexo:</span> <span className="font-bold text-slate-700">{p.anexo.replace('_', ' ').toUpperCase()}</span></p>
                         <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Nº Plan:</span> <span className="font-bold text-slate-700">{p.numeroPlan || 'S/D'}</span></p>
-                        <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Disposición:</span> <span className="font-bold text-slate-700">{p.disposicion || 'S/D'}</span></p>
                         <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Vencimiento:</span> <span className="font-bold text-slate-700">{formatDate(p.vencimiento)}</span></p>
-                        <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Dependencia:</span> <span className="font-bold text-slate-700 truncate max-w-[120px]" title={p.dependencia}>{p.dependencia || 'S/D'}</span></p>
                       </div>
                       <button 
                         onClick={() => navigate('/planes', { state: { openPlanId: p.originalId } })}
                         className="w-full bg-primary text-white text-[10px] font-black uppercase py-2 rounded hover:bg-blue-600 transition-colors flex items-center justify-center gap-1 shadow-sm"
                       >
                         <span className="material-symbols-outlined text-[14px]">visibility</span>
-                        Ver Perfil Completo
+                        Ver Perfil
                       </button>
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+
+            {osros.map(o => (
+              <Marker key={o.id} position={[o.lat, o.lng]} icon={getOsroIcon()}>
+                <Popup className="custom-popup">
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2 p-3 border-b border-slate-200 bg-slate-900 text-white">
+                      <div className="w-6 h-6 shrink-0 bg-slate-800 rounded flex items-center justify-center text-white">
+                        <span className="material-symbols-outlined text-[14px]">warehouse</span>
+                      </div>
+                      <div className="overflow-hidden">
+                        <h3 className="font-black uppercase text-[10px] leading-tight truncate">{o.nombre}</h3>
+                        <p className="text-[8px] font-bold text-slate-400 tracking-widest uppercase">{o.empresa}</p>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-white">
+                       <p className="text-[9px] font-black uppercase text-slate-400 mb-2 border-b pb-1">Equipamiento en Base</p>
+                       <div className="space-y-1.5 text-[10px] text-slate-800 mb-4">
+                         {(Number(o.cantidadBarreras) > 0 || Number(o.barrerasPuerto) > 0 || Number(o.barrerasFluvial) > 0 || Number(o.barrerasMaritima) > 0) && (
+                           <div className="bg-blue-50 p-2 rounded border border-blue-100">
+                             <p className="font-black text-blue-600 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">waves</span> BARRERAS:</p>
+                             <div className="grid grid-cols-2 gap-1 text-[9px] font-bold pl-4">
+                               {Number(o.barrerasPuerto) > 0 && <p className="text-slate-500 uppercase">PUERTO: <span className="text-slate-800">{o.barrerasPuerto}m</span></p>}
+                               {Number(o.barrerasFluvial) > 0 && <p className="text-slate-500 uppercase">FLUV/LAC: <span className="text-slate-800">{o.barrerasFluvial}m</span></p>}
+                               {Number(o.barrerasMaritima) > 0 && <p className="text-slate-500 uppercase">MARIT.: <span className="text-slate-800">{o.barrerasMaritima}m</span></p>}
+                               <p className="col-span-2 text-blue-700 border-t mt-1 pt-1">TOTAL: {o.cantidadBarreras || 0}m</p>
+                             </div>
+                           </div>
+                         )}
+                         {Number(o.skimmers) > 0 && <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Skimmers:</span> <span className="font-bold text-slate-700">{o.skimmers}</span></p>}
+                         {Number(o.embarcaciones) > 0 && <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Embarcaciones:</span> <span className="font-bold text-slate-700">{o.embarcaciones}</span></p>}
+                         {Number(o.metrosAbsorbentes) > 0 && <p className="flex justify-between"><span className="font-bold uppercase text-slate-400">Absorbentes:</span> <span className="font-bold text-slate-700">{o.metrosAbsorbentes}m</span></p>}
+                       </div>
+
+                       <button 
+                         onClick={() => navigate('/derrames', { state: { openEmpresaId: o.empresaId } })}
+                         className="w-full bg-slate-800 text-white text-[10px] font-black uppercase py-2 rounded hover:bg-slate-900 transition-colors flex items-center justify-center gap-1 shadow-sm"
+                       >
+                         <span className="material-symbols-outlined text-[14px]">visibility</span>
+                         Ver Empresa
+                       </button>
                     </div>
                   </div>
                 </Popup>
