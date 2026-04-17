@@ -706,7 +706,7 @@ export const Planes: React.FC = () => {
           
           // Obtener registros existentes para evitar duplicados (misma empresa + misma dependencia)
           const existingPlanes = planes.filter(p => p.anexo === activeTab);
-          const existingMap = new Map(existingPlanes.map(p => [`${p.empresa}_${p.dependencia}`.toUpperCase(), p]));
+          const existingMap = new Map<string, PlanEmergencia>(existingPlanes.map(p => [`${p.empresa}_${p.dependencia}`.toUpperCase(), p]));
           
           const chunks = [];
           for (let i = 0; i < data.length; i += 500) {
@@ -915,7 +915,7 @@ export const Planes: React.FC = () => {
     // Check Convalidaciones
     if (p.convalidaciones) {
       Object.values(p.convalidaciones).forEach(dateStr => {
-        if (dateStr && dateStr !== '-' && dateStr.length >= 5) {
+        if (typeof dateStr === 'string' && dateStr && dateStr !== '-' && dateStr.length >= 5) {
           const cDate = new Date(dateStr);
           if (!isNaN(cDate.getTime())) {
             if (cDate < now) convalidacionesVencidas++;
