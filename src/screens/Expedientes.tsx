@@ -16,7 +16,7 @@ import {
   where,
   getDoc
 } from 'firebase/firestore';
-import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI, PlanEmergencia, AnexoTipo, ANEXOS } from '../types';
+import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI, PlanEmergencia, EmpresaControlDerrame, AnexoTipo, ANEXOS } from '../types';
 import { analyzeExpedienteHistory } from '../services/geminiService'; // Importamos servicio IA
 
 const INSTANCIAS: Instancia[] = [
@@ -198,7 +198,7 @@ export const Expedientes: React.FC = () => {
         return;
     }
 
-    const analysis = await analyzeExpedienteHistory(editingExp, caseEvents);
+    const analysis = await analyzeExpedienteHistory(caseEvents);
     
     // Agregamos el análisis a las observaciones sin borrar lo anterior
     const newObs = (editingExp.observaciones || '') + `\n\n[ANÁLISIS IA - ${new Date().toLocaleDateString()}]:\n${analysis}`;
@@ -335,9 +335,49 @@ export const Expedientes: React.FC = () => {
       navigate('/inspecciones', { state: { prefill: c } });
   };
 
-  const syncExpedienteToPlan = async (c: Case) => {
+  const syncExpediente = async (c: Case) => {
     // Solo sincronizamos si tiene empresa y anexo (categoria)
     if (!c.empresa || !c.categoria) return;
+
+    if (c.categoria === 'derrames') {
+      try {
+        let derrameDoc = null;
+        if (c.planId) {
+          const docSnap = await getDoc(doc(db, 'control_derrames', c.planId));
+          if (docSnap.exists()) derrameDoc = docSnap;
+        }
+
+        if (!derrameDoc) {
+          const q = query(
+            collection(db, 'control_derrames'), 
+            where('empresa', '==', c.empresa)
+          );
+          const snap = await getDocs(q);
+          if (!snap.empty) derrameDoc = snap.docs[0];
+        }
+        
+        if (!derrameDoc) {
+          const derrameData: Partial<EmpresaControlDerrame> = {
+            empresa: c.empresa,
+            dependencia: 'S/D',
+            expedienteOrigenId: c.id,
+            ultimaActualizacion: new Date().toISOString(),
+            disposicion: '',
+            vencimiento: '',
+            basesOperativas: []
+          };
+          await addDoc(collection(db, 'control_derrames'), derrameData);
+        } else {
+          await updateDoc(doc(db, 'control_derrames', derrameDoc.id), {
+            expedienteOrigenId: c.id,
+            ultimaActualizacion: new Date().toISOString()
+          });
+        }
+      } catch (error) {
+        console.error("Error syncing to derrames:", error);
+      }
+      return;
+    }
 
     // Normalizar el anexo (ahora categoria es directamente el id del anexo)
     let anexoKey: AnexoTipo = c.categoria as AnexoTipo;
@@ -452,7 +492,7 @@ export const Expedientes: React.FC = () => {
         case 'EmisionDispo':
           textoNovedad = `Se emitió nueva DISPOSICIÓN: ${movData.nroDisposicion}. Vencimiento: ${movData.vencimiento}. ${ts}.`;
           esTareaAutomatica = false;
-          await syncExpedienteToPlan(editingExp as Case);
+          await syncExpediente(editingExp as Case);
           break;
 
         case 'Firma':
@@ -482,8 +522,8 @@ export const Expedientes: React.FC = () => {
           nuevoAsignadoNombre = 'Archivo';
           nuevoDestino = "";
           
-          // Sincronizar con Base de Datos de Planes
-          await syncExpedienteToPlan(editingExp as Case);
+          // Sincronizar con Base de Datos de Planes o Derrames
+          await syncExpediente(editingExp as Case);
 
           // Auto-completar tareas pendientes al enviar a guarda
           try {
@@ -521,25 +561,76 @@ export const Expedientes: React.FC = () => {
 
       // --- AUTOMATIZACIÓN: Emisión de Disposición ---
       if ((movData.tipo === 'Conclusiones' || movData.tipo === 'Guarda' || movData.tipo === 'EmisionDispo') && movData.nroDisposicion && movData.vencimiento) {
-        let targetPlanId = editingExp.planId;
         
-        if (!targetPlanId && editingExp.empresa && editingExp.categoria) {
-          const q = query(
-            collection(db, 'planes'), 
-            where('empresa', '==', editingExp.empresa),
-            where('anexo', '==', editingExp.categoria)
-          );
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            targetPlanId = snap.docs[0].id;
-          }
-        }
-
-        if (targetPlanId) {
-          const planRef = doc(db, 'planes', targetPlanId);
-          const planSnap = await getDoc(planRef);
+        // Handle Derrames Automation
+        if (editingExp.categoria === 'derrames') {
+          let targetDerrameId = editingExp.planId;
           
-          if (planSnap.exists()) {
+          if (!targetDerrameId && editingExp.empresa) {
+            const q = query(
+              collection(db, 'control_derrames'), 
+              where('empresa', '==', editingExp.empresa)
+            );
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              targetDerrameId = snap.docs[0].id;
+            }
+          }
+
+          if (targetDerrameId) {
+            const derrameRef = doc(db, 'control_derrames', targetDerrameId);
+            const derrameSnap = await getDoc(derrameRef);
+            
+            if (derrameSnap.exists()) {
+              const derrameData = derrameSnap.data() as EmpresaControlDerrame;
+              const historial = derrameData.historialDisposiciones || [];
+              
+              if (derrameData.disposicion && derrameData.disposicion !== movData.nroDisposicion) {
+                historial.push({
+                  disposicion: derrameData.disposicion || '',
+                  vencimiento: derrameData.vencimiento || '',
+                  formatoDisposicion: derrameData.formatoDisposicion || '',
+                  fechaArchivo: new Date().toISOString(),
+                  documentacionExtra: derrameData.documentacionExtra || '',
+                  inspeccionIntermedia: derrameData.inspeccionIntermedia
+                });
+              }
+
+              const derrameUpdates: any = {
+                disposicion: movData.nroDisposicion,
+                vencimiento: movData.vencimiento,
+                inspeccionIntermedia: null, // Clear intermediate inspection on renewal
+                historialDisposiciones: historial,
+                ultimaActualizacion: new Date().toISOString()
+              };
+
+              if (movData.documentacionExtra !== undefined) derrameUpdates.documentacionExtra = movData.documentacionExtra;
+
+              await updateDoc(derrameRef, derrameUpdates);
+            }
+          }
+        } 
+        // Handle Planes Automation
+        else {
+          let targetPlanId = editingExp.planId;
+          
+          if (!targetPlanId && editingExp.empresa && editingExp.categoria) {
+            const q = query(
+              collection(db, 'planes'), 
+              where('empresa', '==', editingExp.empresa),
+              where('anexo', '==', editingExp.categoria)
+            );
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              targetPlanId = snap.docs[0].id;
+            }
+          }
+
+          if (targetPlanId) {
+            const planRef = doc(db, 'planes', targetPlanId);
+            const planSnap = await getDoc(planRef);
+            
+            if (planSnap.exists()) {
             const planData = planSnap.data() as PlanEmergencia;
             const historial = planData.historialDisposiciones || [];
             
@@ -584,6 +675,7 @@ export const Expedientes: React.FC = () => {
             await updateDoc(planRef, planUpdates);
           }
         }
+      }
       }
 
       await updateDoc(caseRef, updates);
