@@ -33,6 +33,13 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
+const petroleumIcon = L.divIcon({
+  className: 'custom-div-icon',
+  html: `<div style="background-color: #0f172a; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
+  iconSize: [14, 14],
+  iconAnchor: [7, 7]
+});
+
 const formatDate = (dateStr?: string) => {
   if (!dateStr || dateStr === '-' || dateStr.length < 5) return dateStr || '-';
   let d = new Date(dateStr);
@@ -46,6 +53,7 @@ export const Derrames: React.FC = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [empresas, setEmpresas] = useState<EmpresaControlDerrame[]>([]);
+  const [planes, setPlanes] = useState<any[]>([]); // For associated plans
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   
@@ -90,10 +98,16 @@ export const Derrames: React.FC = () => {
        setInspecciones(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Inspeccion)));
     });
 
+    const qPlanes = query(collection(db, 'planes'));
+    const unsubPlanes = onSnapshot(qPlanes, (snapshot) => {
+       setPlanes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
+    });
+
     return () => {
       unsubscribe();
       unsubCases();
       unsubInsp();
+      unsubPlanes();
     };
   }, [selectedEmpresa?.id]);
 
@@ -423,7 +437,7 @@ export const Derrames: React.FC = () => {
           <div>
             <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Control de Derrames</h1>
             <p className="text-sm font-bold text-slate-500 mt-1 uppercase tracking-widest">
-              Gestión de Empresas (OSRO) y Bases Operativas
+              Gestión de Empresas y Bases Operativas
             </p>
           </div>
           <div className="flex gap-3">
@@ -453,13 +467,13 @@ export const Derrames: React.FC = () => {
               </div>
            ) : (
              <>
-               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 shrink-0">
+               <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6 shrink-0">
                  <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
                    <div className="size-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
                      <span className="material-symbols-outlined">corporate_fare</span>
                    </div>
                    <div>
-                     <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Empresas Activas</p>
+                     <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest leading-tight mb-1">Empresas<br/>Activas</p>
                      <p className="text-2xl font-black text-slate-800 dark:text-white leading-none">{filteredEmpresas.length}</p>
                    </div>
                  </div>
@@ -469,7 +483,7 @@ export const Derrames: React.FC = () => {
                      <span className="material-symbols-outlined">warehouse</span>
                    </div>
                    <div>
-                     <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Bases Operativas</p>
+                     <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest leading-tight mb-1">Bases<br/>Operativas</p>
                      <p className="text-2xl font-black text-slate-800 dark:text-white leading-none">
                        {filteredEmpresas.reduce((acc, curr) => acc + (curr.basesOperativas?.length || 0), 0)}
                      </p>
@@ -481,26 +495,40 @@ export const Derrames: React.FC = () => {
                      <span className="material-symbols-outlined">waves</span>
                    </div>
                    <div>
-                     <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Total Barreras</p>
+                     <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest leading-tight mb-1">Total<br/>Barreras</p>
                      <p className="text-2xl font-black text-slate-800 dark:text-white leading-none">
                        {filteredEmpresas.reduce((acc, curr) => acc + (curr.basesOperativas?.reduce((bAcc, base) => bAcc + Number(base.cantidadBarreras || 0), 0) || 0), 0).toLocaleString()}
                      </p>
                    </div>
                  </div>
 
-                 <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                 <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-red-200 dark:border-red-900 shadow-sm flex items-center gap-4 bg-red-50/50">
+                   <div className="size-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400">
+                     <span className="material-symbols-outlined text-red-600">gavel</span>
+                   </div>
+                   <div>
+                     <p className="text-[10px] font-black uppercase text-red-500 tracking-widest leading-tight mb-1">Disposic.<br/>Vencidas</p>
+                     <p className="text-2xl font-black text-red-600 dark:text-white leading-none">
+                       {filteredEmpresas.filter(e => {
+                         const vDate = new Date(e.vencimiento);
+                         return e.vencimiento && !isNaN(vDate.getTime()) && vDate < new Date();
+                       }).length}
+                     </p>
+                   </div>
+                 </div>
+
+                 <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-amber-200 dark:border-amber-900 shadow-sm flex items-center gap-4 bg-amber-50/50">
                    <div className="size-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
                      <span className="material-symbols-outlined">warning</span>
                    </div>
                    <div>
-                     <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Venc. / Conv. Ptes</p>
-                     <p className="text-2xl font-black text-slate-800 dark:text-white leading-none">
+                     <p className="text-[10px] font-black uppercase text-amber-600 tracking-widest leading-tight mb-1">Conv.<br/>Pendientes</p>
+                     <p className="text-2xl font-black text-amber-600 dark:text-white leading-none">
                        {filteredEmpresas.filter(e => {
                          const vDate = new Date(e.vencimiento);
-                         const isExpired = e.vencimiento && !isNaN(vDate.getTime()) && vDate < new Date();
-                         // They have 3 years, so they need 1st and 2nd Conv. If they don't have it, it's missing.
+                         if (e.vencimiento && !isNaN(vDate.getTime()) && vDate < new Date()) return false;
                          const missingConv = !(e.convalidacionesDetalle as any)?.anio1?.fecha || !(e.convalidacionesDetalle as any)?.anio2?.fecha;
-                         return isExpired || missingConv;
+                         return missingConv;
                        }).length}
                      </p>
                    </div>
@@ -524,7 +552,8 @@ export const Derrames: React.FC = () => {
                              )}
                              <div>
                                <h3 className="font-black text-slate-800 dark:text-white uppercase tracking-tight text-sm leading-tight max-w-[200px]">{empresa.empresa}</h3>
-                               <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1 mt-0.5"><span className="material-symbols-outlined text-[12px]">location_on</span> {empresa.dependencia || 'S/D'}</p>
+                               {empresa.categoria && <p className="text-[9px] font-black tracking-widest mt-1 text-primary bg-primary/10 w-max px-1.5 py-0.5 rounded uppercase">{empresa.categoria}</p>}
+                               <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1 mt-1"><span className="material-symbols-outlined text-[12px]">location_on</span> {empresa.dependencia || 'S/D'}</p>
                              </div>
                            </div>
                         </div>
@@ -593,7 +622,7 @@ export const Derrames: React.FC = () => {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden border border-slate-200 dark:border-slate-800">
              <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
-              <span className="text-xs font-black uppercase tracking-widest">{editingEmpresa.id ? 'Editar OSRO' : 'Nueva Empresa OSRO'}</span>
+              <span className="text-xs font-black uppercase tracking-widest">{editingEmpresa.id ? 'Editar Empresa' : 'Nueva Empresa'}</span>
               <button onClick={() => setIsModalOpen(false)}><span className="material-symbols-outlined">close</span></button>
             </div>
             
@@ -601,7 +630,7 @@ export const Derrames: React.FC = () => {
                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm mb-6">
                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2 flex items-center gap-2"><span className="material-symbols-outlined text-primary text-[18px]">business</span> Datos Principales</h4>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   <div className="col-span-2">
+                   <div className="col-span-1 md:col-span-2">
                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nombre de la Empresa</label>
                      <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold" value={editingEmpresa.empresa || ''} onChange={e => setEditingEmpresa({...editingEmpresa, empresa: e.target.value})} placeholder="Ej. LÍNEAS MARÍTIMAS S.A."/>
                    </div>
@@ -609,7 +638,11 @@ export const Derrames: React.FC = () => {
                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Jurisdicción (Dependencia)</label>
                      <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={editingEmpresa.dependencia || ''} onChange={e => setEditingEmpresa({...editingEmpresa, dependencia: e.target.value})} placeholder="PNA..."/>
                    </div>
-                   <div className="col-span-2">
+                   <div>
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Categoría</label>
+                     <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={editingEmpresa.categoria || ''} onChange={e => setEditingEmpresa({...editingEmpresa, categoria: e.target.value})} placeholder="Ej. A, B, C..."/>
+                   </div>
+                   <div className="col-span-1 md:col-span-2">
                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">URL Logo (Opcional)</label>
                      <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingEmpresa.logoUrl || ''} onChange={e => setEditingEmpresa({...editingEmpresa, logoUrl: e.target.value})} placeholder="https://..."/>
                    </div>
@@ -675,7 +708,7 @@ export const Derrames: React.FC = () => {
 
                <div className="flex justify-between items-center mt-8">
                   {editingEmpresa.id && isJefe ? (
-                    <button type="button" onClick={() => handleDeleteEmpresa(editingEmpresa.id!)} className="text-xs font-black text-red-500 hover:text-red-700 uppercase tracking-widest flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">delete</span> Eliminar OSRO</button>
+                    <button type="button" onClick={() => handleDeleteEmpresa(editingEmpresa.id!)} className="text-xs font-black text-red-500 hover:text-red-700 uppercase tracking-widest flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">delete</span> Eliminar Empresa</button>
                   ) : <div/>}
                   <div className="flex gap-3">
                     <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-3 rounded text-sm font-black text-slate-600 hover:bg-slate-100 uppercase tracking-widest transition-colors">Cancelar</button>
@@ -709,7 +742,7 @@ export const Derrames: React.FC = () => {
                    )}
                    <div>
                      <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight leading-none mb-1">{selectedEmpresa.empresa}</h2>
-                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">OSRO <span className="w-1 h-1 bg-slate-300 rounded-full"></span> JURISDICCIÓN: {selectedEmpresa.dependencia || 'S/D'}</p>
+                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">EMPRESA <span className="w-1 h-1 bg-slate-300 rounded-full"></span> JURISDICCIÓN: {selectedEmpresa.dependencia || 'S/D'}</p>
                    </div>
                  </div>
                </div>
@@ -778,13 +811,51 @@ export const Derrames: React.FC = () => {
                         </div>
                      </div>
 
-                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 border-b border-slate-100 pb-2">Expedientes Asociados</p>
-                        <div className="flex items-end gap-3">
-                          <span className="text-4xl font-black text-indigo-600 leading-none">
-                            {cases.filter(c => c.categoria === 'derrames' && c.planId === selectedEmpresa.id).length}
-                          </span>
-                          <span className="text-xs font-bold text-slate-500 uppercase pb-1">Trámites<br/>Registrados</span>
+                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 col-span-1 md:col-span-3 lg:col-span-1 flex flex-col gap-4">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-100 pb-2">Expedientes Asociados</p>
+                          <div className="flex items-end gap-3">
+                            <span className="text-4xl font-black text-indigo-600 leading-none">
+                              {
+                                cases.filter(c => c.categoria === 'derrames' && c.planId === selectedEmpresa.id).length +
+                                ((selectedEmpresa.convalidacionesDetalle as any)?.anio1?.nroExpediente ? 1 : 0) +
+                                ((selectedEmpresa.convalidacionesDetalle as any)?.anio2?.nroExpediente ? 1 : 0)
+                              }
+                            </span>
+                            <span className="text-xs font-bold text-slate-500 uppercase pb-1">Trámites<br/>Registrados</span>
+                          </div>
+                        </div>
+
+                        <div className="pt-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-100 pb-2">Equipamiento Total</p>
+                          <div className="flex items-end gap-3 mb-2">
+                            <span className="text-3xl font-black text-blue-600 leading-none">
+                              {selectedEmpresa.basesOperativas?.reduce((acc, b) => acc + Number(b.cantidadBarreras || 0), 0).toLocaleString() || 0}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase pb-1">Metros<br/>Barreras</span>
+                          </div>
+                        </div>
+
+                        <div className="pt-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-100 pb-2">Asistencia a Terceros</p>
+                          {(() => {
+                             const assistedPlanes = planes.filter(p => p.tipoRespuesta === 'Terceros' && p.empresaRespuesta === selectedEmpresa.empresa);
+                             return (
+                               <div>
+                                 <div className="flex items-end gap-3 mb-2">
+                                   <span className="text-3xl font-black text-emerald-600 leading-none">{assistedPlanes.length}</span>
+                                   <span className="text-[10px] font-bold text-slate-500 uppercase pb-1">Empresas<br/>Asistidas</span>
+                                 </div>
+                                 <div className="flex flex-wrap gap-1 mt-1 max-h-[80px] overflow-y-auto">
+                                   {assistedPlanes.length > 0 ? assistedPlanes.map(p => (
+                                     <span key={p.id} className="text-[9px] bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-600 font-bold uppercase truncate max-w-[120px]" title={p.empresa}>{p.empresa}</span>
+                                   )) : (
+                                     <span className="text-[10px] text-slate-400 italic">No registra asistencias.</span>
+                                   )}
+                                 </div>
+                               </div>
+                             );
+                          })()}
                         </div>
                      </div>
                   </div>
@@ -826,7 +897,10 @@ export const Derrames: React.FC = () => {
                                     <div className="bg-slate-50 rounded p-3 text-xs text-slate-700 whitespace-pre-wrap font-medium border border-slate-100">
                                       <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Equipamiento y Materiales</p>
                                       {base.cantidadBarreras ? <p className="mb-2 font-bold flex items-center gap-1 text-emerald-600"><span className="material-symbols-outlined text-[14px]">waves</span> Cantidad de Barreras: {base.cantidadBarreras} mts.</p> : null}
-                                      {base.materiales || <span className="italic text-slate-400">No se detalló equipamiento.</span>}
+                                      {base.metrosAbsorbentes ? <p className="mb-2 font-bold flex items-center gap-1 text-emerald-600"><span className="material-symbols-outlined text-[14px]">cleaning_services</span> Metros Absorbentes: {base.metrosAbsorbentes} mts.</p> : null}
+                                      {base.skimmers ? <p className="mb-2 font-bold flex items-center gap-1 text-emerald-600"><span className="material-symbols-outlined text-[14px]">water_ec</span> Skimmers: {base.skimmers}</p> : null}
+                                      {base.embarcaciones ? <p className="mb-2 font-bold flex items-center gap-1 text-emerald-600"><span className="material-symbols-outlined text-[14px]">directions_boat</span> Embarcaciones: {base.embarcaciones}</p> : null}
+                                      {base.materiales || <span className="italic text-slate-400">No se detalló otro equipamiento.</span>}
                                     </div>
                                     {base.observaciones && (
                                       <p className="mt-2 text-[10px] text-slate-500"><span className="font-bold uppercase">Obs:</span> {base.observaciones}</p>
@@ -869,7 +943,7 @@ export const Derrames: React.FC = () => {
                                const coords = parseCoordinates(base.coordenadas);
                                if (!coords) return null;
                                return (
-                                 <Marker key={base.id} position={coords}>
+                                 <Marker key={base.id} position={coords} icon={petroleumIcon}>
                                    <Popup>
                                      <div className="p-1 min-w-[200px]">
                                        {selectedEmpresa.logoUrl && (
@@ -880,7 +954,11 @@ export const Derrames: React.FC = () => {
                                        <h4 className="font-black text-slate-800 uppercase text-xs mb-1 border-b border-slate-200 pb-1 text-center">{base.nombre}</h4>
                                        <p className="text-[10px] font-bold text-slate-500 uppercase mt-2 mb-1">Equipamiento:</p>
                                        <div className="text-[10px] text-slate-600 max-h-[100px] overflow-y-auto w-full break-words">
-                                         {base.materiales || 'Sin detalle.'}
+                                         {base.cantidadBarreras ? <div><span className="font-bold">Barreras:</span> {base.cantidadBarreras}m</div> : null}
+                                         {base.skimmers ? <div><span className="font-bold">Skimmers:</span> {base.skimmers}</div> : null}
+                                         {base.embarcaciones ? <div><span className="font-bold">Embarcaciones:</span> {base.embarcaciones}</div> : null}
+                                         {base.metrosAbsorbentes ? <div><span className="font-bold">Absorbentes:</span> {base.metrosAbsorbentes}m</div> : null}
+                                         <div className="mt-1">{base.materiales || 'Sin otro detalle.'}</div>
                                        </div>
                                      </div>
                                    </Popup>
@@ -956,9 +1034,21 @@ export const Derrames: React.FC = () => {
                   <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingBase.coordenadas || ''} onChange={e => setEditingBase({...editingBase, coordenadas: e.target.value})} placeholder="-45.8641, -67.4965"/>
                   <span className="text-[9px] text-slate-400 mt-1 block">Acepta formatos como "-45.8641, -67.4965" o grados/minutos/segundos.</span>
                 </div>
-                <div className="col-span-2">
-                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Cantidad de Barreras</label>
+                <div className="col-span-1">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Metros Barreras</label>
                   <input type="number" className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingBase.cantidadBarreras || ''} onChange={e => setEditingBase({...editingBase, cantidadBarreras: e.target.value})} placeholder="0"/>
+                </div>
+                <div className="col-span-1">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Metros Absorbentes</label>
+                  <input type="number" className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingBase.metrosAbsorbentes || ''} onChange={e => setEditingBase({...editingBase, metrosAbsorbentes: e.target.value ? Number(e.target.value) : undefined})} placeholder="0"/>
+                </div>
+                <div className="col-span-1">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Skimmers</label>
+                  <input type="number" className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingBase.skimmers || ''} onChange={e => setEditingBase({...editingBase, skimmers: e.target.value ? Number(e.target.value) : undefined})} placeholder="0"/>
+                </div>
+                <div className="col-span-1">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Embarcaciones</label>
+                  <input type="number" className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingBase.embarcaciones || ''} onChange={e => setEditingBase({...editingBase, embarcaciones: e.target.value ? Number(e.target.value) : undefined})} placeholder="0"/>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Materiales y Equipamiento Disponibles</label>
