@@ -1361,14 +1361,28 @@ export const Planes: React.FC = () => {
                             <option value="terceros">De Terceros</option>
                           </select>
                         </div>
-                        <div className="md:col-span-2">
-                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa de Respuesta (Si es de terceros)</label>
-                          <input 
-                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase" 
-                            value={editingPlan?.empresaRespuesta || ''} 
-                            onChange={e => setEditingPlan({...editingPlan!, empresaRespuesta: e.target.value})}
-                            disabled={editingPlan?.tipoRespuesta !== 'terceros'}
-                          />
+                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa de Respuesta (Si es de terceros)</label>
+                            <input 
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase" 
+                              value={editingPlan?.empresaRespuesta || ''} 
+                              onChange={e => setEditingPlan({...editingPlan!, empresaRespuesta: e.target.value})}
+                              disabled={editingPlan?.tipoRespuesta !== 'terceros'}
+                              placeholder="Empresa OSRO habilitada..."
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Metros de Barrera (Si es propia)</label>
+                            <input 
+                              type="number"
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary font-bold" 
+                              value={editingPlan?.cantidadBarreras || ''} 
+                              onChange={e => setEditingPlan({...editingPlan!, cantidadBarreras: e.target.value})}
+                              disabled={editingPlan?.tipoRespuesta !== 'propia'}
+                              placeholder="0"
+                            />
+                          </div>
                         </div>
                       </div>
 
@@ -1441,6 +1455,20 @@ export const Planes: React.FC = () => {
                                             convalidacionesDetalle: {
                                               ...editingPlan?.convalidacionesDetalle,
                                               [y]: { ...det, nroExpediente: e.target.value }
+                                            }
+                                          })}
+                                        />
+                                      </div>
+                                      <div className="w-40">
+                                        <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">Nº Certificado</label>
+                                        <input 
+                                          className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase font-mono"
+                                          value={det.nroCertificadoConvalidacion || ''}
+                                          onChange={e => setEditingPlan({
+                                            ...editingPlan!,
+                                            convalidacionesDetalle: {
+                                              ...editingPlan?.convalidacionesDetalle,
+                                              [y]: { ...det, nroCertificadoConvalidacion: e.target.value }
                                             }
                                           })}
                                         />
@@ -1660,6 +1688,11 @@ export const Planes: React.FC = () => {
                           {selectedPlan.tipoRespuesta === 'terceros' && selectedPlan.empresaRespuesta && (
                             <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase truncate">
                               {selectedPlan.empresaRespuesta}
+                            </span>
+                          )}
+                          {selectedPlan.tipoRespuesta === 'propia' && selectedPlan.cantidadBarreras && (
+                            <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                              {selectedPlan.cantidadBarreras}m Barreras
                             </span>
                           )}
                         </div>
