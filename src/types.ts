@@ -254,18 +254,31 @@ export interface BaseOperativa {
   nombre: string;
   coordenadas: string; // Ej: -34.6037, -58.3816
   materiales: string;
+  cantidadBarreras?: number | string;
+  skimmers?: number | string;
+  embarcaciones?: number | string;
+  metrosAbsorbentes?: number | string;
   observaciones?: string;
 }
 
 export interface EmpresaControlDerrame {
   id: string;
+  categoria?: string;
   empresa: string;
   logoUrl?: string;
+  cuit?: string;
+  domicilio?: string;
+  email?: string;
+  telefono?: string;
   dependencia: string; // Jurisdicción
   disposicion: string; // Número de disposición de habilitación
   vencimiento: string; // Vencimiento (3 años)
   formatoDisposicion?: 'digital' | 'papel' | '';
   estado?: 'vigente' | 'desafectado';
+  convalidacionesDetalle?: {
+    anio1?: ConvalidacionDetalle;
+    anio2?: ConvalidacionDetalle;
+  };
   inspeccionIntermedia?: {
     fecha?: string;
     auditorNombre?: string;
