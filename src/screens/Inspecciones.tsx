@@ -4,7 +4,7 @@ import { useLocation } from 'react-router';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, getDoc, getDocs, where } from 'firebase/firestore';
-import { Inspeccion, Case, Auditor, User, ResultadoInspeccion, TimelineEvent, PlanEmergencia } from '../types';
+import { Inspeccion, Case, Auditor, User, ResultadoInspeccion, TimelineEvent, PlanEmergencia, EmpresaControlDerrame } from '../types';
 import { draftTechnicalReport } from '../services/geminiService'; // Importamos el servicio IA
 
 export const Inspecciones: React.FC = () => {
@@ -12,6 +12,7 @@ export const Inspecciones: React.FC = () => {
   const [inspecciones, setInspecciones] = useState<Inspeccion[]>([]);
   const [auditores, setAuditores] = useState<Auditor[]>([]);
   const [planes, setPlanes] = useState<PlanEmergencia[]>([]);
+  const [derrames, setDerrames] = useState<EmpresaControlDerrame[]>([]);
   const [movimientos, setMovimientos] = useState<TimelineEvent[]>([]); 
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -44,6 +45,8 @@ export const Inspecciones: React.FC = () => {
         fecha: new Date().toISOString().split('T')[0],
         expedienteNumero: prefillCase.numero,
         expedienteId: prefillCase.id, 
+        planId: prefillCase.planId,
+        anexo: prefillCase.categoria as any,
         ubicacion: prefillCase.empresa, 
         tipo: 'INICIAL',
         resultado: 'CON PENDIENTES',
@@ -96,6 +99,11 @@ export const Inspecciones: React.FC = () => {
       setPlanes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlanEmergencia)));
     });
 
+    const qDerrames = query(collection(db, 'control_derrames'), orderBy('empresa', 'asc'));
+    const unsubscribeDerrames = onSnapshot(qDerrames, (snapshot) => {
+      setDerrames(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmpresaControlDerrame)));
+    });
+
     const qMovs = query(collection(db, 'movimientos'), orderBy('fecha', 'desc'));
     const unsubscribeMovs = onSnapshot(qMovs, (snapshot) => {
       setMovimientos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TimelineEvent)));
@@ -105,6 +113,7 @@ export const Inspecciones: React.FC = () => {
       unsubscribeInsp();
       unsubscribeAud();
       unsubscribePlanes();
+      unsubscribeDerrames();
       unsubscribeMovs();
     };
   }, []);
@@ -160,6 +169,7 @@ export const Inspecciones: React.FC = () => {
       tipo: editingInsp.tipo || 'INICIAL',
       resultado: editingInsp.resultado || 'CON PENDIENTES',
       convalidacionNumero: editingInsp.convalidacionNumero || null,
+      anexo: editingInsp.anexo,
       observaciones: editingInsp.observaciones || '',
       nroInforme: editingInsp.nroInforme || '',
       nroCertificado: editingInsp.nroCertificado || '',
@@ -225,20 +235,32 @@ export const Inspecciones: React.FC = () => {
       }
 
       if (targetPlanId && dataToSave.resultado === 'APROBADO') {
-        const planRef = doc(db, 'planes', targetPlanId);
+        const isDerrame = dataToSave.anexo === 'derrames';
+        const collName = isDerrame ? 'control_derrames' : 'planes';
+        const planRef = doc(db, collName, targetPlanId);
         const planSnap = await getDoc(planRef);
+        
         if (planSnap.exists()) {
-          const planData = planSnap.data() as PlanEmergencia;
-          const convalidaciones = { ...(planData.convalidaciones || {}) };
-          
-          if (dataToSave.tipo === 'CONVALIDACIÓN ANUAL') {
+          if (isDerrame && dataToSave.tipo === 'INSPECCIÓN INTERMEDIA (DERRAMES)') {
+            await updateDoc(planRef, {
+              inspeccionIntermedia: {
+                fecha: dataToSave.fecha,
+                auditorNombre: dataToSave.auditorNombre,
+                nroCertificado: dataToSave.nroCertificado,
+                nroExpediente: dataToSave.expedienteNumero
+              },
+              ultimaActualizacion: new Date().toISOString()
+            });
+          } else if (!isDerrame && dataToSave.tipo === 'CONVALIDACIÓN ANUAL') {
+            const planData = planSnap.data() as PlanEmergencia;
+            const convalidaciones = { ...(planData.convalidaciones || {}) };
+            
             const num = dataToSave.convalidacionNumero;
             if (num === 1) convalidaciones.anio1 = dataToSave.fecha;
             else if (num === 2) convalidaciones.anio2 = dataToSave.fecha;
             else if (num === 3) convalidaciones.anio3 = dataToSave.fecha;
             else if (num === 4) convalidaciones.anio4 = dataToSave.fecha;
             else {
-              // Lógica fallback: llenar el primer slot vacío
               if (!convalidaciones.anio1) convalidaciones.anio1 = dataToSave.fecha;
               else if (!convalidaciones.anio2) convalidaciones.anio2 = dataToSave.fecha;
               else if (!convalidaciones.anio3) convalidaciones.anio3 = dataToSave.fecha;
@@ -539,6 +561,7 @@ export const Inspecciones: React.FC = () => {
                         <option>CONVALIDACIÓN ANUAL</option>
                         <option>RENOVACIÓN</option>
                         <option>EXTRAORDINARIA</option>
+                        <option>INSPECCIÓN INTERMEDIA (DERRAMES)</option>
                     </select>
                   </div>
 
@@ -564,24 +587,48 @@ export const Inspecciones: React.FC = () => {
                   )}
 
                   {/* Fila 2: Vinculación */}
-                  <div className="col-span-2 md:col-span-1">
-                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Vincular con Plan (Empresa)</label>
+                  <div className="col-span-2">
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Vincular con Registro de la Empresa</label>
                      <select 
                         className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold"
-                        value={editingInsp.planId || ''}
+                        value={`${editingInsp.anexo === 'derrames' ? 'derrame' : 'plan'}_${editingInsp.planId || ''}`}
                         onChange={e => {
-                          const selectedPlan = planes.find(p => p.id === e.target.value);
+                          const [type, id] = e.target.value.split('_');
+                          if (!id) {
+                            setEditingInsp({...editingInsp, planId: '', anexo: undefined, ubicacion: ''});
+                            return;
+                          }
+                          
+                          let name = '';
+                          let anexoVal = undefined;
+                          
+                          if (type === 'plan') {
+                            const plan = planes.find(p => p.id === id);
+                            if (plan) { name = plan.empresa; anexoVal = plan.anexo; }
+                          } else if (type === 'derrame') {
+                            const derrame = derrames.find(d => d.id === id);
+                            if (derrame) { name = derrame.empresa; anexoVal = 'derrames'; }
+                          }
+
                           setEditingInsp({
                             ...editingInsp, 
-                            planId: e.target.value,
-                            ubicacion: selectedPlan ? selectedPlan.empresa : (editingInsp.ubicacion || '')
+                            planId: id,
+                            anexo: anexoVal,
+                            ubicacion: name || (editingInsp.ubicacion || '')
                           });
                         }}
                      >
-                        <option value="">-- SELECCIONAR PLAN --</option>
-                        {planes.map(p => (
-                          <option key={p.id} value={p.id}>{p.empresa}</option>
-                        ))}
+                        <option value="_">-- SELECCIONAR EMPRESA --</option>
+                        <optgroup label="PLANES DE EMERGENCIA">
+                          {planes.map(p => (
+                            <option key={`plan_${p.id}`} value={`plan_${p.id}`}>{p.empresa} ({p.anexo.replace('anexo_', 'A')})</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="CONTROL DE DERRAMES">
+                          {derrames.map(d => (
+                            <option key={`derrame_${d.id}`} value={`derrame_${d.id}`}>{d.empresa} (OSRO)</option>
+                          ))}
+                        </optgroup>
                      </select>
                   </div>
                   <div className="col-span-2 md:col-span-1">
