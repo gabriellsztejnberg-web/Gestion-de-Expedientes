@@ -86,7 +86,7 @@ export const Derrames: React.FC = () => {
   const isJefe = (currentUser.role || '').toLowerCase() === 'jefe' || (currentUser.role || '').toLowerCase() === 'admin';
 
   useEffect(() => {
-    const q = query(collection(db, 'control_derrames'), orderBy('empresa', 'asc'));
+    const q = query(collection(db, 'empresas_derrames'), orderBy('empresa', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmpresaControlDerrame));
       setEmpresas(docs);
@@ -144,9 +144,9 @@ export const Derrames: React.FC = () => {
       };
 
       if (editingEmpresa.id) {
-        await updateDoc(doc(db, 'control_derrames', editingEmpresa.id), dataToSave);
+        await updateDoc(doc(db, 'empresas_derrames', editingEmpresa.id), dataToSave);
       } else {
-        await addDoc(collection(db, 'control_derrames'), dataToSave);
+        await addDoc(collection(db, 'empresas_derrames'), dataToSave);
       }
       setIsModalOpen(false);
       setEditingEmpresa(null);
@@ -188,7 +188,7 @@ export const Derrames: React.FC = () => {
         currentBases.push(newBaseData);
       }
 
-      await updateDoc(doc(db, 'control_derrames', selectedEmpresaId), {
+      await updateDoc(doc(db, 'empresas_derrames', selectedEmpresaId), {
         basesOperativas: currentBases,
         ultimaActualizacion: new Date().toISOString()
       });
@@ -207,7 +207,7 @@ export const Derrames: React.FC = () => {
     if (!empresaDoc) return;
 
     const currentBases = (empresaDoc.basesOperativas || []).filter(b => b.id !== baseId);
-    await updateDoc(doc(db, 'control_derrames', empresaId), {
+    await updateDoc(doc(db, 'empresas_derrames', empresaId), {
       basesOperativas: currentBases,
       ultimaActualizacion: new Date().toISOString()
     });
@@ -216,7 +216,7 @@ export const Derrames: React.FC = () => {
   const handleDeleteEmpresa = async (id: string) => {
     if (!confirm("¿Eliminar empresa permanentemente?")) return;
     try {
-      await deleteDoc(doc(db, 'control_derrames', id));
+      await deleteDoc(doc(db, 'empresas_derrames', id));
     } catch (error) {
       alert("Error al eliminar");
     }
@@ -358,7 +358,7 @@ export const Derrames: React.FC = () => {
               if (!empresaFinal) return;
               
               const existingEmpresa = existingMap.get(empresaFinal);
-              const empresaRef = existingEmpresa ? doc(db, 'control_derrames', existingEmpresa.id) : doc(collection(db, 'control_derrames'));
+              const empresaRef = existingEmpresa ? doc(db, 'empresas_derrames', existingEmpresa.id) : doc(collection(db, 'empresas_derrames'));
               
               const basesOperativas: BaseOperativa[] = existingEmpresa?.basesOperativas || [];
               
