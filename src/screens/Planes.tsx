@@ -417,6 +417,7 @@ export const Planes: React.FC = () => {
     const planData = {
       ...editingPlan,
       empresaRespuesta: (editingPlan.empresaRespuesta || '').toUpperCase().trim(),
+      empresaRespuestaManual: (editingPlan.empresaRespuestaManual || '').toUpperCase().trim(),
       anexo: editingPlan.anexo || activeTab,
       ultimaActualizacion: new Date().toISOString(),
       convalidaciones: editingPlan.convalidaciones || {},
@@ -1133,7 +1134,14 @@ export const Planes: React.FC = () => {
                                   </td>
                                   <td className="px-4 py-4 text-center">
                                       <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                          <button onClick={() => { setEditingPlan(p); setIsModalOpen(true); }} className="text-slate-400 hover:text-primary p-1"><span className="material-symbols-outlined text-[18px]">edit</span></button>
+                                          <button onClick={() => { 
+                                            const pData = { ...p };
+                                            if (!pData.empresaRespuestaManual && pData.empresaRespuesta) {
+                                              pData.empresaRespuestaManual = pData.empresaRespuesta;
+                                            }
+                                            setEditingPlan(pData); 
+                                            setIsModalOpen(true); 
+                                          }} className="text-slate-400 hover:text-primary p-1"><span className="material-symbols-outlined text-[18px]">edit</span></button>
                                           {isJefe && <button onClick={() => handleDelete(p.id)} className="text-slate-400 hover:text-red-500 p-1"><span className="material-symbols-outlined text-[18px]">delete</span></button>}
                                       </div>
                                   </td>
@@ -1368,21 +1376,33 @@ export const Planes: React.FC = () => {
                           </select>
                         </div>
                         <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa de Respuesta (EMCODECON)</label>
-                            <input 
-                              list="emcodecon-list"
-                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase text-xs font-bold" 
-                              value={editingPlan?.empresaRespuesta || ''} 
-                              onChange={e => setEditingPlan({...editingPlan!, empresaRespuesta: e.target.value})}
-                              placeholder="ESCRIBIR O SELECCIONAR EMCODECON"
-                              disabled={editingPlan?.tipoRespuesta !== 'terceros'}
-                            />
-                            <datalist id="emcodecon-list">
-                              {derrames.sort((a,b) => a.empresa.localeCompare(b.empresa)).map(d => (
-                                <option key={d.id} value={d.empresa} />
-                              ))}
-                            </datalist>
+                          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                             <div>
+                               <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nombre Registrado (Manual/Histórico)</label>
+                               <input 
+                                 className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase text-xs font-bold" 
+                                 value={editingPlan?.empresaRespuestaManual || ''} 
+                                 onChange={e => setEditingPlan({...editingPlan!, empresaRespuestaManual: e.target.value})}
+                                 placeholder="VALOR CARGADO ANTERIORMENTE"
+                                 disabled={editingPlan?.tipoRespuesta !== 'terceros'}
+                               />
+                             </div>
+                             <div>
+                               <label className="block text-[10px] font-black uppercase text-indigo-500 mb-1 flex items-center gap-1">
+                                 <span className="material-symbols-outlined text-[14px]">link</span> Vincular a EMCODECON (Sistema)
+                               </label>
+                               <select 
+                                 className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 uppercase text-xs font-bold text-indigo-600 cursor-pointer" 
+                                 value={editingPlan?.empresaRespuesta || ''} 
+                                 onChange={e => setEditingPlan({...editingPlan!, empresaRespuesta: e.target.value})}
+                                 disabled={editingPlan?.tipoRespuesta !== 'terceros'}
+                               >
+                                 <option value="">-- SELECCIONAR EMCODECON --</option>
+                                 {derrames.sort((a,b) => a.empresa.localeCompare(b.empresa)).map(d => (
+                                   <option key={d.id} value={d.empresa}>{d.empresa}</option>
+                                 ))}
+                               </select>
+                             </div>
                           </div>
                           <div>
                             <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Metros de Barrera (Si es propia)</label>
