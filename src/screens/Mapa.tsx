@@ -241,7 +241,7 @@ export const Mapa: React.FC = () => {
     });
 
     // Suscripción a Empresas de Control de Derrames
-    const qOsros = query(collection(db, 'control_derrames'));
+    const qOsros = query(collection(db, 'empresas_derrames'));
     const unsubscribeOsros = onSnapshot(qOsros, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmpresaControlDerrame));
       
