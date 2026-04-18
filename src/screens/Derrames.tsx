@@ -58,7 +58,8 @@ const formatDate = (dateStr?: string) => {
   return `${adjustedDate.getDate().toString().padStart(2, '0')}/${(adjustedDate.getMonth() + 1).toString().padStart(2, '0')}/${adjustedDate.getFullYear()}`;
 };
 
-const getSemaforoStyle = (dateStr?: string) => {
+const getSemaforoStyle = (dateStr?: string, isCompleted?: boolean) => {
+  if (isCompleted) return 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20';
   if (!dateStr) return 'text-slate-400 bg-slate-100 dark:bg-slate-800/50';
   const vDate = new Date(dateStr);
   if (isNaN(vDate.getTime())) return 'text-slate-400 bg-slate-100 dark:bg-slate-800/50';
@@ -73,7 +74,8 @@ const getSemaforoStyle = (dateStr?: string) => {
   return 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20'; // Vigente en verde
 };
 
-const getSemaforoColor = (dateStr?: string) => {
+const getSemaforoColor = (dateStr?: string, isCompleted?: boolean) => {
+  if (isCompleted) return 'text-emerald-600 font-black';
   if (!dateStr) return 'text-slate-400';
   const vDate = new Date(dateStr);
   if (isNaN(vDate.getTime())) return 'text-slate-400';
@@ -900,11 +902,11 @@ export const Derrames: React.FC = () => {
                                  <p className="text-[9px] font-black uppercase text-slate-400 mb-1">{year}º Año Operación</p>
                                  {det?.fecha ? (
                                     <>
-                                      <p className={`text-sm font-black mb-1 ${getSemaforoColor(det?.fecha)}`}>{formatDate(det.fecha)}</p>
+                                      <p className={`text-sm font-black mb-1 ${getSemaforoColor(det?.fecha, !!det?.nroCertificadoConvalidacion)}`}>{formatDate(det.fecha)} {det?.nroCertificadoConvalidacion && '✅'}</p>
                                       {det.auditorNombre && <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">person</span> {det.auditorNombre}</p>}
                                       <div className="flex flex-col gap-1 mt-1">
                                         {det.nroExpediente && <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">folder</span> {det.nroExpediente}</p>}
-                                        {det.nroCertificadoConvalidacion && <p className="text-[10px] font-black text-indigo-500 uppercase flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">verified</span> CERT: {det.nroCertificadoConvalidacion}</p>}
+                                        {det.nroCertificadoConvalidacion && <p className="text-[10px] font-black text-emerald-600 uppercase flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">verified</span> CERT: {det.nroCertificadoConvalidacion}</p>}
                                       </div>
                                     </>
                                  ) : (
@@ -994,7 +996,40 @@ export const Derrames: React.FC = () => {
                      </div>
                   </div>
 
-                  {/* BASES Y MAPA GRID */}
+                   {/* HISTORIAL DE INSPECCIONES INTERMEDIAS */}
+                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 overflow-hidden">
+                      <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
+                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Historial de Inspecciones Intermedias</p>
+                         <span className="text-[9px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-black uppercase border border-blue-100">Registro Histórico</span>
+                      </div>
+                      <div className="space-y-3">
+                        {selectedEmpresa.inspeccionesIntermedias && selectedEmpresa.inspeccionesIntermedias.length > 0 ? (
+                           selectedEmpresa.inspeccionesIntermedias.sort((a,b) => (b.fecha||'').localeCompare(a.fecha||'')).map((insp, idx) => (
+                              <div key={idx} className="flex gap-4 p-3 bg-slate-50 dark:bg-slate-800/30 rounded border border-slate-100 dark:border-slate-700">
+                                 <div className="text-center w-16 shrink-0 border-r border-slate-200 dark:border-slate-700 pr-3">
+                                    <p className="text-[10px] font-black text-slate-800 dark:text-white leading-none mb-1">
+                                       {insp.fecha ? `${formatDate(insp.fecha).split('/')[0]}/${formatDate(insp.fecha).split('/')[1]}` : '--/--'}
+                                    </p>
+                                    <p className="text-[8px] font-bold text-slate-400">{insp.fecha ? formatDate(insp.fecha).split('/')[2] : '----'}</p>
+                                 </div>
+                                 <div className="flex-1">
+                                    <p className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase underline decoration-blue-200 underline-offset-2 mb-1">
+                                       {insp.baseNombre || 'BASE UBICACIÓN'}
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-500 uppercase">
+                                       <p className="flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">person</span> {insp.auditorNombre}</p>
+                                       <p className="flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">verified</span> CERT: {insp.nroCertificado || '-'}</p>
+                                    </div>
+                                 </div>
+                              </div>
+                           ))
+                        ) : (
+                           <p className="text-xs text-slate-400 italic text-center py-4">No hay inspecciones intermedias registradas.</p>
+                        )}
+                      </div>
+                   </div>
+
+                   {/* BASES Y MAPA GRID */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* BASES OPERATIVAS LIST */}
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
