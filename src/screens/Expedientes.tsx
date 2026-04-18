@@ -343,13 +343,13 @@ export const Expedientes: React.FC = () => {
       try {
         let derrameDoc = null;
         if (c.planId) {
-          const docSnap = await getDoc(doc(db, 'control_derrames', c.planId));
+          const docSnap = await getDoc(doc(db, 'empresas_derrames', c.planId));
           if (docSnap.exists()) derrameDoc = docSnap;
         }
 
         if (!derrameDoc) {
           const q = query(
-            collection(db, 'control_derrames'), 
+            collection(db, 'empresas_derrames'), 
             where('empresa', '==', c.empresa)
           );
           const snap = await getDocs(q);
@@ -366,9 +366,9 @@ export const Expedientes: React.FC = () => {
             vencimiento: '',
             basesOperativas: []
           };
-          await addDoc(collection(db, 'control_derrames'), derrameData);
+          await addDoc(collection(db, 'empresas_derrames'), derrameData);
         } else {
-          await updateDoc(doc(db, 'control_derrames', derrameDoc.id), {
+          await updateDoc(doc(db, 'empresas_derrames', derrameDoc.id), {
             expedienteOrigenId: c.id,
             ultimaActualizacion: new Date().toISOString()
           });
@@ -568,7 +568,7 @@ export const Expedientes: React.FC = () => {
           
           if (!targetDerrameId && editingExp.empresa) {
             const q = query(
-              collection(db, 'control_derrames'), 
+              collection(db, 'empresas_derrames'), 
               where('empresa', '==', editingExp.empresa)
             );
             const snap = await getDocs(q);
@@ -578,7 +578,7 @@ export const Expedientes: React.FC = () => {
           }
 
           if (targetDerrameId) {
-            const derrameRef = doc(db, 'control_derrames', targetDerrameId);
+            const derrameRef = doc(db, 'empresas_derrames', targetDerrameId);
             const derrameSnap = await getDoc(derrameRef);
             
             if (derrameSnap.exists()) {
