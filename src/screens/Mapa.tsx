@@ -4,11 +4,28 @@ import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { PlanEmergencia, EmpresaControlDerrame } from '../types';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, LayersControl, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 // @ts-ignore
 import shpwrite from 'shp-write';
+
+// Component to handle auto-zoom
+const ZoomToMarkers: React.FC<{ planes: any[], osros: any[] }> = ({ planes, osros }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (planes.length === 0 && osros.length === 0) return;
+    
+    const bounds = L.latLngBounds([]);
+    planes.forEach(p => bounds.extend([p.lat, p.lng]));
+    osros.forEach(o => bounds.extend([o.lat, o.lng]));
+    
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+    }
+  }, [planes.length, osros.length, map]);
+  return null;
+};
 
 // Fix for default marker icons in React-Leaflet
 // @ts-ignore
@@ -77,6 +94,11 @@ const parseCoordinates = (coordStr?: string): [number, number][] => {
         let lng = parseFloat(decMatch[2].replace(',', '.'));
         if (!isNaN(lat) && !isNaN(lng)) {
            if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
+              results.push([lng, lat]);
+              continue;
+           }
+           if (lat < -55 && lng > -55 && lng < 0) {
+              // Likely swapped Argentina (e.g. -58, -34)
               results.push([lng, lat]);
               continue;
            }
@@ -161,6 +183,9 @@ const parseCoordinates = (coordStr?: string): [number, number][] => {
             const temp = lat; lat = lng; lng = temp;
          } else if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
             const temp = lat; lat = lng; lng = temp;
+         } else if (lat < -55 && lng > -55 && lng < 0) {
+            // Likely swapped Argentina coordinates (e.g. Lat: -58, Lng: -34)
+            const temp = lat; lat = lng; lng = temp;
          }
          
          results.push([lat, lng]);
@@ -216,7 +241,7 @@ export const Mapa: React.FC = () => {
     });
 
     // Suscripción a Empresas de Control de Derrames
-    const qOsros = query(collection(db, 'empresas_derrames'));
+    const qOsros = query(collection(db, 'control_derrames'));
     const unsubscribeOsros = onSnapshot(qOsros, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmpresaControlDerrame));
       
@@ -337,16 +362,36 @@ export const Mapa: React.FC = () => {
           </div>
         </header>
 
-        <div className="flex-1 relative z-0">
+        <div className="flex-1 relative z-0 bg-slate-100">
           <MapContainer 
             center={[-34.6037, -58.3816]} // Buenos Aires default
             zoom={5} 
             className="h-full w-full"
+            style={{ background: '#f1f5f9' }}
           >
-            <TileLayer
-              attribution='&copy; <a href="https://www.ign.gob.ar/">Instituto Geográfico Nacional de la República Argentina</a>'
-              url="https://wms.ign.gob.ar/geoserver/gwc/service/tms/1.0.0/capabaseargenmap@EPSG%3A3857@png/{z}/{x}/{-y}.png"
-            />
+            <LayersControl position="topright">
+              <LayersControl.BaseLayer checked name="IGN Argenmap (Oficial)">
+                <TileLayer
+                  attribution='&copy; <a href="https://www.ign.gob.ar/">Instituto Geográfico Nacional</a>'
+                  url="https://wms.ign.gob.ar/geoserver/gwc/service/tms/1.0.0/capabaseargenmap@EPSG%3A3857@png/{z}/{x}/{-y}.png"
+                />
+              </LayersControl.BaseLayer>
+              <LayersControl.BaseLayer name="OpenStreetMap">
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+              </LayersControl.BaseLayer>
+              <LayersControl.BaseLayer name="Satélite (ESRI)">
+                <TileLayer
+                  attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                />
+              </LayersControl.BaseLayer>
+            </LayersControl>
+
+            <ZoomToMarkers planes={planes} osros={osros} />
+
             {planes.map(p => (
               <Marker key={p.id} position={[p.lat, p.lng]} icon={getMarkerIcon(p.anexo)}>
                 <Popup className="custom-popup">
