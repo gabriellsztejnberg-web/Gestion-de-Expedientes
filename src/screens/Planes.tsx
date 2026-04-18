@@ -469,8 +469,8 @@ export const Planes: React.FC = () => {
         email: '',
         telefono: '',
         vencimiento: '',
-        formatoDisposicion: undefined,
-        tipoRespuesta: undefined,
+        formatoDisposicion: '',
+        tipoRespuesta: '',
         cantidadBarreras: ''
       } : {})
     };
@@ -479,10 +479,12 @@ export const Planes: React.FC = () => {
       return alert("Debe seleccionar un anexo válido para la empresa.");
     }
 
+    const { id, ...saveData } = planData;
+
     try {
       if (editingPlan.id) {
         const oldPlan = planes.find(p => p.id === editingPlan.id);
-        await updateDoc(doc(db, 'planes', editingPlan.id), planData);
+        await updateDoc(doc(db, 'planes', editingPlan.id), saveData);
 
         // Check if there are new convalidacionesDetalle to create Inspecciones
         if (oldPlan && planData.convalidacionesDetalle) {
@@ -522,7 +524,7 @@ export const Planes: React.FC = () => {
           }
         }
       } else {
-        const newPlanRef = await addDoc(collection(db, 'planes'), planData);
+        const newPlanRef = await addDoc(collection(db, 'planes'), saveData);
         
         // Create inspecciones for new plan if it has convalidacionesDetalle
         if (planData.convalidacionesDetalle) {
@@ -556,8 +558,8 @@ export const Planes: React.FC = () => {
       setIsModalOpen(false);
       setEditingPlan(null);
     } catch (error) {
-      console.error(error);
-      alert("Error al guardar el plan");
+      console.error("Error saving plan:", error);
+      alert("Error al guardar el plan: " + (error instanceof Error ? error.message : "Error desconocido"));
     }
   };
 
@@ -1129,11 +1131,11 @@ export const Planes: React.FC = () => {
                               <th className="px-4 py-4 font-black uppercase text-slate-500 w-24">Juris.</th>
                               <th className="px-4 py-4 font-black uppercase text-slate-500">{activeTab === 'anexo_15' ? 'Prefectura' : 'Empresa / Razón Social'}</th>
                               <th className="px-4 py-4 font-black uppercase text-slate-500 w-48">{activeTab === 'anexo_15' ? 'Nº Disposición IF' : 'Disposición'}</th>
-                              <th className="px-4 py-4 font-black uppercase text-slate-500 w-32 text-center">{activeTab === 'anexo_15' ? 'SIPA' : 'Vencimiento'}</th>
-                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">{activeTab === 'anexo_15' ? 'Pres. 2024' : '1º Conv'}</th>
-                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">{activeTab === 'anexo_15' ? 'Pres. 2025' : '2º Conv'}</th>
-                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">{activeTab === 'anexo_15' ? 'Pres. 2026' : '3º Conv'}</th>
-                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">{activeTab === 'anexo_15' ? 'Pres. 2027' : '4º Conv'}</th>
+                              <th className="px-4 py-4 font-black uppercase text-slate-500 w-32 text-center">{activeTab === 'anexo_15' ? 'SIPA?' : 'Vencimiento'}</th>
+                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">{activeTab === 'anexo_15' ? 'B. Puerto (m)' : '1º Conv'}</th>
+                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">{activeTab === 'anexo_15' ? 'B. Fluv. (m)' : '2º Conv'}</th>
+                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">{activeTab === 'anexo_15' ? 'Skimmers' : '3º Conv'}</th>
+                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">{activeTab === 'anexo_15' ? 'Emb.' : '4º Conv'}</th>
                               <th className="px-4 py-4 font-black uppercase text-slate-500 text-center w-16">Acción</th>
                           </tr>
                       </thead>
@@ -1170,7 +1172,7 @@ export const Planes: React.FC = () => {
                                   </td>
                                   <td className="px-4 py-4 text-center">
                                       {p.anexo === 'anexo_15' ? (
-                                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ${p.isSIPA ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'text-slate-300'}`}>
+                                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase border ${p.isSIPA ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
                                           {p.isSIPA ? 'SIPA' : 'NO'}
                                         </span>
                                       ) : (
@@ -1181,8 +1183,8 @@ export const Planes: React.FC = () => {
                                   </td>
                                   <td className="px-2 py-4 text-center">
                                       {p.anexo === 'anexo_15' ? (
-                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor('', true, !!p.presentacionesAnuales?.find(pr => pr.anio === 2024), p.anexo)}`}>
-                                          {p.presentacionesAnuales?.find(pr => pr.anio === 2024) ? `✅ ${formatDate(p.presentacionesAnuales.find(pr => pr.anio === 2024)!.fecha)}` : 'PENDIENTE'}
+                                        <span className="text-[10px] font-bold text-blue-600">
+                                          {p.sipaEquipamiento?.barrerasPuerto || '0'}m
                                         </span>
                                       ) : (
                                         <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio1 || '', true, !!(p.convalidacionesDetalle?.anio1?.nroIF && p.convalidacionesDetalle?.anio1?.nroExpediente))}`}>
@@ -1192,8 +1194,8 @@ export const Planes: React.FC = () => {
                                   </td>
                                   <td className="px-2 py-4 text-center">
                                       {p.anexo === 'anexo_15' ? (
-                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor('', true, !!p.presentacionesAnuales?.find(pr => pr.anio === 2025), p.anexo)}`}>
-                                          {p.presentacionesAnuales?.find(pr => pr.anio === 2025) ? `✅ ${formatDate(p.presentacionesAnuales.find(pr => pr.anio === 2025)!.fecha)}` : 'PENDIENTE'}
+                                        <span className="text-[10px] font-bold text-blue-600">
+                                          {p.sipaEquipamiento?.barrerasFluvial || '0'}m
                                         </span>
                                       ) : (
                                         <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio2 || '', true, !!(p.convalidacionesDetalle?.anio2?.nroIF && p.convalidacionesDetalle?.anio2?.nroExpediente))}`}>
@@ -1203,8 +1205,8 @@ export const Planes: React.FC = () => {
                                   </td>
                                   <td className="px-2 py-4 text-center">
                                       {p.anexo === 'anexo_15' ? (
-                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor('', true, !!p.presentacionesAnuales?.find(pr => pr.anio === 2026), p.anexo)}`}>
-                                          {p.presentacionesAnuales?.find(pr => pr.anio === 2026) ? `✅ ${formatDate(p.presentacionesAnuales.find(pr => pr.anio === 2026)!.fecha)}` : 'PENDIENTE'}
+                                        <span className="text-[10px] font-bold text-indigo-600">
+                                          {p.sipaEquipamiento?.skimmers || '0'}
                                         </span>
                                       ) : (
                                         <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio3 || '', true, !!(p.convalidacionesDetalle?.anio3?.nroIF && p.convalidacionesDetalle?.anio3?.nroExpediente))}`}>
@@ -1214,8 +1216,8 @@ export const Planes: React.FC = () => {
                                   </td>
                                   <td className="px-2 py-4 text-center">
                                       {p.anexo === 'anexo_15' ? (
-                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor('', true, !!p.presentacionesAnuales?.find(pr => pr.anio === 2027), p.anexo)}`}>
-                                          {p.presentacionesAnuales?.find(pr => pr.anio === 2027) ? `✅ ${formatDate(p.presentacionesAnuales.find(pr => pr.anio === 2027)!.fecha)}` : 'PENDIENTE'}
+                                        <span className="text-[10px] font-bold text-indigo-600">
+                                          {p.sipaEquipamiento?.embarcaciones || '0'}
                                         </span>
                                       ) : (
                                         <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio4 || '', true, !!(p.convalidacionesDetalle?.anio4?.nroIF && p.convalidacionesDetalle?.anio4?.nroExpediente))}`}>
@@ -2148,18 +2150,22 @@ export const Planes: React.FC = () => {
                 </div>
 
                 {/* Registro de Convalidaciones / Presentaciones Anuales (Full Width) */}
-                <div className="md:col-span-3 print:col-span-2">
+                    <div className="md:col-span-3 print:col-span-2">
                   {selectedPlan.anexo === 'anexo_15' ? (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 print:break-inside-avoid">
-                        <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Estación SIPA</h3>
-                        <div className="flex items-center gap-3">
-                           <div className={`size-10 rounded-full flex items-center justify-center ${selectedPlan.isSIPA ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
-                             <span className="material-symbols-outlined">{selectedPlan.isSIPA ? 'shield' : 'shield_off'}</span>
+                      <section className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-xl border border-slate-200 dark:border-slate-700 print:break-inside-avoid shadow-sm hover:shadow-md transition-shadow">
+                        <h3 className="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest border-b border-slate-200 dark:border-slate-700 pb-2">Estación SIPA</h3>
+                        <div className="flex items-center gap-4">
+                           <div className={`size-14 rounded-2xl flex items-center justify-center shrink-0 shadow-sm transition-transform hover:scale-105 ${selectedPlan.isSIPA ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-400 opacity-50'}`}>
+                             <span className="material-symbols-outlined text-3xl font-bold">{selectedPlan.isSIPA ? 'verified' : 'cancel'}</span>
                            </div>
-                           <div>
-                             <p className="text-xs font-black uppercase tracking-tight">{selectedPlan.isSIPA ? 'Posee Estación SIPA' : 'Sin Estación SIPA'}</p>
-                             <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{selectedPlan.isSIPA ? 'Equipamiento disponible en base' : 'Solo Plan Institucional'}</p>
+                           <div className="flex-1 min-w-0">
+                             <p className="text-sm font-black uppercase tracking-tight text-slate-800 dark:text-white truncate">
+                               {selectedPlan.isSIPA ? 'Estación SIPA Operativa' : 'Sin Estación SIPA'}
+                             </p>
+                             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-relaxed mt-1">
+                               {selectedPlan.isSIPA ? 'Equipamiento estratégico disponible en base' : 'Dependencia sin equipamiento de derrame'}
+                             </p>
                            </div>
                         </div>
                         
