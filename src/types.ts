@@ -254,6 +254,16 @@ export interface PlanEmergencia {
   empresaRespuesta?: string;
   empresaRespuestaManual?: string; // Nuevo: Para guardar el texto manual histórico
   cantidadBarreras?: number | string; // Nuevo: para cuando la respuesta es propia
+  
+  // Específicos Anexo 15
+  isSIPA?: boolean;
+  sipaEquipamiento?: BaseOperativa;
+  presentacionesAnuales?: {
+    anio: number;
+    fecha: string;
+    nroIF: string;
+    disposicion: string;
+  }[];
 }
 
 // --- NUEVOS TIPOS PARA EMPRESAS CONTROL DE DERRAMES ---
@@ -320,4 +330,3 @@ export interface EmpresaControlDerrame {
   responsable?: string;
   contacto?: string;
 }
-
