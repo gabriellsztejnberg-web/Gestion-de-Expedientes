@@ -923,12 +923,15 @@ export const Derrames: React.FC = () => {
                         <div className="pt-2">
                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-100 pb-2">Asistencia a Terceros</p>
                           {(() => {
-                             const assistedPlanes = planes.filter(p => p.tipoRespuesta === 'Terceros' && p.empresaRespuesta === selectedEmpresa.empresa);
+                             const assistedPlanes = planes.filter(p => 
+                               (p.tipoRespuesta || '').toLowerCase() === 'terceros' && 
+                               (p.empresaRespuesta || '').trim().toUpperCase() === selectedEmpresa.empresa.trim().toUpperCase()
+                             );
                              return (
                                <div>
                                  <div className="flex items-end gap-3 mb-2">
                                    <span className="text-3xl font-black text-emerald-600 leading-none">{assistedPlanes.length}</span>
-                                   <span className="text-[10px] font-bold text-slate-500 uppercase pb-1">Empresas<br/>Asistidas</span>
+                                   <span className="text-[10px] font-bold text-slate-500 uppercase pb-1">Planes<br/>Asistidos</span>
                                  </div>
                                  <div className="flex flex-wrap gap-1 mt-1 max-h-[80px] overflow-y-auto">
                                    {assistedPlanes.length > 0 ? assistedPlanes.map(p => (
