@@ -333,7 +333,12 @@ export const Planes: React.FC = () => {
     return `${day}/${month}/${year}`;
   };
 
-  const getStatusColor = (dateStr?: string, isConvalidacion = false, isFulfilled = false) => {
+  const getStatusColor = (dateStr?: string, isConvalidacion = false, isFulfilled = false, anexo?: AnexoTipo) => {
+    if (anexo === 'anexo_15') {
+       if (isFulfilled) return 'bg-emerald-100 text-emerald-700 border-emerald-200 font-bold';
+       return 'bg-red-50 text-red-600 border-red-100 font-bold';
+    }
+
     if (isConvalidacion && isFulfilled) {
       return 'bg-emerald-100 text-emerald-700 border-emerald-200 font-bold'; // Convalidado
     }
@@ -449,8 +454,11 @@ export const Planes: React.FC = () => {
       empresaRespuestaManual: (editingPlan.empresaRespuestaManual || '').toUpperCase().trim(),
       anexo: editingPlan.anexo || activeTab,
       ultimaActualizacion: new Date().toISOString(),
-      convalidaciones: editingPlan.convalidaciones || {},
-      convalidacionesDetalle: editingPlan.convalidacionesDetalle || {}
+      convalidaciones: editingPlan.anexo === 'anexo_15' ? {} : (editingPlan.convalidaciones || {}),
+      convalidacionesDetalle: editingPlan.anexo === 'anexo_15' ? {} : (editingPlan.convalidacionesDetalle || {}),
+      isSIPA: editingPlan.isSIPA || false,
+      sipaEquipamiento: editingPlan.sipaEquipamiento || null,
+      presentacionesAnuales: editingPlan.presentacionesAnuales || []
     };
 
     if (planData.anexo === 'general' || !planData.anexo) {
@@ -918,7 +926,8 @@ export const Planes: React.FC = () => {
   const filteredPlanes = planes.filter(p => {
     if (activeTab !== 'general' && p.anexo !== activeTab) return false;
     const matchSearch = p.empresa.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                        (p.disposicion || '').toLowerCase().includes(searchTerm.toLowerCase());
+                        (p.disposicion || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        (p.numeroPlan || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchJur = jurisdictionFilter ? p.dependencia === jurisdictionFilter : true;
     return matchSearch && matchJur;
   });
@@ -1104,13 +1113,13 @@ export const Planes: React.FC = () => {
                       <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm">
                           <tr className="border-b border-slate-200 dark:border-slate-700">
                               <th className="px-4 py-4 font-black uppercase text-slate-500 w-24">Juris.</th>
-                              <th className="px-4 py-4 font-black uppercase text-slate-500">Empresa / Razón Social</th>
-                              <th className="px-4 py-4 font-black uppercase text-slate-500 w-48">Disposición</th>
-                              <th className="px-4 py-4 font-black uppercase text-slate-500 w-32 text-center">Vencimiento</th>
-                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">1º Conv</th>
-                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">2º Conv</th>
-                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">3º Conv</th>
-                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">4º Conv</th>
+                              <th className="px-4 py-4 font-black uppercase text-slate-500">{activeTab === 'anexo_15' ? 'Prefectura' : 'Empresa / Razón Social'}</th>
+                              <th className="px-4 py-4 font-black uppercase text-slate-500 w-48">{activeTab === 'anexo_15' ? 'Nº Disposición IF' : 'Disposición'}</th>
+                              <th className="px-4 py-4 font-black uppercase text-slate-500 w-32 text-center">{activeTab === 'anexo_15' ? 'SIPA' : 'Vencimiento'}</th>
+                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">{activeTab === 'anexo_15' ? 'Pres. 2024' : '1º Conv'}</th>
+                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">{activeTab === 'anexo_15' ? 'Pres. 2025' : '2º Conv'}</th>
+                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">{activeTab === 'anexo_15' ? 'Pres. 2026' : '3º Conv'}</th>
+                              <th className="px-2 py-4 font-black uppercase text-slate-400 text-[10px] text-center w-24">{activeTab === 'anexo_15' ? 'Pres. 2027' : '4º Conv'}</th>
                               <th className="px-4 py-4 font-black uppercase text-slate-500 text-center w-16">Acción</th>
                           </tr>
                       </thead>
@@ -1135,31 +1144,70 @@ export const Planes: React.FC = () => {
                                         </div>
                                       </div>
                                   </td>
-                                  <td className="px-4 py-4 font-mono text-[10px] uppercase text-slate-600 dark:text-slate-400">{p.disposicion || '-'}</td>
+                                  <td className="px-4 py-4 font-mono text-[10px] uppercase text-slate-600 dark:text-slate-400">
+                                    {p.anexo === 'anexo_15' ? (
+                                      <div className="flex flex-col">
+                                        <span>IF: {p.numeroPlan || '-'}</span>
+                                        <span>DISPO: {p.disposicion || '-'}</span>
+                                      </div>
+                                    ) : (
+                                      p.disposicion || '-'
+                                    )}
+                                  </td>
                                   <td className="px-4 py-4 text-center">
-                                      <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase border ${getStatusColor(p.vencimiento)}`}>
-                                          {formatDate(p.vencimiento)}
-                                      </span>
+                                      {p.anexo === 'anexo_15' ? (
+                                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ${p.isSIPA ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'text-slate-300'}`}>
+                                          {p.isSIPA ? 'SIPA' : 'NO'}
+                                        </span>
+                                      ) : (
+                                        <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase border ${getStatusColor(p.vencimiento)}`}>
+                                            {formatDate(p.vencimiento)}
+                                        </span>
+                                      )}
                                   </td>
                                   <td className="px-2 py-4 text-center">
-                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio1 || '', true, !!(p.convalidacionesDetalle?.anio1?.nroIF && p.convalidacionesDetalle?.anio1?.nroExpediente))}`}>
-                                          {!!(p.convalidacionesDetalle?.anio1?.nroIF && p.convalidacionesDetalle?.anio1?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio1)}` : formatDate(p.convalidaciones?.anio1)}
-                                      </span>
+                                      {p.anexo === 'anexo_15' ? (
+                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor('', true, !!p.presentacionesAnuales?.find(pr => pr.anio === 2024), p.anexo)}`}>
+                                          {p.presentacionesAnuales?.find(pr => pr.anio === 2024) ? `✅ ${formatDate(p.presentacionesAnuales.find(pr => pr.anio === 2024)!.fecha)}` : 'PENDIENTE'}
+                                        </span>
+                                      ) : (
+                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio1 || '', true, !!(p.convalidacionesDetalle?.anio1?.nroIF && p.convalidacionesDetalle?.anio1?.nroExpediente))}`}>
+                                            {!!(p.convalidacionesDetalle?.anio1?.nroIF && p.convalidacionesDetalle?.anio1?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio1)}` : formatDate(p.convalidaciones?.anio1)}
+                                        </span>
+                                      )}
                                   </td>
                                   <td className="px-2 py-4 text-center">
-                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio2 || '', true, !!(p.convalidacionesDetalle?.anio2?.nroIF && p.convalidacionesDetalle?.anio2?.nroExpediente))}`}>
-                                          {!!(p.convalidacionesDetalle?.anio2?.nroIF && p.convalidacionesDetalle?.anio2?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio2)}` : formatDate(p.convalidaciones?.anio2)}
-                                      </span>
+                                      {p.anexo === 'anexo_15' ? (
+                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor('', true, !!p.presentacionesAnuales?.find(pr => pr.anio === 2025), p.anexo)}`}>
+                                          {p.presentacionesAnuales?.find(pr => pr.anio === 2025) ? `✅ ${formatDate(p.presentacionesAnuales.find(pr => pr.anio === 2025)!.fecha)}` : 'PENDIENTE'}
+                                        </span>
+                                      ) : (
+                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio2 || '', true, !!(p.convalidacionesDetalle?.anio2?.nroIF && p.convalidacionesDetalle?.anio2?.nroExpediente))}`}>
+                                            {!!(p.convalidacionesDetalle?.anio2?.nroIF && p.convalidacionesDetalle?.anio2?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio2)}` : formatDate(p.convalidaciones?.anio2)}
+                                        </span>
+                                      )}
                                   </td>
                                   <td className="px-2 py-4 text-center">
-                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio3 || '', true, !!(p.convalidacionesDetalle?.anio3?.nroIF && p.convalidacionesDetalle?.anio3?.nroExpediente))}`}>
-                                          {!!(p.convalidacionesDetalle?.anio3?.nroIF && p.convalidacionesDetalle?.anio3?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio3)}` : formatDate(p.convalidaciones?.anio3)}
-                                      </span>
+                                      {p.anexo === 'anexo_15' ? (
+                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor('', true, !!p.presentacionesAnuales?.find(pr => pr.anio === 2026), p.anexo)}`}>
+                                          {p.presentacionesAnuales?.find(pr => pr.anio === 2026) ? `✅ ${formatDate(p.presentacionesAnuales.find(pr => pr.anio === 2026)!.fecha)}` : 'PENDIENTE'}
+                                        </span>
+                                      ) : (
+                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio3 || '', true, !!(p.convalidacionesDetalle?.anio3?.nroIF && p.convalidacionesDetalle?.anio3?.nroExpediente))}`}>
+                                            {!!(p.convalidacionesDetalle?.anio3?.nroIF && p.convalidacionesDetalle?.anio3?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio3)}` : formatDate(p.convalidaciones?.anio3)}
+                                        </span>
+                                      )}
                                   </td>
                                   <td className="px-2 py-4 text-center">
-                                      <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio4 || '', true, !!(p.convalidacionesDetalle?.anio4?.nroIF && p.convalidacionesDetalle?.anio4?.nroExpediente))}`}>
-                                          {!!(p.convalidacionesDetalle?.anio4?.nroIF && p.convalidacionesDetalle?.anio4?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio4)}` : formatDate(p.convalidaciones?.anio4)}
-                                      </span>
+                                      {p.anexo === 'anexo_15' ? (
+                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor('', true, !!p.presentacionesAnuales?.find(pr => pr.anio === 2027), p.anexo)}`}>
+                                          {p.presentacionesAnuales?.find(pr => pr.anio === 2027) ? `✅ ${formatDate(p.presentacionesAnuales.find(pr => pr.anio === 2027)!.fecha)}` : 'PENDIENTE'}
+                                        </span>
+                                      ) : (
+                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio4 || '', true, !!(p.convalidacionesDetalle?.anio4?.nroIF && p.convalidacionesDetalle?.anio4?.nroExpediente))}`}>
+                                            {!!(p.convalidacionesDetalle?.anio4?.nroIF && p.convalidacionesDetalle?.anio4?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio4)}` : formatDate(p.convalidaciones?.anio4)}
+                                        </span>
+                                      )}
                                   </td>
                                   <td className="px-4 py-4 text-center">
                                       <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1447,7 +1495,181 @@ export const Planes: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="md:col-span-2 mt-2 border-t border-slate-200 dark:border-slate-700 pt-4">
+                      {editingPlan?.anexo === 'anexo_15' && (
+                        <div className="md:col-span-2 space-y-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                          <div className="flex items-center gap-4 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800">
+                            <label className="flex items-center gap-3 cursor-pointer group">
+                              <div className="relative">
+                                <input 
+                                  type="checkbox" 
+                                  className="peer sr-only" 
+                                  checked={editingPlan?.isSIPA || false}
+                                  onChange={e => setEditingPlan({...editingPlan!, isSIPA: e.target.checked})}
+                                />
+                                <div className="size-6 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 rounded-lg group-hover:border-primary peer-checked:bg-primary peer-checked:border-primary transition-all"></div>
+                                <span className="absolute inset-0 flex items-center justify-center text-white opacity-0 peer-checked:opacity-100 transition-opacity">
+                                  <span className="material-symbols-outlined text-[16px]">check</span>
+                                </span>
+                              </div>
+                              <div>
+                                <span className="block text-sm font-black uppercase text-slate-800 dark:text-white">Estación SIPA</span>
+                                <span className="block text-[10px] text-slate-500 uppercase font-bold">Marque si esta prefectura posee equipamiento SIPA</span>
+                              </div>
+                            </label>
+                          </div>
+
+                          {editingPlan?.isSIPA && (
+                            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+                              <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-100 dark:border-indigo-900 pb-1">Equipamiento SIPA (Capacidades de la Base)</p>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                  <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1 text-center">Barreras Portuarias (m)</label>
+                                  <input 
+                                    type="number" 
+                                    className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold text-center"
+                                    value={editingPlan.sipaEquipamiento?.barrerasPuerto || ''}
+                                    onChange={e => setEditingPlan({...editingPlan!, sipaEquipamiento: { ...editingPlan!.sipaEquipamiento || {}, barrerasPuerto: e.target.value }})}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1 text-center">Fluvial / Lacustre (m)</label>
+                                  <input 
+                                    type="number" 
+                                    className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold text-center"
+                                    value={editingPlan.sipaEquipamiento?.barrerasFluvial || ''}
+                                    onChange={e => setEditingPlan({...editingPlan!, sipaEquipamiento: { ...editingPlan!.sipaEquipamiento || {}, barrerasFluvial: e.target.value }})}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1 text-center">Marítimas (m)</label>
+                                  <input 
+                                    type="number" 
+                                    className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold text-center"
+                                    value={editingPlan.sipaEquipamiento?.barrerasMaritima || ''}
+                                    onChange={e => setEditingPlan({...editingPlan!, sipaEquipamiento: { ...editingPlan!.sipaEquipamiento || {}, barrerasMaritima: e.target.value }})}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1 text-center">Skimmers</label>
+                                  <input 
+                                    type="number" 
+                                    className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold text-center"
+                                    value={editingPlan.sipaEquipamiento?.skimmers || ''}
+                                    onChange={e => setEditingPlan({...editingPlan!, sipaEquipamiento: { ...editingPlan!.sipaEquipamiento || {}, skimmers: e.target.value ? Number(e.target.value) : undefined }})}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1 text-center">Embarcaciones</label>
+                                  <input 
+                                    type="number" 
+                                    className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold text-center"
+                                    value={editingPlan.sipaEquipamiento?.embarcaciones || ''}
+                                    onChange={e => setEditingPlan({...editingPlan!, sipaEquipamiento: { ...editingPlan!.sipaEquipamiento || {}, embarcaciones: e.target.value ? Number(e.target.value) : undefined }})}
+                                  />
+                                </div>
+                                <div className="md:col-span-3">
+                                  <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">Otros Materiales y Capacidad</label>
+                                  <textarea 
+                                    className="w-full px-3 py-2 text-xs border rounded dark:bg-slate-800 dark:border-slate-700 outline-none min-h-[60px]"
+                                    value={editingPlan.sipaEquipamiento?.materiales || ''}
+                                    onChange={e => setEditingPlan({...editingPlan!, sipaEquipamiento: { ...editingPlan!.sipaEquipamiento || {}, materiales: e.target.value }})}
+                                    placeholder="Detalle de equipamiento adicional..."
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="space-y-3">
+                             <div className="flex justify-between items-center">
+                                <p className="text-[10px] font-black uppercase text-slate-400">Presentaciones Anuales del Plan</p>
+                                <button 
+                                  type="button" 
+                                  onClick={() => {
+                                    const nextYear = new Date().getFullYear();
+                                    const presents = [...(editingPlan.presentacionesAnuales || [])];
+                                    presents.push({ anio: nextYear, fecha: new Date().toISOString().split('T')[0], nroIF: '', disposicion: '' });
+                                    setEditingPlan({...editingPlan!, presentacionesAnuales: presents});
+                                  }}
+                                  className="text-[9px] font-black uppercase text-primary hover:underline flex items-center gap-1"
+                                >
+                                  <span className="material-symbols-outlined text-sm">add</span> Agregar Presentación
+                                </button>
+                             </div>
+                             
+                             <div className="grid grid-cols-1 gap-2">
+                               {editingPlan.presentacionesAnuales?.sort((a,b) => b.anio - a.anio).map((pr, idx) => (
+                                 <div key={idx} className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-wrap gap-4 items-end">
+                                   <div className="w-20">
+                                     <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Año</label>
+                                     <input 
+                                       type="number" 
+                                       className="w-full px-2 py-1 border rounded text-xs font-bold" 
+                                       value={pr.anio} 
+                                       onChange={e => {
+                                          const presents = [...editingPlan.presentacionesAnuales!];
+                                          presents[idx].anio = Number(e.target.value);
+                                          setEditingPlan({...editingPlan!, presentacionesAnuales: presents});
+                                       }}
+                                     />
+                                   </div>
+                                   <div className="w-32">
+                                     <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Fecha Pres.</label>
+                                     <input 
+                                       type="date" 
+                                       className="w-full px-2 py-1 border rounded text-xs" 
+                                       value={pr.fecha} 
+                                       onChange={e => {
+                                          const presents = [...editingPlan.presentacionesAnuales!];
+                                          presents[idx].fecha = e.target.value;
+                                          setEditingPlan({...editingPlan!, presentacionesAnuales: presents});
+                                       }}
+                                     />
+                                   </div>
+                                   <div className="flex-1 min-w-[120px]">
+                                     <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Nº IF (Plan)</label>
+                                     <input 
+                                       className="w-full px-2 py-1 border rounded text-xs font-mono uppercase" 
+                                       value={pr.nroIF} 
+                                       onChange={e => {
+                                          const presents = [...editingPlan.presentacionesAnuales!];
+                                          presents[idx].nroIF = e.target.value;
+                                          setEditingPlan({...editingPlan!, presentacionesAnuales: presents});
+                                       }}
+                                     />
+                                   </div>
+                                   <div className="flex-1 min-w-[120px]">
+                                     <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Nº Disposición</label>
+                                     <input 
+                                       className="w-full px-2 py-1 border rounded text-xs font-mono uppercase" 
+                                       value={pr.disposicion} 
+                                       onChange={e => {
+                                          const presents = [...editingPlan.presentacionesAnuales!];
+                                          presents[idx].disposicion = e.target.value;
+                                          setEditingPlan({...editingPlan!, presentacionesAnuales: presents});
+                                       }}
+                                     />
+                                   </div>
+                                   <button 
+                                     type="button"
+                                     onClick={() => {
+                                        const presents = [...editingPlan.presentacionesAnuales!];
+                                        presents.splice(idx, 1);
+                                        setEditingPlan({...editingPlan!, presentacionesAnuales: presents});
+                                     }}
+                                     className="text-red-400 hover:text-red-600 p-1"
+                                   >
+                                     <span className="material-symbols-outlined text-sm">delete</span>
+                                   </button>
+                                 </div>
+                               ))}
+                             </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {editingPlan?.anexo !== 'anexo_15' && (
+                        <div className="md:col-span-2 mt-2 border-t border-slate-200 dark:border-slate-700 pt-4">
                         <div className="col-span-full">
                           <p className="text-[10px] font-black uppercase text-slate-400 mb-4">Registro de Convalidaciones Anuales</p>
                         </div>
@@ -1559,6 +1781,7 @@ export const Planes: React.FC = () => {
                           })}
                         </div>
                       </div>
+                    )}
 
                       <div className="md:col-span-2">
                         <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Observaciones</label>
@@ -1875,10 +2098,84 @@ export const Planes: React.FC = () => {
                   </section>
                 </div>
 
-                {/* Registro de Convalidaciones (Full Width) */}
+                {/* Registro de Convalidaciones / Presentaciones Anuales (Full Width) */}
                 <div className="md:col-span-3 print:col-span-2">
-                  <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 print:break-inside-avoid">
-                    <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Registro de Convalidaciones</h3>
+                  {selectedPlan.anexo === 'anexo_15' ? (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 print:break-inside-avoid">
+                        <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Estación SIPA</h3>
+                        <div className="flex items-center gap-3">
+                           <div className={`size-10 rounded-full flex items-center justify-center ${selectedPlan.isSIPA ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                             <span className="material-symbols-outlined">{selectedPlan.isSIPA ? 'shield' : 'shield_off'}</span>
+                           </div>
+                           <div>
+                             <p className="text-xs font-black uppercase tracking-tight">{selectedPlan.isSIPA ? 'Posee Estación SIPA' : 'Sin Estación SIPA'}</p>
+                             <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{selectedPlan.isSIPA ? 'Equipamiento disponible en base' : 'Solo Plan Institucional'}</p>
+                           </div>
+                        </div>
+                        
+                        {selectedPlan.isSIPA && selectedPlan.sipaEquipamiento && (
+                          <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
+                             <div className="grid grid-cols-2 gap-2">
+                               <div className="bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700">
+                                 <p className="text-[8px] font-bold text-slate-400 uppercase">Barreras (Total)</p>
+                                 <p className="text-xs font-black text-blue-600">
+                                   {(Number(selectedPlan.sipaEquipamiento.barrerasPuerto || 0) + Number(selectedPlan.sipaEquipamiento.barrerasFluvial || 0) + Number(selectedPlan.sipaEquipamiento.barrerasMaritima || 0))}m
+                                 </p>
+                               </div>
+                               <div className="bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700">
+                                 <p className="text-[8px] font-bold text-slate-400 uppercase">Skimmers</p>
+                                 <p className="text-xs font-black text-blue-600">{selectedPlan.sipaEquipamiento.skimmers || 0}</p>
+                               </div>
+                               <div className="bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700">
+                                 <p className="text-[8px] font-bold text-slate-400 uppercase">Embarcaciones</p>
+                                 <p className="text-xs font-black text-blue-600">{selectedPlan.sipaEquipamiento.embarcaciones || 0}</p>
+                               </div>
+                             </div>
+                             {selectedPlan.sipaEquipamiento.materiales && (
+                               <div>
+                                 <p className="text-[8px] font-bold text-slate-400 uppercase mb-1">Materiales Detallados</p>
+                                 <p className="text-[10px] text-slate-600 dark:text-slate-400 italic bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700">
+                                   {selectedPlan.sipaEquipamiento.materiales}
+                                 </p>
+                               </div>
+                             )}
+                          </div>
+                        )}
+                      </section>
+
+                      <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 md:col-span-2 print:break-inside-avoid">
+                        <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Historial de Presentaciones Anuales</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {selectedPlan.presentacionesAnuales?.sort((a,b) => b.anio - a.anio).map((pr, idx) => (
+                            <div key={idx} className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                              <div className="flex justify-between items-center mb-2 border-b border-slate-100 dark:border-slate-800 pb-1">
+                                <span className="text-sm font-black text-primary">AÑO {pr.anio}</span>
+                                <span className="text-[9px] font-bold text-slate-400 uppercase">{formatDate(pr.fecha)}</span>
+                              </div>
+                              <div className="space-y-1">
+                                <div className="flex justify-between">
+                                  <span className="text-[8px] font-bold text-slate-400 uppercase">Nº IF PLAN:</span>
+                                  <span className="text-[9px] font-mono font-bold text-slate-600 dark:text-slate-400">{pr.nroIF || 'S/D'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-[8px] font-bold text-slate-400 uppercase">DISPOSICIÓN:</span>
+                                  <span className="text-[9px] font-mono font-bold text-slate-600 dark:text-slate-400">{pr.disposicion || 'S/D'}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {(!selectedPlan.presentacionesAnuales || selectedPlan.presentacionesAnuales.length === 0) && (
+                            <div className="col-span-full py-6 text-center">
+                              <p className="text-[10px] text-slate-400 italic font-bold">Sin presentaciones registradas</p>
+                            </div>
+                          )}
+                        </div>
+                      </section>
+                    </div>
+                  ) : (
+                    <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 print:break-inside-avoid">
+                      <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Registro de Convalidaciones</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {(['anio1', 'anio2', 'anio3', 'anio4'] as const).map((y, i) => {
                         const dateVal = (selectedPlan.convalidaciones as any)?.[y];
@@ -1911,7 +2208,8 @@ export const Planes: React.FC = () => {
                       )}
                     </div>
                   </section>
-                </div>
+                )}
+              </div>
 
               </div>
             </div>
