@@ -19,7 +19,7 @@ import {
   getDocs,
   writeBatch
 } from 'firebase/firestore';
-import { PlanEmergencia, AnexoTipo, User, Case, Inspeccion, TimelineEvent, ANEXOS } from '../types';
+import { PlanEmergencia, AnexoTipo, User, Case, Inspeccion, TimelineEvent, ANEXOS, EmpresaControlDerrame } from '../types';
 import { extractPlanesFromPDF } from '../services/geminiService';
 
 // Fix for default marker icon in Leaflet
@@ -148,6 +148,7 @@ export const Planes: React.FC = () => {
   const navigate = useNavigate();
   const [planes, setPlanes] = useState<PlanEmergencia[]>([]);
   const [auditores, setAuditores] = useState<any[]>([]);
+  const [derrames, setDerrames] = useState<EmpresaControlDerrame[]>([]);
   const [activeTab, setActiveTab] = useState<AnexoTipo | 'general'>('general');
   const [searchTerm, setSearchTerm] = useState('');
   const [jurisdictionFilter, setJurisdictionFilter] = useState('');
@@ -274,11 +275,15 @@ export const Planes: React.FC = () => {
     const unsubAuditores = onSnapshot(collection(db, 'auditores'), (snap) => {
       setAuditores(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
+    const unsubDerrames = onSnapshot(collection(db, 'control_derrames'), (snap) => {
+      setDerrames(snap.docs.map(d => ({ id: d.id, ...d.data() } as EmpresaControlDerrame)));
+    });
     return () => {
       unsubExp();
       unsubInsp();
       unsubMov();
       unsubAuditores();
+      unsubDerrames();
     };
   }, []);
 
@@ -1364,13 +1369,17 @@ export const Planes: React.FC = () => {
                         <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa de Respuesta (Si es de terceros)</label>
-                            <input 
-                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase" 
+                            <select 
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase text-xs font-bold" 
                               value={editingPlan?.empresaRespuesta || ''} 
                               onChange={e => setEditingPlan({...editingPlan!, empresaRespuesta: e.target.value})}
                               disabled={editingPlan?.tipoRespuesta !== 'terceros'}
-                              placeholder="Empresa OSRO habilitada..."
-                            />
+                            >
+                              <option value="">-- SELECCIONAR OSRO --</option>
+                              {derrames.sort((a,b) => a.empresa.localeCompare(b.empresa)).map(d => (
+                                <option key={d.id} value={d.empresa}>{d.empresa}</option>
+                              ))}
+                            </select>
                           </div>
                           <div>
                             <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Metros de Barrera (Si es propia)</label>
