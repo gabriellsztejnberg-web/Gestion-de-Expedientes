@@ -240,13 +240,20 @@ export const Mapa: React.FC = () => {
       setPlanes(mappedPlanes as any);
     });
 
-    // Suscripción a Empresas de Control de Derrames
-    const qOsros = query(collection(db, 'empresas_derrames'));
-    const unsubscribeOsros = onSnapshot(qOsros, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmpresaControlDerrame));
+    // Suscripción a Empresas de Control de Derrames (Escuchamos ambas colecciones posibles)
+    const q1 = query(collection(db, 'empresas_derrames'));
+    const q2 = query(collection(db, 'control_derrames'));
+
+    const updateOsros = (snap1: any, snap2: any) => {
+      const docs1 = snap1.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+      const docs2 = snap2.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
       
-      const mappedOsros = docs.flatMap(o => {
-        return (o.basesOperativas || []).flatMap(base => {
+      const combined = [...docs1];
+      const seenIds = new Set(docs1.map((d: any) => d.id));
+      docs2.forEach((d: any) => { if (!seenIds.has(d.id)) { combined.push(d); seenIds.add(d.id); } });
+
+      const mappedOsros = combined.flatMap(o => {
+        return (o.basesOperativas || []).flatMap((base: any) => {
           const coordsArray = parseCoordinates(base.coordenadas);
           return coordsArray.map((coords, index) => ({
             ...base,
@@ -261,11 +268,17 @@ export const Mapa: React.FC = () => {
         });
       });
       setOsros(mappedOsros);
-    });
+    };
+
+    let s1: any = { docs: [] };
+    let s2: any = { docs: [] };
+    const unsubOsros1 = onSnapshot(q1, (s) => { s1 = s; updateOsros(s1, s2); });
+    const unsubOsros2 = onSnapshot(q2, (s) => { s2 = s; updateOsros(s1, s2); });
 
     return () => {
       unsubscribePlanes();
-      unsubscribeOsros();
+      unsubOsros1();
+      unsubOsros2();
     };
   }, []);
 
