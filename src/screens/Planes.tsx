@@ -416,6 +416,7 @@ export const Planes: React.FC = () => {
 
     const planData = {
       ...editingPlan,
+      empresaRespuesta: (editingPlan.empresaRespuesta || '').toUpperCase().trim(),
       anexo: editingPlan.anexo || activeTab,
       ultimaActualizacion: new Date().toISOString(),
       convalidaciones: editingPlan.convalidaciones || {},
@@ -1368,22 +1369,20 @@ export const Planes: React.FC = () => {
                         </div>
                         <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa de Respuesta (Si es de terceros)</label>
-                            <select 
+                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa de Respuesta (EMCODECON)</label>
+                            <input 
+                              list="emcodecon-list"
                               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase text-xs font-bold" 
                               value={editingPlan?.empresaRespuesta || ''} 
                               onChange={e => setEditingPlan({...editingPlan!, empresaRespuesta: e.target.value})}
+                              placeholder="ESCRIBIR O SELECCIONAR EMCODECON"
                               disabled={editingPlan?.tipoRespuesta !== 'terceros'}
-                            >
-                              <option value="">-- SELECCIONAR OSRO --</option>
-                              {/* Fallback para mostrar valores existentes que no estén en la lista y evitar que se borren al abrir el modal */}
-                              {editingPlan?.empresaRespuesta && !derrames.some(d => d.empresa === editingPlan.empresaRespuesta) && (
-                                <option value={editingPlan.empresaRespuesta}>{editingPlan.empresaRespuesta} (Valor Anterior)</option>
-                              )}
+                            />
+                            <datalist id="emcodecon-list">
                               {derrames.sort((a,b) => a.empresa.localeCompare(b.empresa)).map(d => (
-                                <option key={d.id} value={d.empresa}>{d.empresa}</option>
+                                <option key={d.id} value={d.empresa} />
                               ))}
-                            </select>
+                            </datalist>
                           </div>
                           <div>
                             <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Metros de Barrera (Si es propia)</label>
