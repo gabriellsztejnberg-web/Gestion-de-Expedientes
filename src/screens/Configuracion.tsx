@@ -13,7 +13,9 @@ const COLLECTIONS = [
   'auditores',
   'inspecciones',
   'asistencia',
-  'planes'
+  'planes',
+  'empresas_derrames',
+  'control_derrames'
 ];
 
 export const Configuracion: React.FC = () => {
@@ -49,6 +51,24 @@ export const Configuracion: React.FC = () => {
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [isChecking, setIsChecking] = useState(false);
+
+  const checkCounts = async () => {
+    setIsChecking(true);
+    const newCounts: Record<string, number> = {};
+    for (const col of COLLECTIONS) {
+      try {
+        const snap = await getDocs(collection(db, col));
+        newCounts[col] = snap.size;
+      } catch (e) {
+        newCounts[col] = -1;
+      }
+    }
+    setCounts(newCounts);
+    setIsChecking(false);
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -125,6 +145,40 @@ export const Configuracion: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               
+              {/* Card Auditoría de Datos */}
+              <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm col-span-1 md:col-span-2">
+                <div className="flex justify-between items-center mb-6">
+                   <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase">Estado de la Base de Datos</h3>
+                   <button 
+                     onClick={checkCounts}
+                     disabled={isChecking}
+                     className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-black uppercase hover:bg-slate-200 transition-all flex items-center gap-2"
+                   >
+                     <span className={`material-symbols-outlined text-sm ${isChecking ? 'animate-spin' : ''}`}>sync</span>
+                     Verificar Cantidades
+                   </button>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {Object.entries(counts).map(([col, count]) => (
+                    <div key={col} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                      <p className="text-[9px] font-black uppercase text-slate-400 mb-1 truncate">{col}</p>
+                      <p className={`text-xl font-black ${count > 0 ? 'text-primary' : count === 0 ? 'text-slate-300' : 'text-red-500'}`}>
+                        {count === -1 ? 'Err' : count}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                {counts['control_derrames'] > 0 && counts['empresas_derrames'] === 0 && (
+                  <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-4 text-amber-800">
+                    <span className="material-symbols-outlined text-3xl">warning</span>
+                    <div>
+                      <p className="text-xs font-black uppercase">Atención: Desfase de Colección</p>
+                      <p className="text-[10px] font-medium">Se detectaron datos en 'control_derrames' pero no en 'empresas_derrames'. Es posible que debas migrar los datos.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Card Exportar */}
               <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
                 <div className="size-16 bg-blue-100 dark:bg-blue-900/30 text-blue-600 rounded-full flex items-center justify-center mb-6">
