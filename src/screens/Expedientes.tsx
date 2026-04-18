@@ -592,14 +592,14 @@ export const Expedientes: React.FC = () => {
                   formatoDisposicion: derrameData.formatoDisposicion || '',
                   fechaArchivo: new Date().toISOString(),
                   documentacionExtra: derrameData.documentacionExtra || '',
-                  inspeccionIntermedia: derrameData.inspeccionIntermedia
+                  inspeccionesIntermedias: derrameData.inspeccionesIntermedias || []
                 });
               }
 
               const derrameUpdates: any = {
                 disposicion: movData.nroDisposicion,
                 vencimiento: movData.vencimiento,
-                inspeccionIntermedia: null, // Clear intermediate inspection on renewal
+                inspeccionesIntermedias: [], // Clear intermediate inspections on renewal
                 historialDisposiciones: historial,
                 ultimaActualizacion: new Date().toISOString()
               };
