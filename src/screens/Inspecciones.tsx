@@ -99,7 +99,7 @@ export const Inspecciones: React.FC = () => {
       setPlanes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlanEmergencia)));
     });
 
-    const qDerrames = query(collection(db, 'control_derrames'), orderBy('empresa', 'asc'));
+    const qDerrames = query(collection(db, 'empresas_derrames'), orderBy('empresa', 'asc'));
     const unsubscribeDerrames = onSnapshot(qDerrames, (snapshot) => {
       setDerrames(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmpresaControlDerrame)));
     });
@@ -236,7 +236,7 @@ export const Inspecciones: React.FC = () => {
 
       if (targetPlanId && dataToSave.resultado === 'APROBADO') {
         const isDerrame = dataToSave.anexo === 'derrames';
-        const collName = isDerrame ? 'control_derrames' : 'planes';
+        const collName = isDerrame ? 'empresas_derrames' : 'planes';
         const planRef = doc(db, collName, targetPlanId);
         const planSnap = await getDoc(planRef);
         
