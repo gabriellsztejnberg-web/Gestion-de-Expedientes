@@ -275,15 +275,44 @@ export const Planes: React.FC = () => {
     const unsubAuditores = onSnapshot(collection(db, 'auditores'), (snap) => {
       setAuditores(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    const unsubDerrames = onSnapshot(collection(db, 'empresas_derrames'), (snap) => {
-      setDerrames(snap.docs.map(d => ({ id: d.id, ...d.data() } as EmpresaControlDerrame)));
+
+    // Escuchamos ambas colecciones de EMCODECON para completar el listado
+    const qDerrames1 = query(collection(db, 'empresas_derrames'));
+    const qDerrames2 = query(collection(db, 'control_derrames'));
+    
+    let snapDerrames1: any = { docs: [] };
+    let snapDerrames2: any = { docs: [] };
+
+    const mergeDerrames = (s1: any, s2: any) => {
+      const docs1 = s1.docs.map((d: any) => ({ id: d.id, ...d.data() } as EmpresaControlDerrame));
+      const docs2 = s2.docs.map((d: any) => ({ id: d.id, ...d.data() } as EmpresaControlDerrame));
+      const combined = [...docs1];
+      const seenIds = new Set(docs1.map((d: any) => d.id));
+      docs2.forEach((d: any) => {
+        if (!seenIds.has(d.id)) {
+          combined.push(d);
+          seenIds.add(d.id);
+        }
+      });
+      setDerrames(combined);
+    };
+
+    const unsubDerrames1 = onSnapshot(qDerrames1, (snap) => {
+      snapDerrames1 = snap;
+      mergeDerrames(snapDerrames1, snapDerrames2);
     });
+    const unsubDerrames2 = onSnapshot(qDerrames2, (snap) => {
+      snapDerrames2 = snap;
+      mergeDerrames(snapDerrames1, snapDerrames2);
+    });
+
     return () => {
       unsubExp();
       unsubInsp();
       unsubMov();
       unsubAuditores();
-      unsubDerrames();
+      unsubDerrames1();
+      unsubDerrames2();
     };
   }, []);
 
