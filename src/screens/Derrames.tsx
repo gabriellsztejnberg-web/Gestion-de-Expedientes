@@ -86,16 +86,40 @@ export const Derrames: React.FC = () => {
   const isJefe = (currentUser.role || '').toLowerCase() === 'jefe' || (currentUser.role || '').toLowerCase() === 'admin';
 
   useEffect(() => {
-    const q = query(collection(db, 'empresas_derrames'), orderBy('empresa', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmpresaControlDerrame));
-      setEmpresas(docs);
+    // Escuchamos ambas colecciones para no perder datos por cambios de nombre
+    const q1 = query(collection(db, 'empresas_derrames'), orderBy('empresa', 'asc'));
+    const q2 = query(collection(db, 'control_derrames'), orderBy('empresa', 'asc'));
+
+    const updateList = (snap1: any, snap2: any) => {
+      const docs1 = snap1.docs.map((doc: any) => ({ id: doc.id, ...doc.data(), _source: 'empresas_derrames' }) as EmpresaControlDerrame);
+      const docs2 = snap2.docs.map((doc: any) => ({ id: doc.id, ...doc.data(), _source: 'control_derrames' }) as EmpresaControlDerrame);
+      
+      // Combinar y eliminar duplicados por ID (priorizando empresas_derrames)
+      const combined = [...docs1];
+      const seenIds = new Set(docs1.map((d: any) => d.id));
+      
+      docs2.forEach((d: any) => {
+        if (!seenIds.has(d.id)) {
+          combined.push(d);
+          seenIds.add(d.id);
+        }
+      });
+
+      const sorted = combined.sort((a, b) => a.empresa.localeCompare(b.empresa));
+      setEmpresas(sorted);
+      
       if (selectedEmpresa) {
-        const updated = docs.find(d => d.id === selectedEmpresa.id);
+        const updated = sorted.find(d => d.id === selectedEmpresa.id);
         if (updated) setSelectedEmpresa(updated);
       }
       setIsLoading(false);
-    });
+    };
+
+    let snap1: any = { docs: [] };
+    let snap2: any = { docs: [] };
+
+    const unsub1 = onSnapshot(q1, (s) => { snap1 = s; updateList(snap1, snap2); });
+    const unsub2 = onSnapshot(q2, (s) => { snap2 = s; updateList(snap1, snap2); });
 
     const qCases = query(collection(db, 'expedientes'));
     const unsubCases = onSnapshot(qCases, (snapshot) => {
@@ -113,7 +137,8 @@ export const Derrames: React.FC = () => {
     });
 
     return () => {
-      unsubscribe();
+      unsub1();
+      unsub2();
       unsubCases();
       unsubInsp();
       unsubPlanes();
@@ -143,8 +168,11 @@ export const Derrames: React.FC = () => {
         ultimaActualizacion: new Date().toISOString()
       };
 
+      const sourceCol = (editingEmpresa as any)._source || 'empresas_derrames';
+
       if (editingEmpresa.id) {
-        await updateDoc(doc(db, 'empresas_derrames', editingEmpresa.id), dataToSave);
+        const { _source, ...rest } = editingEmpresa as any;
+        await updateDoc(doc(db, sourceCol, editingEmpresa.id), dataToSave);
       } else {
         await addDoc(collection(db, 'empresas_derrames'), dataToSave);
       }
@@ -188,7 +216,8 @@ export const Derrames: React.FC = () => {
         currentBases.push(newBaseData);
       }
 
-      await updateDoc(doc(db, 'empresas_derrames', selectedEmpresaId), {
+      const sourceCol = (empresaDoc as any)._source || 'empresas_derrames';
+      await updateDoc(doc(db, sourceCol, selectedEmpresaId), {
         basesOperativas: currentBases,
         ultimaActualizacion: new Date().toISOString()
       });
@@ -206,8 +235,9 @@ export const Derrames: React.FC = () => {
     const empresaDoc = empresas.find(e => e.id === empresaId);
     if (!empresaDoc) return;
 
+    const sourceCol = (empresaDoc as any)._source || 'empresas_derrames';
     const currentBases = (empresaDoc.basesOperativas || []).filter(b => b.id !== baseId);
-    await updateDoc(doc(db, 'empresas_derrames', empresaId), {
+    await updateDoc(doc(db, sourceCol, empresaId), {
       basesOperativas: currentBases,
       ultimaActualizacion: new Date().toISOString()
     });
@@ -215,8 +245,11 @@ export const Derrames: React.FC = () => {
 
   const handleDeleteEmpresa = async (id: string) => {
     if (!confirm("¿Eliminar empresa permanentemente?")) return;
+    const empresaDoc = empresas.find(e => e.id === id);
+    const sourceCol = (empresaDoc as any)?._source || 'empresas_derrames';
+    
     try {
-      await deleteDoc(doc(db, 'empresas_derrames', id));
+      await deleteDoc(doc(db, sourceCol, id));
     } catch (error) {
       alert("Error al eliminar");
     }
@@ -397,6 +430,7 @@ export const Derrames: React.FC = () => {
               const dataToSave = {
                 categoria: getCsvVal(row, ['categoria']).toString().toUpperCase() || existingEmpresa?.categoria || '',
                 empresa: empresaFinal,
+                dependencia: getCsvVal(row, ['jurisdiccion', 'dependencia']).toString().toUpperCase() || existingEmpresa?.dependencia || '',
                 cuit: getCsvVal(row, ['cuit']).toString() || existingEmpresa?.cuit || '',
                 domicilio: getCsvVal(row, ['direccion', 'domicilio']).toString().toUpperCase() || existingEmpresa?.domicilio || '',
                 email: getCsvVal(row, ['mail', 'e-mail', 'email']).toString() || existingEmpresa?.email || '',
@@ -440,8 +474,8 @@ export const Derrames: React.FC = () => {
   };
 
   const filteredEmpresas = empresas.filter(e => 
-    e.empresa.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    e.dependencia.toLowerCase().includes(searchTerm.toLowerCase())
+    (e.empresa || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (e.dependencia || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
