@@ -124,7 +124,12 @@ export interface Inspeccion {
   expedienteNumero?: string; // Cache del numero GDE para visualización rápida
   auditorId: string;
   auditorNombre: string;
+  auditorIdSecundario?: string;
+  auditorNombreSecundario?: string;
+  auditoresVarios?: string; // Para poner nombres separados por comas/espacios
   ubicacion: string;
+  baseId?: string; // Para EMCODECON, vincular a una base especifica
+  baseNombre?: string;
   jurisdiccion?: string; // Nuevo campo: Jurisdicción Prefectura
   tipo: string; // Ej: Habilitación, Renovación, Denuncia
   resultado: ResultadoInspeccion;
@@ -247,6 +252,7 @@ export interface PlanEmergencia {
   contactoPlan?: string;
   tipoRespuesta?: 'propia' | 'terceros' | '';
   empresaRespuesta?: string;
+  empresaRespuestaManual?: string; // Nuevo: Para guardar el texto manual histórico
   cantidadBarreras?: number | string; // Nuevo: para cuando la respuesta es propia
 }
 
@@ -267,6 +273,15 @@ export interface BaseOperativa {
   observaciones?: string;
 }
 
+export interface InspeccionIntermedia {
+  id?: string;
+  fecha?: string;
+  auditorNombre?: string;
+  nroCertificado?: string;
+  nroExpediente?: string;
+  baseNombre?: string;
+}
+
 export interface EmpresaControlDerrame {
   id: string;
   categoria?: string;
@@ -285,19 +300,14 @@ export interface EmpresaControlDerrame {
     anio1?: ConvalidacionDetalle;
     anio2?: ConvalidacionDetalle;
   };
-  inspeccionIntermedia?: {
-    fecha?: string;
-    auditorNombre?: string;
-    nroCertificado?: string;
-    nroExpediente?: string;
-  };
+  inspeccionesIntermedias?: InspeccionIntermedia[];
   basesOperativas: BaseOperativa[];
   historialDisposiciones?: {
     disposicion: string;
     vencimiento: string;
     formatoDisposicion?: 'digital' | 'papel' | '';
     fechaArchivo: string;
-    inspeccionIntermedia: any;
+    inspeccionesIntermedias: any;
     documentacionExtra?: string;
   }[];
   observaciones?: string;
@@ -310,3 +320,4 @@ export interface EmpresaControlDerrame {
   responsable?: string;
   contacto?: string;
 }
+
