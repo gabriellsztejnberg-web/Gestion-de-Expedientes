@@ -626,7 +626,7 @@ export const Inspecciones: React.FC = () => {
                         </optgroup>
                         <optgroup label="CONTROL DE DERRAMES">
                           {derrames.map(d => (
-                            <option key={`derrame_${d.id}`} value={`derrame_${d.id}`}>{d.empresa} (OSRO)</option>
+                            <option key={`derrame_${d.id}`} value={`derrame_${d.id}`}>{d.empresa} (EMCODECON)</option>
                           ))}
                         </optgroup>
                      </select>
