@@ -159,16 +159,19 @@ export const Configuracion: React.FC = () => {
                    </button>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {Object.entries(counts).map(([col, count]) => (
-                    <div key={col} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
-                      <p className="text-[9px] font-black uppercase text-slate-400 mb-1 truncate">{col}</p>
-                      <p className={`text-xl font-black ${count > 0 ? 'text-primary' : count === 0 ? 'text-slate-300' : 'text-red-500'}`}>
-                        {count === -1 ? 'Err' : count}
-                      </p>
-                    </div>
-                  ))}
+                  {Object.entries(counts).map(([col, count]) => {
+                    const n = count as number;
+                    return (
+                      <div key={col} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                        <p className="text-[9px] font-black uppercase text-slate-400 mb-1 truncate">{col}</p>
+                        <p className={`text-xl font-black ${n > 0 ? 'text-primary' : n === 0 ? 'text-slate-300' : 'text-red-500'}`}>
+                          {n === -1 ? 'Err' : n}
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
-                {counts['control_derrames'] > 0 && counts['empresas_derrames'] === 0 && (
+                {(counts['control_derrames'] || 0) > 0 && (counts['empresas_derrames'] === 0) && (
                   <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-4 text-amber-800">
                     <span className="material-symbols-outlined text-3xl">warning</span>
                     <div>
