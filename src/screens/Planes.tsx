@@ -275,7 +275,7 @@ export const Planes: React.FC = () => {
     const unsubAuditores = onSnapshot(collection(db, 'auditores'), (snap) => {
       setAuditores(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    const unsubDerrames = onSnapshot(collection(db, 'control_derrames'), (snap) => {
+    const unsubDerrames = onSnapshot(collection(db, 'empresas_derrames'), (snap) => {
       setDerrames(snap.docs.map(d => ({ id: d.id, ...d.data() } as EmpresaControlDerrame)));
     });
     return () => {
@@ -1376,6 +1376,10 @@ export const Planes: React.FC = () => {
                               disabled={editingPlan?.tipoRespuesta !== 'terceros'}
                             >
                               <option value="">-- SELECCIONAR OSRO --</option>
+                              {/* Fallback para mostrar valores existentes que no estén en la lista y evitar que se borren al abrir el modal */}
+                              {editingPlan?.empresaRespuesta && !derrames.some(d => d.empresa === editingPlan.empresaRespuesta) && (
+                                <option value={editingPlan.empresaRespuesta}>{editingPlan.empresaRespuesta} (Valor Anterior)</option>
+                              )}
                               {derrames.sort((a,b) => a.empresa.localeCompare(b.empresa)).map(d => (
                                 <option key={d.id} value={d.empresa}>{d.empresa}</option>
                               ))}
