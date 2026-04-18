@@ -58,6 +58,58 @@ const formatDate = (dateStr?: string) => {
   return `${adjustedDate.getDate().toString().padStart(2, '0')}/${(adjustedDate.getMonth() + 1).toString().padStart(2, '0')}/${adjustedDate.getFullYear()}`;
 };
 
+const getSemaforoStyle = (dateStr?: string) => {
+  if (!dateStr) return 'text-slate-400 bg-slate-100 dark:bg-slate-800/50';
+  const vDate = new Date(dateStr);
+  if (isNaN(vDate.getTime())) return 'text-slate-400 bg-slate-100 dark:bg-slate-800/50';
+  
+  const today = new Date();
+  const ninetyDays = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000);
+  const oneYear = new Date(today.getTime() + 365 * 24 * 60 * 60 * 1000); // Umbral para "futuro"
+  
+  if (vDate < today) return 'text-red-600 bg-red-50 dark:bg-red-900/20';
+  if (vDate < ninetyDays) return 'text-amber-600 bg-amber-50 dark:bg-amber-900/20';
+  if (vDate > oneYear) return 'text-slate-400 bg-slate-100 dark:bg-slate-800/10'; // Futuro en gris
+  return 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20'; // Vigente en verde
+};
+
+const getSemaforoColor = (dateStr?: string) => {
+  if (!dateStr) return 'text-slate-400';
+  const vDate = new Date(dateStr);
+  if (isNaN(vDate.getTime())) return 'text-slate-400';
+  
+  const today = new Date();
+  const ninetyDays = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000);
+  const oneYear = new Date(today.getTime() + 365 * 24 * 60 * 60 * 1000);
+  
+  if (vDate < today) return 'text-red-600 font-black';
+  if (vDate < ninetyDays) return 'text-amber-600 font-black';
+  if (vDate > oneYear) return 'text-slate-400 font-black'; // Futuro en gris
+  return 'text-emerald-600 font-black'; // Vigente/Convalidado en verde
+};
+
+const isSameEmcodecon = (name1: string, name2: string) => {
+  const n1 = (name1 || '').trim().toUpperCase();
+  const n2 = (name2 || '').trim().toUpperCase();
+  
+  if (n1 === n2) return true;
+  
+  // Aliases mapping
+  const aliases = [
+    ['CINTRA', 'JORGE L. REBAGLIATI E HIJOS S.R.L.']
+  ];
+  
+  for (const pair of aliases) {
+    const p1 = pair[0].toUpperCase();
+    const p2 = pair[1].toUpperCase();
+    if ((n1 === p1 || n1 === p2) && (n2 === p1 || n2 === p2)) {
+      return true;
+    }
+  }
+  
+  return false;
+};
+
 export const Derrames: React.FC = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -614,14 +666,9 @@ export const Derrames: React.FC = () => {
                           </div>
                           <div>
                             <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] mb-0.5">Vencimiento</p>
-                            <p className={`font-black uppercase flex items-center gap-1 ${
-                              !empresa.vencimiento ? 'text-slate-700 dark:text-slate-200' :
-                              new Date(empresa.vencimiento) < new Date() ? 'text-red-600' :
-                              new Date(empresa.vencimiento) < new Date(Date.now() + 90*24*60*60*1000) ? 'text-amber-600' :
-                              'text-emerald-600'
-                            }`}>
+                            <p className={`font-black uppercase flex items-center gap-1 text-[10px] px-2 py-0.5 rounded w-max ${getSemaforoStyle(empresa.vencimiento)}`}>
                               {formatDate(empresa.vencimiento) || 'S/D'}
-                              {empresa.vencimiento && new Date(empresa.vencimiento) < new Date() && <span className="material-symbols-outlined text-[14px]">warning</span>}
+                              {empresa.vencimiento && new Date(empresa.vencimiento) < new Date() && <span className="material-symbols-outlined text-[10px]">warning</span>}
                             </p>
                           </div>
                           <div className="col-span-2">
@@ -853,7 +900,7 @@ export const Derrames: React.FC = () => {
                                  <p className="text-[9px] font-black uppercase text-slate-400 mb-1">{year}º Año Operación</p>
                                  {det?.fecha ? (
                                     <>
-                                      <p className="text-sm font-black text-emerald-600 mb-1">{formatDate(det.fecha)}</p>
+                                      <p className={`text-sm font-black mb-1 ${getSemaforoColor(det?.fecha)}`}>{formatDate(det.fecha)}</p>
                                       {det.auditorNombre && <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">person</span> {det.auditorNombre}</p>}
                                       <div className="flex flex-col gap-1 mt-1">
                                         {det.nroExpediente && <p className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">folder</span> {det.nroExpediente}</p>}
@@ -925,7 +972,7 @@ export const Derrames: React.FC = () => {
                           {(() => {
                              const assistedPlanes = planes.filter(p => 
                                (p.tipoRespuesta || '').toLowerCase() === 'terceros' && 
-                               (p.empresaRespuesta || '').trim().toUpperCase() === selectedEmpresa.empresa.trim().toUpperCase()
+                               isSameEmcodecon(p.empresaRespuesta, selectedEmpresa.empresa)
                              );
                              return (
                                <div>
