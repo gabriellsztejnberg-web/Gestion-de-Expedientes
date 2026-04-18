@@ -335,8 +335,8 @@ export const Planes: React.FC = () => {
 
   const getStatusColor = (dateStr?: string, isConvalidacion = false, isFulfilled = false, anexo?: AnexoTipo) => {
     if (anexo === 'anexo_15') {
-       if (isFulfilled) return 'bg-emerald-100 text-emerald-700 border-emerald-200 font-bold';
-       return 'bg-red-50 text-red-600 border-red-100 font-bold';
+       if (isFulfilled) return 'bg-blue-50 text-blue-700 border-blue-100 font-bold';
+       return 'bg-slate-50 text-slate-400 border-slate-100 font-normal';
     }
 
     if (isConvalidacion && isFulfilled) {
@@ -448,17 +448,31 @@ export const Planes: React.FC = () => {
       return alert("Ya existe un registro para esta empresa y dependencia en este anexo.");
     }
 
+    const isAnexo15 = (editingPlan.anexo || activeTab) === 'anexo_15';
+
     const planData = {
       ...editingPlan,
-      empresaRespuesta: (editingPlan.empresaRespuesta || '').toUpperCase().trim(),
-      empresaRespuestaManual: (editingPlan.empresaRespuestaManual || '').toUpperCase().trim(),
+      empresaRespuesta: isAnexo15 ? '' : (editingPlan.empresaRespuesta || '').toUpperCase().trim(),
+      empresaRespuestaManual: isAnexo15 ? '' : (editingPlan.empresaRespuestaManual || '').toUpperCase().trim(),
       anexo: editingPlan.anexo || activeTab,
       ultimaActualizacion: new Date().toISOString(),
-      convalidaciones: editingPlan.anexo === 'anexo_15' ? {} : (editingPlan.convalidaciones || {}),
-      convalidacionesDetalle: editingPlan.anexo === 'anexo_15' ? {} : (editingPlan.convalidacionesDetalle || {}),
+      convalidaciones: isAnexo15 ? {} : (editingPlan.convalidaciones || {}),
+      convalidacionesDetalle: isAnexo15 ? {} : (editingPlan.convalidacionesDetalle || {}),
       isSIPA: editingPlan.isSIPA || false,
       sipaEquipamiento: editingPlan.sipaEquipamiento || null,
-      presentacionesAnuales: editingPlan.presentacionesAnuales || []
+      presentacionesAnuales: editingPlan.presentacionesAnuales || [],
+      // Limpiar campos de empresa para Anexo 15
+      ...(isAnexo15 ? {
+        cuit: '',
+        domicilio: '',
+        localidad: '',
+        email: '',
+        telefono: '',
+        vencimiento: '',
+        formatoDisposicion: undefined,
+        tipoRespuesta: undefined,
+        cantidadBarreras: ''
+      } : {})
     };
 
     if (planData.anexo === 'general' || !planData.anexo) {
@@ -1140,7 +1154,7 @@ export const Planes: React.FC = () => {
                                         </button>
                                         <div className="flex gap-2 items-center">
                                           {p.expedienteOrigenId && <span className="text-[9px] text-slate-400 italic">Vinculado a Exp.</span>}
-                                          {p.cuit && <span className="text-[9px] text-slate-500 font-mono">{p.cuit}</span>}
+                                          {p.cuit && p.anexo !== 'anexo_15' && <span className="text-[9px] text-slate-500 font-mono">{p.cuit}</span>}
                                         </div>
                                       </div>
                                   </td>
@@ -1276,7 +1290,7 @@ export const Planes: React.FC = () => {
                           </select>
                         </div>
                         <div className="md:col-span-2">
-                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa / Razón Social</label>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">{editingPlan?.anexo === 'anexo_15' ? 'Dependencia / Prefectura' : 'Empresa / Razón Social'}</label>
                           <input 
                             required
                             className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase font-bold" 
@@ -1284,55 +1298,61 @@ export const Planes: React.FC = () => {
                             onChange={e => setEditingPlan({...editingPlan!, empresa: e.target.value})}
                           />
                         </div>
-                        <div>
-                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">CUIT</label>
-                          <input 
-                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary font-mono" 
-                            value={editingPlan?.cuit || ''} 
-                            onChange={e => setEditingPlan({...editingPlan!, cuit: e.target.value})}
-                            placeholder="00-00000000-0"
-                          />
-                        </div>
+                        {editingPlan?.anexo !== 'anexo_15' && (
+                          <div>
+                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">CUIT</label>
+                            <input 
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary font-mono" 
+                              value={editingPlan?.cuit || ''} 
+                              onChange={e => setEditingPlan({...editingPlan!, cuit: e.target.value})}
+                              placeholder="00-00000000-0"
+                            />
+                          </div>
+                        )}
                       </div>
 
-                      <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="md:col-span-2">
-                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Domicilio</label>
-                          <input 
-                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase" 
-                            value={editingPlan?.domicilio || ''} 
-                            onChange={e => setEditingPlan({...editingPlan!, domicilio: e.target.value})}
-                          />
+                      {editingPlan?.anexo !== 'anexo_15' && (
+                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="md:col-span-2">
+                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Domicilio</label>
+                            <input 
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase" 
+                              value={editingPlan?.domicilio || ''} 
+                              onChange={e => setEditingPlan({...editingPlan!, domicilio: e.target.value})}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Localidad</label>
+                            <input 
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase" 
+                              value={editingPlan?.localidad || ''} 
+                              onChange={e => setEditingPlan({...editingPlan!, localidad: e.target.value})}
+                            />
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Localidad</label>
-                          <input 
-                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase" 
-                            value={editingPlan?.localidad || ''} 
-                            onChange={e => setEditingPlan({...editingPlan!, localidad: e.target.value})}
-                          />
-                        </div>
-                      </div>
+                      )}
 
-                      <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Email de Contacto</label>
-                          <input 
-                            type="email"
-                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary" 
-                            value={editingPlan?.email || ''} 
-                            onChange={e => setEditingPlan({...editingPlan!, email: e.target.value})}
-                          />
+                      {editingPlan?.anexo !== 'anexo_15' && (
+                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Email de Contacto</label>
+                            <input 
+                              type="email"
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary" 
+                              value={editingPlan?.email || ''} 
+                              onChange={e => setEditingPlan({...editingPlan!, email: e.target.value})}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Teléfono</label>
+                            <input 
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary" 
+                              value={editingPlan?.telefono || ''} 
+                              onChange={e => setEditingPlan({...editingPlan!, telefono: e.target.value})}
+                            />
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Teléfono</label>
-                          <input 
-                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary" 
-                            value={editingPlan?.telefono || ''} 
-                            onChange={e => setEditingPlan({...editingPlan!, telefono: e.target.value})}
-                          />
-                        </div>
-                      </div>
+                      )}
 
                       <div>
                         <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Jurisdicción / Dependencia</label>
@@ -1352,47 +1372,51 @@ export const Planes: React.FC = () => {
                         />
                       </div>
 
-                      <div>
-                        <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Formato de Disposición</label>
-                        <select 
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase text-xs" 
-                          value={editingPlan?.formatoDisposicion || ''} 
-                          onChange={e => setEditingPlan({...editingPlan!, formatoDisposicion: e.target.value as any})}
-                        >
-                          <option value="">Seleccionar...</option>
-                          <option value="digital">Digital</option>
-                          <option value="papel">Papel</option>
-                        </select>
-                      </div>
+                      {editingPlan?.anexo !== 'anexo_15' && (
+                        <div>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Formato de Disposición</label>
+                          <select 
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase text-xs" 
+                            value={editingPlan?.formatoDisposicion || ''} 
+                            onChange={e => setEditingPlan({...editingPlan!, formatoDisposicion: e.target.value as any})}
+                          >
+                            <option value="">Seleccionar...</option>
+                            <option value="digital">Digital</option>
+                            <option value="papel">Papel</option>
+                          </select>
+                        </div>
+                      )}
 
-                      <div className="md:col-span-2">
-                        <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Fecha de Vencimiento</label>
-                        <input 
-                          type="date"
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary" 
-                          value={editingPlan?.vencimiento || ''} 
-                          onChange={e => {
-                            const newVencimiento = e.target.value;
-                            const newPlan = { ...editingPlan, vencimiento: newVencimiento };
-                            
-                            // Autocalcular convalidaciones (-4, -3, -2, -1 años)
-                            if (newVencimiento) {
-                              const [y, m, dayStr] = newVencimiento.split('-');
-                              const yNum = parseInt(y, 10);
-                              if (!isNaN(yNum)) {
-                                newPlan.convalidaciones = {
-                                  ...newPlan.convalidaciones,
-                                  anio1: `${yNum - 4}-${m}-${dayStr}`,
-                                  anio2: `${yNum - 3}-${m}-${dayStr}`,
-                                  anio3: `${yNum - 2}-${m}-${dayStr}`,
-                                  anio4: `${yNum - 1}-${m}-${dayStr}`,
-                                };
+                      {editingPlan?.anexo !== 'anexo_15' && (
+                        <div className="md:col-span-2">
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Fecha de Vencimiento</label>
+                          <input 
+                            type="date"
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary" 
+                            value={editingPlan?.vencimiento || ''} 
+                            onChange={e => {
+                              const newVencimiento = e.target.value;
+                              const newPlan = { ...editingPlan, vencimiento: newVencimiento };
+                              
+                              // Autocalcular convalidaciones (-4, -3, -2, -1 años)
+                              if (newVencimiento) {
+                                const [y, m, dayStr] = newVencimiento.split('-');
+                                const yNum = parseInt(y, 10);
+                                if (!isNaN(yNum)) {
+                                  newPlan.convalidaciones = {
+                                    ...newPlan.convalidaciones,
+                                    anio1: `${yNum - 4}-${m}-${dayStr}`,
+                                    anio2: `${yNum - 3}-${m}-${dayStr}`,
+                                    anio3: `${yNum - 2}-${m}-${dayStr}`,
+                                    anio4: `${yNum - 1}-${m}-${dayStr}`,
+                                  };
+                                }
                               }
-                            }
-                            setEditingPlan(newPlan);
-                          }}
-                        />
-                      </div>
+                              setEditingPlan(newPlan);
+                            }}
+                          />
+                        </div>
+                      )}
 
                       <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 mt-2 border-t border-slate-200 dark:border-slate-700 pt-4">
                         <div className="col-span-full">
@@ -1440,59 +1464,63 @@ export const Planes: React.FC = () => {
                             onChange={e => setEditingPlan({...editingPlan!, contactoPlan: e.target.value})}
                           />
                         </div>
-                        <div>
-                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Tipo de Respuesta</label>
-                          <select 
-                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase text-xs" 
-                            value={editingPlan?.tipoRespuesta || ''} 
-                            onChange={e => setEditingPlan({...editingPlan!, tipoRespuesta: e.target.value as any})}
-                          >
-                            <option value="">Seleccionar...</option>
-                            <option value="propia">Propia</option>
-                            <option value="terceros">De Terceros</option>
-                          </select>
-                        </div>
-                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
-                             <div>
-                               <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nombre Registrado (Manual/Histórico)</label>
-                               <input 
-                                 className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase text-xs font-bold" 
-                                 value={editingPlan?.empresaRespuestaManual || ''} 
-                                 onChange={e => setEditingPlan({...editingPlan!, empresaRespuestaManual: e.target.value})}
-                                 placeholder="VALOR CARGADO ANTERIORMENTE"
-                                 disabled={editingPlan?.tipoRespuesta !== 'terceros'}
-                               />
-                             </div>
-                             <div>
-                               <label className="block text-[10px] font-black uppercase text-indigo-500 mb-1 flex items-center gap-1">
-                                 <span className="material-symbols-outlined text-[14px]">link</span> Vincular a EMCODECON (Sistema)
-                               </label>
-                               <select 
-                                 className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 uppercase text-xs font-bold text-indigo-600 cursor-pointer" 
-                                 value={editingPlan?.empresaRespuesta || ''} 
-                                 onChange={e => setEditingPlan({...editingPlan!, empresaRespuesta: e.target.value})}
-                                 disabled={editingPlan?.tipoRespuesta !== 'terceros'}
-                               >
-                                 <option value="">-- SELECCIONAR EMCODECON --</option>
-                                 {derrames.sort((a,b) => a.empresa.localeCompare(b.empresa)).map(d => (
-                                   <option key={d.id} value={d.empresa}>{d.empresa}</option>
-                                 ))}
-                               </select>
-                             </div>
-                          </div>
+                        {editingPlan?.anexo !== 'anexo_15' && (
                           <div>
-                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Metros de Barrera (Si es propia)</label>
-                            <input 
-                              type="number"
-                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary font-bold" 
-                              value={editingPlan?.cantidadBarreras || ''} 
-                              onChange={e => setEditingPlan({...editingPlan!, cantidadBarreras: e.target.value})}
-                              disabled={editingPlan?.tipoRespuesta !== 'propia'}
-                              placeholder="0"
-                            />
+                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Tipo de Respuesta</label>
+                            <select 
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase text-xs" 
+                              value={editingPlan?.tipoRespuesta || ''} 
+                              onChange={e => setEditingPlan({...editingPlan!, tipoRespuesta: e.target.value as any})}
+                            >
+                              <option value="">Seleccionar...</option>
+                              <option value="propia">Propia</option>
+                              <option value="terceros">De Terceros</option>
+                            </select>
                           </div>
-                        </div>
+                        )}
+                        {editingPlan?.anexo !== 'anexo_15' && (
+                          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                               <div>
+                                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nombre Registrado (Manual/Histórico)</label>
+                                 <input 
+                                   className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase text-xs font-bold" 
+                                   value={editingPlan?.empresaRespuestaManual || ''} 
+                                   onChange={e => setEditingPlan({...editingPlan!, empresaRespuestaManual: e.target.value})}
+                                   placeholder="VALOR CARGADO ANTERIORMENTE"
+                                   disabled={editingPlan?.tipoRespuesta !== 'terceros'}
+                                 />
+                               </div>
+                               <div>
+                                 <label className="block text-[10px] font-black uppercase text-indigo-500 mb-1 flex items-center gap-1">
+                                   <span className="material-symbols-outlined text-[14px]">link</span> Vincular a EMCODECON (Sistema)
+                                 </label>
+                                 <select 
+                                   className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 uppercase text-xs font-bold text-indigo-600 cursor-pointer" 
+                                   value={editingPlan?.empresaRespuesta || ''} 
+                                   onChange={e => setEditingPlan({...editingPlan!, empresaRespuesta: e.target.value})}
+                                   disabled={editingPlan?.tipoRespuesta !== 'terceros'}
+                                 >
+                                   <option value="">-- SELECCIONAR EMCODECON --</option>
+                                   {derrames.sort((a,b) => a.empresa.localeCompare(b.empresa)).map(d => (
+                                     <option key={d.id} value={d.empresa}>{d.empresa}</option>
+                                   ))}
+                                 </select>
+                               </div>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Metros de Barrera (Si es propia)</label>
+                              <input 
+                                type="number"
+                                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary font-bold" 
+                                value={editingPlan?.cantidadBarreras || ''} 
+                                onChange={e => setEditingPlan({...editingPlan!, cantidadBarreras: e.target.value})}
+                                disabled={editingPlan?.tipoRespuesta !== 'propia'}
+                                placeholder="0"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {editingPlan?.anexo === 'anexo_15' && (
@@ -1877,34 +1905,51 @@ export const Planes: React.FC = () => {
                   </section>
 
                   <section className="print:break-inside-avoid">
-                    <h3 className="text-[10px] font-black uppercase text-primary mb-3 border-b border-primary/20 pb-1">Datos de Contacto</h3>
+                    <h3 className="text-[10px] font-black uppercase text-primary mb-3 border-b border-primary/20 pb-1">
+                      {selectedPlan.anexo === 'anexo_15' ? 'Datos de la Dependencia' : 'Datos de Contacto'}
+                    </h3>
                     <div className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <span className="material-symbols-outlined text-slate-400 text-lg">badge</span>
-                        <div>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">CUIT</p>
-                          <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">{selectedPlan.cuit || 'S/D'}</p>
+                      {selectedPlan.anexo !== 'anexo_15' && (
+                        <div className="flex items-center gap-3">
+                          <span className="material-symbols-outlined text-slate-400 text-lg">badge</span>
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">CUIT</p>
+                            <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">{selectedPlan.cuit || 'S/D'}</p>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="material-symbols-outlined text-slate-400 text-lg">location_on</span>
-                        <div>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">Domicilio</p>
-                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">{selectedPlan.domicilio || 'S/D'} {selectedPlan.localidad && `, ${selectedPlan.localidad}`}</p>
+                      )}
+                      {selectedPlan.anexo !== 'anexo_15' && (
+                        <div className="flex items-center gap-3">
+                          <span className="material-symbols-outlined text-slate-400 text-lg">location_on</span>
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">Domicilio</p>
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">{selectedPlan.domicilio || 'S/D'} {selectedPlan.localidad && `, ${selectedPlan.localidad}`}</p>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="material-symbols-outlined text-slate-400 text-lg">mail</span>
-                        <div>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">Email</p>
-                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedPlan.email || 'S/D'}</p>
+                      )}
+                      {selectedPlan.anexo !== 'anexo_15' && (
+                        <div className="flex items-center gap-3">
+                          <span className="material-symbols-outlined text-slate-400 text-lg">mail</span>
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">Email</p>
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedPlan.email || 'S/D'}</p>
+                          </div>
                         </div>
-                      </div>
+                      )}
+                      {selectedPlan.anexo !== 'anexo_15' && (
+                        <div className="flex items-center gap-3">
+                          <span className="material-symbols-outlined text-slate-400 text-lg">call</span>
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">Teléfono</p>
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedPlan.telefono || 'S/D'}</p>
+                          </div>
+                        </div>
+                      )}
                       <div className="flex items-center gap-3">
-                        <span className="material-symbols-outlined text-slate-400 text-lg">call</span>
+                        <span className="material-symbols-outlined text-slate-400 text-lg">account_balance</span>
                         <div>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">Teléfono</p>
-                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedPlan.telefono || 'S/D'}</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">Jurisdicción / Dependencia</p>
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">{selectedPlan.dependencia || 'S/D'}</p>
                         </div>
                       </div>
                     </div>
@@ -1922,17 +1967,19 @@ export const Planes: React.FC = () => {
                   <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 mt-6 print:break-inside-avoid">
                     <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Estado del Plan</h3>
                     <div className="space-y-2">
+                      {selectedPlan.anexo !== 'anexo_15' && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-bold uppercase text-slate-400">Vencimiento:</span>
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${getStatusColor(selectedPlan.vencimiento)}`}>
+                            {formatDate(selectedPlan.vencimiento)}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-bold uppercase text-slate-400">Vencimiento:</span>
-                        <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${getStatusColor(selectedPlan.vencimiento)}`}>
-                          {formatDate(selectedPlan.vencimiento)}
-                        </span>
+                        <span className="text-[10px] font-bold uppercase text-slate-400">{selectedPlan.anexo === 'anexo_15' ? 'Disposición Aprobación:' : 'Disposición:'}</span>
+                        <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-400 text-right">{selectedPlan.disposicion || 'S/D'}</span>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-bold uppercase text-slate-400">Disposición:</span>
-                        <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-400">{selectedPlan.disposicion || 'S/D'}</span>
-                      </div>
-                      {selectedPlan.formatoDisposicion && (
+                      {selectedPlan.formatoDisposicion && selectedPlan.anexo !== 'anexo_15' && (
                         <div className="flex justify-between items-center">
                           <span className="text-[10px] font-bold uppercase text-slate-400">Formato:</span>
                           <span className={`text-[10px] font-black uppercase ${selectedPlan.formatoDisposicion === 'digital' ? 'text-blue-600' : 'text-orange-600'}`}>{selectedPlan.formatoDisposicion}</span>
@@ -1961,26 +2008,28 @@ export const Planes: React.FC = () => {
                       <div>
                         <p className="text-[9px] font-bold text-slate-400 uppercase leading-none mb-1">Responsable</p>
                         <p className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">{selectedPlan.responsablePlan || 'S/D'}</p>
-                        {selectedPlan.contactoPlan && <p className="text-[10px] text-slate-500 mt-0.5">{selectedPlan.contactoPlan}</p>}
+                        {selectedPlan.contactoPlan && selectedPlan.anexo !== 'anexo_15' && <p className="text-[10px] text-slate-500 mt-0.5">{selectedPlan.contactoPlan}</p>}
                       </div>
-                      <div>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase leading-none mb-1">Respuesta ante Emergencias</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${selectedPlan.tipoRespuesta === 'propia' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : selectedPlan.tipoRespuesta === 'terceros' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                            {selectedPlan.tipoRespuesta ? (selectedPlan.tipoRespuesta === 'propia' ? 'Propia' : 'De Terceros') : 'S/D'}
-                          </span>
-                          {selectedPlan.tipoRespuesta === 'terceros' && selectedPlan.empresaRespuesta && (
-                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase truncate">
-                              {selectedPlan.empresaRespuesta}
+                      {selectedPlan.anexo !== 'anexo_15' && (
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase leading-none mb-1">Respuesta ante Emergencias</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${selectedPlan.tipoRespuesta === 'propia' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : selectedPlan.tipoRespuesta === 'terceros' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                              {selectedPlan.tipoRespuesta ? (selectedPlan.tipoRespuesta === 'propia' ? 'Propia' : 'De Terceros') : 'S/D'}
                             </span>
-                          )}
-                          {selectedPlan.tipoRespuesta === 'propia' && selectedPlan.cantidadBarreras && (
-                            <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                              {selectedPlan.cantidadBarreras}m Barreras
-                            </span>
-                          )}
+                            {selectedPlan.tipoRespuesta === 'terceros' && selectedPlan.empresaRespuesta && (
+                              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase truncate">
+                                {selectedPlan.empresaRespuesta}
+                              </span>
+                            )}
+                            {selectedPlan.tipoRespuesta === 'propia' && selectedPlan.cantidadBarreras && (
+                              <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                                {selectedPlan.cantidadBarreras}m Barreras
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </section>
                 </div>
