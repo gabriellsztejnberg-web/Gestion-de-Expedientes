@@ -150,6 +150,7 @@ export const Inspecciones: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const auditorSeleccionado = auditores.find(a => a.id === editingInsp.auditorId);
+    const auditorSecundario = auditores.find(a => a.id === editingInsp.auditorIdSecundario);
     let finalExpedienteId = editingInsp.expedienteId;
     const finalNumero = (editingInsp.expedienteNumero || 'S/EXP').toUpperCase().trim();
     
@@ -164,7 +165,12 @@ export const Inspecciones: React.FC = () => {
       expedienteNumero: finalNumero,
       auditorId: editingInsp.auditorId || '',
       auditorNombre: auditorSeleccionado ? auditorSeleccionado.nombre : 'DESCONOCIDO',
+      auditorIdSecundario: editingInsp.auditorIdSecundario || '',
+      auditorNombreSecundario: auditorSecundario ? auditorSecundario.nombre : '',
+      auditoresVarios: editingInsp.auditoresVarios || '',
       ubicacion: (editingInsp.ubicacion || '').toUpperCase(),
+      baseId: editingInsp.baseId || '',
+      baseNombre: editingInsp.baseNombre || '',
       jurisdiccion: (editingInsp.jurisdiccion || '').toUpperCase(),
       tipo: editingInsp.tipo || 'INICIAL',
       resultado: editingInsp.resultado || 'CON PENDIENTES',
@@ -242,13 +248,19 @@ export const Inspecciones: React.FC = () => {
         
         if (planSnap.exists()) {
           if (isDerrame && dataToSave.tipo === 'INSPECCIÓN INTERMEDIA (DERRAMES)') {
+            const currentInspecciones = planSnap.data().inspeccionesIntermedias || [];
             await updateDoc(planRef, {
-              inspeccionIntermedia: {
-                fecha: dataToSave.fecha,
-                auditorNombre: dataToSave.auditorNombre,
-                nroCertificado: dataToSave.nroCertificado,
-                nroExpediente: dataToSave.expedienteNumero
-              },
+              inspeccionesIntermedias: [
+                ...currentInspecciones,
+                {
+                  id: docId,
+                  fecha: dataToSave.fecha,
+                  auditorNombre: dataToSave.auditorNombre + (dataToSave.auditorNombreSecundario ? ` / ${dataToSave.auditorNombreSecundario}` : ''),
+                  nroCertificado: dataToSave.nroCertificado,
+                  nroExpediente: dataToSave.expedienteNumero,
+                  baseNombre: dataToSave.baseNombre
+                }
+              ],
               ultimaActualizacion: new Date().toISOString()
             });
           } else if (!isDerrame && dataToSave.tipo === 'CONVALIDACIÓN ANUAL') {
@@ -302,24 +314,46 @@ export const Inspecciones: React.FC = () => {
     if (!subsanarTarget) return;
 
     let nombreAuditorResponsable = subsanarTarget.auditorNombre;
+    let idAuditorNuevo = subsanarTarget.auditorId;
+
     if (!isSameAuditor) {
         if (!subsanarAuditorId) {
             alert("Seleccione el auditor que realizó el levantamiento.");
             return;
         }
         const auditorNuevo = auditores.find(a => a.id === subsanarAuditorId);
-        if (auditorNuevo) nombreAuditorResponsable = auditorNuevo.nombre;
+        if (auditorNuevo) {
+            nombreAuditorResponsable = auditorNuevo.nombre;
+            idAuditorNuevo = auditorNuevo.id;
+        }
     }
 
     try {
       const textoAuditor = isSameAuditor ? `(Mismo Inspector: ${nombreAuditorResponsable})` : `(Re-inspección por: ${nombreAuditorResponsable})`;
-      const nuevaObs = (subsanarTarget.observaciones || '') + `\n[SUBSANADO: Certificado ${certSubsanacion} / Planilla ${planillaSubsanacion}. ${textoAuditor} - Fecha: ${new Date().toLocaleDateString()}]`;
       
-      await updateDoc(doc(db, 'inspecciones', subsanarTarget.id), {
+      // CREAR NUEVO REGISTRO EN LUGAR DE ACTUALIZAR (Para no perder el historial de fallos)
+      const dataNuevaInspec = {
+          ...subsanarTarget,
+          id: undefined, // nuevo doc
+          fecha: new Date().toISOString().split('T')[0],
           resultado: 'APROBADO',
           nroCertificado: certSubsanacion.toUpperCase(),
           nroInforme: planillaSubsanacion.toUpperCase(),
-          observaciones: nuevaObs
+          tipo: `SUBSANACIÓN (${subsanarTarget.tipo})`,
+          observaciones: `LEVANTAMIENTO DE PENDIENTES DE LA INSPECCIÓN DEL ${formatDateSafe(subsanarTarget.fecha)}. ${textoAuditor}`,
+          auditorId: idAuditorNuevo,
+          auditorNombre: nombreAuditorResponsable,
+          registradoEn: new Date().toISOString(),
+          registradoPor: currentUser.name
+      };
+
+      const docRef = await addDoc(collection(db, 'inspecciones'), dataNuevaInspec);
+      const newId = docRef.id;
+
+      // Marcar la anterior como "CON PENDIENTES (SUBSANADA)" para claridad interna
+      await updateDoc(doc(db, 'inspecciones', subsanarTarget.id), {
+          resultado: 'CON PENDIENTES (SUBSANADA)',
+          observaciones: (subsanarTarget.observaciones || '') + `\n[SUBSANADO EL ${new Date().toLocaleDateString()} - VER ID: ${newId}]`
       });
 
       // --- AUTOMATIZACIÓN: Actualizar Base de Datos de Planes al subsanar ---
@@ -332,15 +366,16 @@ export const Inspecciones: React.FC = () => {
       }
 
       if (targetPlanId) {
-        const planRef = doc(db, 'planes', targetPlanId);
+        const isDerrame = subsanarTarget.anexo === 'derrames';
+        const planRef = doc(db, isDerrame ? 'empresas_derrames' : 'planes', targetPlanId);
         const planSnap = await getDoc(planRef);
         if (planSnap.exists()) {
-          const planData = planSnap.data() as PlanEmergencia;
-          const convalidaciones = { ...(planData.convalidaciones || {}) };
-          
-          if (subsanarTarget.tipo === 'CONVALIDACIÓN ANUAL') {
+          const planData = planSnap.data();
+          const fechaHoy = new Date().toISOString().split('T')[0];
+
+          if (!isDerrame && subsanarTarget.tipo === 'CONVALIDACIÓN ANUAL') {
+            const convalidaciones = { ...(planData.convalidaciones || {}) };
             const num = subsanarTarget.convalidacionNumero;
-            const fechaHoy = new Date().toISOString().split('T')[0];
 
             if (num === 1) convalidaciones.anio1 = fechaHoy;
             else if (num === 2) convalidaciones.anio2 = fechaHoy;
@@ -357,6 +392,21 @@ export const Inspecciones: React.FC = () => {
               convalidaciones,
               ultimaActualizacion: new Date().toISOString()
             });
+          } else if (isDerrame && subsanarTarget.tipo === 'INSPECCIÓN INTERMEDIA (DERRAMES)') {
+              const currentInspecciones = planData.inspeccionesIntermedias || [];
+              await updateDoc(planRef, {
+                inspeccionesIntermedias: [
+                   ...currentInspecciones,
+                   {
+                     id: newId,
+                     fecha: fechaHoy,
+                     auditorNombre: nombreAuditorResponsable,
+                     nroCertificado: certSubsanacion.toUpperCase(),
+                     nroExpediente: subsanarTarget.expedienteNumero,
+                     baseNombre: subsanarTarget.baseNombre
+                   }
+                ]
+              });
           }
         }
       }
@@ -366,7 +416,7 @@ export const Inspecciones: React.FC = () => {
         fecha: new Date().toISOString(),
         texto: `Se subsanaron los pendientes. Se emitió CERTIFICADO: ${certSubsanacion} y PLANILLA DE ANÁLISIS: ${planillaSubsanacion}. Inspección APROBADA. Responsable: ${nombreAuditorResponsable}.`,
         expedienteId: subsanarTarget.expedienteId || 'SIN_EXPEDIENTE',
-        inspeccionId: subsanarTarget.id,
+        inspeccionId: newId,
         tipoAccion: 'Resolución',
         isPending: false
       });
@@ -405,13 +455,12 @@ export const Inspecciones: React.FC = () => {
     (i.jurisdiccion || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const getResultadoColor = (res: ResultadoInspeccion) => {
-    switch(res) {
-      case 'APROBADO': return 'bg-green-100 text-green-700 border-green-200';
-      case 'APROBADO CON OPORTUNIDAD DE MEJORAS': return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'CON PENDIENTES': return 'bg-orange-100 text-orange-700 border-orange-200';
-      default: return 'bg-slate-100 text-slate-500 border-slate-200';
-    }
+  const getResultadoColor = (res: string) => {
+    if (res === 'APROBADO' || res.startsWith('APROBADO')) return 'bg-emerald-100 text-emerald-700 border-emerald-200 font-black';
+    if (res === 'APROBADO CON OPORTUNIDAD DE MEJORAS') return 'bg-blue-100 text-blue-700 border-blue-200';
+    if (res === 'CON PENDIENTES') return 'bg-red-50 text-red-600 border-red-100 font-black';
+    if (res.includes('SUBSANADA')) return 'bg-slate-100 text-slate-400 border-slate-200 opacity-60';
+    return 'bg-slate-100 text-slate-500 border-slate-200';
   };
   
   const formatDateSafe = (dateStr: string) => {
@@ -491,7 +540,9 @@ export const Inspecciones: React.FC = () => {
                     <td className="px-4 py-4">
                         <div className="flex flex-col">
                             <span className="font-black text-slate-900 dark:text-white uppercase text-xs">{item.expedienteNumero || 'S/EXP'}</span>
-                            <span className="text-[10px] text-slate-500 uppercase font-medium">{item.ubicacion}</span>
+                            <span className="text-[10px] text-slate-500 uppercase font-medium">
+                                {item.baseNombre ? `${item.ubicacion} (${item.baseNombre})` : item.ubicacion}
+                            </span>
                             <div className="flex gap-2">
                               <span className="text-[9px] text-primary italic">{item.tipo}</span>
                               {item.jurisdiccion && <span className="text-[9px] text-slate-400 uppercase">| {item.jurisdiccion}</span>}
@@ -499,7 +550,15 @@ export const Inspecciones: React.FC = () => {
                         </div>
                     </td>
                     <td className="px-4 py-4">
-                        <span className="text-[10px] font-bold uppercase text-slate-700 dark:text-slate-300">{item.auditorNombre}</span>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-bold uppercase text-slate-700 dark:text-slate-300">{item.auditorNombre}</span>
+                          {(item.auditorNombreSecundario || item.auditoresVarios) && (
+                            <span className="text-[8px] text-slate-400 uppercase leading-none mt-0.5">
+                              {item.auditorNombreSecundario && `+ ${item.auditorNombreSecundario}`}
+                              {item.auditoresVarios && ` [${item.auditoresVarios}]`}
+                            </span>
+                          )}
+                        </div>
                     </td>
                     <td className="px-4 py-4 text-center">
                         <span className={`inline-block px-2 py-1 rounded text-[9px] font-black uppercase border ${getResultadoColor(item.resultado)}`}>
@@ -587,62 +646,109 @@ export const Inspecciones: React.FC = () => {
                   )}
 
                   {/* Fila 2: Vinculación */}
-                  <div className="col-span-2">
-                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Vincular con Registro de la Empresa</label>
-                     <select 
-                        className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold"
-                        value={`${editingInsp.anexo === 'derrames' ? 'derrame' : 'plan'}_${editingInsp.planId || ''}`}
-                        onChange={e => {
-                          const [type, id] = e.target.value.split('_');
-                          if (!id) {
-                            setEditingInsp({...editingInsp, planId: '', anexo: undefined, ubicacion: ''});
-                            return;
-                          }
-                          
-                          let name = '';
-                          let anexoVal = undefined;
-                          
-                          if (type === 'plan') {
-                            const plan = planes.find(p => p.id === id);
-                            if (plan) { name = plan.empresa; anexoVal = plan.anexo; }
-                          } else if (type === 'derrame') {
-                            const derrame = derrames.find(d => d.id === id);
-                            if (derrame) { name = derrame.empresa; anexoVal = 'derrames'; }
-                          }
+                  <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                       <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Vincular con Registro de la Empresa</label>
+                       <select 
+                          className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold"
+                          value={`${editingInsp.anexo === 'derrames' ? 'derrame' : 'plan'}_${editingInsp.planId || ''}`}
+                          onChange={e => {
+                            const [type, id] = e.target.value.split('_');
+                            if (!id) {
+                              setEditingInsp({...editingInsp, planId: '', anexo: undefined, ubicacion: '', baseId: '', baseNombre: ''});
+                              return;
+                            }
+                            
+                            let name = '';
+                            let anexoVal = undefined;
+                            
+                            if (type === 'plan') {
+                              const plan = planes.find(p => p.id === id);
+                              if (plan) { name = plan.empresa; anexoVal = plan.anexo; }
+                            } else if (type === 'derrame') {
+                              const derrame = derrames.find(d => d.id === id);
+                              if (derrame) { name = derrame.empresa; anexoVal = 'derrames'; }
+                            }
 
-                          setEditingInsp({
-                            ...editingInsp, 
-                            planId: id,
-                            anexo: anexoVal,
-                            ubicacion: name || (editingInsp.ubicacion || '')
-                          });
-                        }}
-                     >
-                        <option value="_">-- SELECCIONAR EMPRESA --</option>
-                        <optgroup label="PLANES DE EMERGENCIA">
-                          {planes.map(p => (
-                            <option key={`plan_${p.id}`} value={`plan_${p.id}`}>{p.empresa} ({p.anexo.replace('anexo_', 'A')})</option>
-                          ))}
-                        </optgroup>
-                        <optgroup label="CONTROL DE DERRAMES">
-                          {derrames.map(d => (
-                            <option key={`derrame_${d.id}`} value={`derrame_${d.id}`}>{d.empresa} (EMCODECON)</option>
-                          ))}
-                        </optgroup>
-                     </select>
+                            setEditingInsp({
+                              ...editingInsp, 
+                              planId: id,
+                              anexo: anexoVal,
+                              ubicacion: name || (editingInsp.ubicacion || ''),
+                              baseId: '',
+                              baseNombre: ''
+                            });
+                          }}
+                       >
+                          <option value="_">-- SELECCIONAR EMPRESA --</option>
+                          <optgroup label="PLANES DE EMERGENCIA">
+                            {planes.map(p => (
+                              <option key={`plan_${p.id}`} value={`plan_${p.id}`}>{p.empresa} ({p.anexo.replace('anexo_', 'A')})</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="CONTROL DE DERRAMES">
+                            {derrames.map(d => (
+                              <option key={`derrame_${d.id}`} value={`derrame_${d.id}`}>{d.empresa} (EMCODECON)</option>
+                            ))}
+                          </optgroup>
+                       </select>
+                    </div>
+
+                    {editingInsp.anexo === 'derrames' && (
+                       <div className="animate-in slide-in-from-left-2 duration-300">
+                         <label className="block text-[10px] font-black uppercase text-blue-500 mb-1">Base Operativa Inspeccionada</label>
+                         <select 
+                          className="w-full px-3 py-2 text-sm border-2 border-blue-100 rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold text-blue-700"
+                          value={editingInsp.baseId || ''}
+                          onChange={e => {
+                            const bId = e.target.value;
+                            const derrame = derrames.find(d => d.id === editingInsp.planId);
+                            const base = derrame?.basesOperativas.find(b => b.id === bId);
+                            setEditingInsp({ ...editingInsp, baseId: bId, baseNombre: base?.nombre || '' });
+                          }}
+                         >
+                            <option value="">-- SELECCIONAR BASE --</option>
+                            {derrames.find(d => d.id === editingInsp.planId)?.basesOperativas.map(b => (
+                              <option key={b.id} value={b.id}>{b.nombre}</option>
+                            ))}
+                         </select>
+                       </div>
+                    )}
                   </div>
+
                   <div className="col-span-2 md:col-span-1">
                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nº Expediente (Manual)</label>
                      <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-mono" value={editingInsp.expedienteNumero || ''} onChange={e => setEditingInsp({...editingInsp, expedienteNumero: e.target.value})} placeholder="EX-..." />
                   </div>
-                  <div className="col-span-2 md:col-span-1">
-                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Auditor Responsable</label>
-                     <select required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={editingInsp.auditorId || ''} onChange={e => setEditingInsp({...editingInsp, auditorId: e.target.value})}>
-                        <option value="">-- Seleccionar Auditor --</option>
-                        {auditores.map(a => (
-                            <option key={a.id} value={a.id}>{a.nombre}</option>
-                        ))}
-                     </select>
+                  <div className="col-span-2 md:col-span-1 grid grid-cols-2 gap-2">
+                     <div>
+                       <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Auditor Responsable</label>
+                       <select required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={editingInsp.auditorId || ''} onChange={e => setEditingInsp({...editingInsp, auditorId: e.target.value})}>
+                          <option value="">-- Seleccionar --</option>
+                          {auditores.map(a => (
+                              <option key={a.id} value={a.id}>{a.nombre}</option>
+                          ))}
+                       </select>
+                     </div>
+                     <div>
+                       <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Coseguro / 2º Auditor</label>
+                       <select className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={editingInsp.auditorIdSecundario || ''} onChange={e => setEditingInsp({...editingInsp, auditorIdSecundario: e.target.value})}>
+                          <option value="">-- Opcional --</option>
+                          {auditores.map(a => (
+                              <option key={a.id} value={a.id}>{a.nombre}</option>
+                          ))}
+                       </select>
+                     </div>
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Otros Inspectores / Firmantes (Opcional)</label>
+                    <input 
+                      className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" 
+                      value={editingInsp.auditoresVarios || ''} 
+                      onChange={e => setEditingInsp({...editingInsp, auditoresVarios: e.target.value})} 
+                      placeholder="Nombres separados por coma..." 
+                    />
                   </div>
 
                   {/* Fila 3: Ubicación y Jurisdicción */}
@@ -687,24 +793,27 @@ export const Inspecciones: React.FC = () => {
                     <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-24" value={editingInsp.observaciones || ''} onChange={e => setEditingInsp({...editingInsp, observaciones: e.target.value})} placeholder="Escriba los hallazgos (ej: 'extintor vencido, falta cartel'). La IA lo convertirá en un informe formal."></textarea>
                   </div>
 
-                  {/* Fila 6: Documentación */}
-                  <div className="col-span-2 bg-slate-50 dark:bg-slate-800/50 p-3 rounded border border-slate-200 dark:border-slate-700 mt-2">
-                     <p className="text-[10px] font-black uppercase text-primary mb-2">Documentación Generada</p>
-                     <div className="grid grid-cols-3 gap-3">
-                        <div>
-                            <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Nº Informe (Planilla)</label>
-                            <input className="w-full px-2 py-1.5 text-xs border rounded outline-none uppercase" value={editingInsp.nroInforme || ''} onChange={e => setEditingInsp({...editingInsp, nroInforme: e.target.value})} placeholder="INF-..." />
-                        </div>
-                        <div>
-                            <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Nº Certificado</label>
-                            <input className="w-full px-2 py-1.5 text-xs border rounded outline-none uppercase" value={editingInsp.nroCertificado || ''} onChange={e => setEditingInsp({...editingInsp, nroCertificado: e.target.value})} placeholder="CER-..." />
-                        </div>
-                        <div>
-                            <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Nº Disposición</label>
-                            <input className="w-full px-2 py-1.5 text-xs border rounded outline-none uppercase" value={editingInsp.nroDisposicion || ''} onChange={e => setEditingInsp({...editingInsp, nroDisposicion: e.target.value})} placeholder="DIS-..." />
-                        </div>
-                     </div>
-                  </div>
+                   {/* Fila 6: Documentación */}
+                    <div className="col-span-2 bg-slate-50 dark:bg-slate-800/50 p-3 rounded border border-slate-200 dark:border-slate-700 mt-2">
+                       <p className="text-[10px] font-black uppercase text-primary mb-2 tracking-tighter flex items-center gap-1">
+                         <span className="material-symbols-outlined text-[14px]">description</span> Dokumentación Generada
+                         <span className="text-[8px] text-slate-400 font-normal normal-case ml-2">(Puede ingresar múltiples números separados por espacios o comas)</span>
+                       </p>
+                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                              <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Nº Informe (Planilla)</label>
+                              <input className="w-full px-2 py-1.5 text-xs border rounded outline-none uppercase font-mono" value={editingInsp.nroInforme || ''} onChange={e => setEditingInsp({...editingInsp, nroInforme: e.target.value})} placeholder="IF-..., IF-..." />
+                          </div>
+                          <div>
+                              <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Nº Certificado</label>
+                              <input className="w-full px-2 py-1.5 text-xs border rounded outline-none uppercase font-mono" value={editingInsp.nroCertificado || ''} onChange={e => setEditingInsp({...editingInsp, nroCertificado: e.target.value})} placeholder="CER-..., CER-..." />
+                          </div>
+                          <div>
+                              <label className="block text-[9px] font-bold uppercase text-slate-400 mb-1">Nº Disposición</label>
+                              <input className="w-full px-2 py-1.5 text-xs border rounded outline-none uppercase font-mono" value={editingInsp.nroDisposicion || ''} onChange={e => setEditingInsp({...editingInsp, nroDisposicion: e.target.value})} placeholder="DIS-..." />
+                          </div>
+                       </div>
+                    </div>
 
               </div>
               <div className="mt-6">
