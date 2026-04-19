@@ -198,6 +198,7 @@ export interface ConvalidacionDetalle {
   nroIF?: string;
   nroExpediente?: string;
   nroCertificadoConvalidacion?: string; // Nuevo: Certificado de convalidación específico
+  observaciones?: string; // Pendientes / Observaciones de la auditoría
 }
 
 export interface PlanEmergencia {
