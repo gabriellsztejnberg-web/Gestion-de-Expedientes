@@ -955,16 +955,38 @@ export const Planes: React.FC = () => {
   const ninetyDaysFromNow = new Date();
   ninetyDaysFromNow.setDate(now.getDate() + 90);
 
-  const activePlanes = activeTab === 'general' ? planes : planes.filter(p => p.anexo === activeTab);
+  // Unificamos para las métricas
+  const allPlanes = [...planes];
+  // Si estamos en general o derrames, incluimos los derrames de las colecciones específicas
+  // si es que no están ya en 'planes'. Para ser seguros y no duplicar:
+  derrames.forEach(d => {
+    if (!allPlanes.find(p => p.id === d.id)) {
+      // Adaptamos EmpresaControlDerrame a PlanEmergencia mínimamente para las métricas
+      allPlanes.push({
+        ...d,
+        anexo: 'derrames',
+        convalidaciones: {
+          anio1: d.convalidacionesDetalle?.anio1?.fecha,
+          anio2: d.convalidacionesDetalle?.anio2?.fecha
+        }
+      } as any);
+    }
+  });
+
+  const activePlanesForMetrics = activeTab === 'general' ? allPlanes : allPlanes.filter(p => p.anexo === activeTab);
   
-  let totalEmpresas = activePlanes.length;
+  let totalEmpresas = activePlanesForMetrics.length;
   let convalidacionesVencidas = 0;
   let convalidacionesPorVencer = 0;
   let planesVencidos = 0;
   let planesPorVencer = 0;
 
-  activePlanes.forEach(p => {
-    // Check Plan Disposicion Vencimiento
+  activePlanesForMetrics.forEach(p => {
+    // Si es Anexo 15, no sumamos alertas (según requerimiento anterior)
+    if (p.anexo === 'anexo_15') return;
+    if (p.estado === 'desafectado') return;
+
+    // Plan Disposicion Vencimiento
     if (p.vencimiento && p.vencimiento !== '-' && p.vencimiento.length >= 5) {
       const vDate = new Date(p.vencimiento);
       if (!isNaN(vDate.getTime())) {
@@ -973,14 +995,23 @@ export const Planes: React.FC = () => {
       }
     }
 
-    // Check Convalidaciones
+    // Convalidaciones
     if (p.convalidaciones) {
-      Object.values(p.convalidaciones).forEach(dateStr => {
+      Object.entries(p.convalidaciones).forEach(([key, dateStr]) => {
         if (typeof dateStr === 'string' && dateStr && dateStr !== '-' && dateStr.length >= 5) {
           const cDate = new Date(dateStr);
           if (!isNaN(cDate.getTime())) {
-            if (cDate < now) convalidacionesVencidas++;
-            else if (cDate <= ninetyDaysFromNow) convalidacionesPorVencer++;
+            // Verificar si está cumplida para no contarla como vencida
+            const detalle = p.convalidacionesDetalle?.[key as keyof typeof p.convalidaciones];
+            const isFulfilled = !!(detalle?.nroIF && detalle?.nroExpediente);
+            
+            if (!isFulfilled) {
+              if (cDate < now) {
+                convalidacionesVencidas++;
+              } else if (cDate <= ninetyDaysFromNow) {
+                convalidacionesPorVencer++;
+              }
+            }
           }
         }
       });
@@ -1187,8 +1218,8 @@ export const Planes: React.FC = () => {
                                           {p.sipaEquipamiento?.barrerasPuerto || '0'}m
                                         </span>
                                       ) : (
-                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio1 || '', true, !!(p.convalidacionesDetalle?.anio1?.nroIF && p.convalidacionesDetalle?.anio1?.nroExpediente))}`}>
-                                            {!!(p.convalidacionesDetalle?.anio1?.nroIF && p.convalidacionesDetalle?.anio1?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio1)}` : formatDate(p.convalidaciones?.anio1)}
+                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio1 || p.convalidacionesDetalle?.anio1?.fecha || '', true, !!(p.convalidacionesDetalle?.anio1?.nroIF && p.convalidacionesDetalle?.anio1?.nroExpediente))}`}>
+                                            {!!(p.convalidacionesDetalle?.anio1?.nroIF && p.convalidacionesDetalle?.anio1?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio1 || p.convalidacionesDetalle?.anio1?.fecha)}` : formatDate(p.convalidaciones?.anio1 || p.convalidacionesDetalle?.anio1?.fecha)}
                                         </span>
                                       )}
                                   </td>
@@ -1198,8 +1229,8 @@ export const Planes: React.FC = () => {
                                           {p.sipaEquipamiento?.barrerasFluvial || '0'}m
                                         </span>
                                       ) : (
-                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio2 || '', true, !!(p.convalidacionesDetalle?.anio2?.nroIF && p.convalidacionesDetalle?.anio2?.nroExpediente))}`}>
-                                            {!!(p.convalidacionesDetalle?.anio2?.nroIF && p.convalidacionesDetalle?.anio2?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio2)}` : formatDate(p.convalidaciones?.anio2)}
+                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio2 || p.convalidacionesDetalle?.anio2?.fecha || '', true, !!(p.convalidacionesDetalle?.anio2?.nroIF && p.convalidacionesDetalle?.anio2?.nroExpediente))}`}>
+                                            {!!(p.convalidacionesDetalle?.anio2?.nroIF && p.convalidacionesDetalle?.anio2?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio2 || p.convalidacionesDetalle?.anio2?.fecha)}` : formatDate(p.convalidaciones?.anio2 || p.convalidacionesDetalle?.anio2?.fecha)}
                                         </span>
                                       )}
                                   </td>
@@ -1209,9 +1240,11 @@ export const Planes: React.FC = () => {
                                           {p.sipaEquipamiento?.skimmers || '0'}
                                         </span>
                                       ) : (
-                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio3 || '', true, !!(p.convalidacionesDetalle?.anio3?.nroIF && p.convalidacionesDetalle?.anio3?.nroExpediente))}`}>
-                                            {!!(p.convalidacionesDetalle?.anio3?.nroIF && p.convalidacionesDetalle?.anio3?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio3)}` : formatDate(p.convalidaciones?.anio3)}
-                                        </span>
+                                        (p.anexo !== 'derrames' && p.convalidaciones?.anio3) ? (
+                                          <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio3 || '', true, !!(p.convalidacionesDetalle?.anio3?.nroIF && p.convalidacionesDetalle?.anio3?.nroExpediente))}`}>
+                                              {!!(p.convalidacionesDetalle?.anio3?.nroIF && p.convalidacionesDetalle?.anio3?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio3)}` : formatDate(p.convalidaciones?.anio3)}
+                                          </span>
+                                        ) : '-'
                                       )}
                                   </td>
                                   <td className="px-2 py-4 text-center">
@@ -1220,9 +1253,11 @@ export const Planes: React.FC = () => {
                                           {p.sipaEquipamiento?.embarcaciones || '0'}
                                         </span>
                                       ) : (
-                                        <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio4 || '', true, !!(p.convalidacionesDetalle?.anio4?.nroIF && p.convalidacionesDetalle?.anio4?.nroExpediente))}`}>
-                                            {!!(p.convalidacionesDetalle?.anio4?.nroIF && p.convalidacionesDetalle?.anio4?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio4)}` : formatDate(p.convalidaciones?.anio4)}
-                                        </span>
+                                        (p.anexo !== 'derrames' && p.convalidaciones?.anio4) ? (
+                                          <span className={`inline-block px-2 py-1 rounded text-[9px] font-bold border ${getStatusColor(p.convalidaciones?.anio4 || '', true, !!(p.convalidacionesDetalle?.anio4?.nroIF && p.convalidacionesDetalle?.anio4?.nroExpediente))}`}>
+                                              {!!(p.convalidacionesDetalle?.anio4?.nroIF && p.convalidacionesDetalle?.anio4?.nroExpediente) ? `✅ ${formatDate(p.convalidaciones?.anio4)}` : formatDate(p.convalidaciones?.anio4)}
+                                          </span>
+                                        ) : '-'
                                       )}
                                   </td>
                                   <td className="px-4 py-4 text-center">
@@ -1704,32 +1739,36 @@ export const Planes: React.FC = () => {
                           <p className="text-[10px] font-black uppercase text-slate-400 mb-4">Registro de Convalidaciones Anuales</p>
                         </div>
                         <div className="space-y-4">
-                          {(['anio1', 'anio2', 'anio3', 'anio4'] as const).map((y, i) => {
-                            const dateVal = (editingPlan?.convalidaciones as any)?.[y] || '';
+                          {(editingPlan?.anexo === 'derrames' ? ['anio1', 'anio2'] : ['anio1', 'anio2', 'anio3', 'anio4']).map((y, i) => {
+                            const dateVal = (editingPlan?.convalidaciones as any)?.[y] || (editingPlan?.convalidacionesDetalle as any)?.[y]?.fecha || '';
                             const det = (editingPlan?.convalidacionesDetalle as any)?.[y] || {};
-                            const formatoGlobal = editingPlan?.formatoDisposicion;
+                            const formatoGlobal = (editingPlan?.formatoDisposicion || editingPlan?.anexo === 'derrames');
                             return (
-                              <div key={y} className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                              <div key={y} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
                                 <div className="flex flex-wrap gap-3 items-start">
                                   <div className="w-32">
-                                    <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">{i+1}º Conval. (Fecha)</label>
+                                    <label className="block text-[9px] font-black uppercase text-slate-500 mb-1 leading-none">{i+1}º Conval. (Fecha)</label>
                                     <input 
                                       type="date"
-                                      className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary font-mono" 
+                                      className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary font-mono font-bold" 
                                       value={dateVal} 
                                       onChange={e => setEditingPlan({
                                         ...editingPlan!, 
-                                        convalidaciones: { ...editingPlan?.convalidaciones, [y]: e.target.value }
+                                        convalidaciones: { ...editingPlan?.convalidaciones, [y]: e.target.value },
+                                        convalidacionesDetalle: {
+                                          ...editingPlan?.convalidacionesDetalle,
+                                          [y]: { ...det, fecha: e.target.value }
+                                        }
                                       })}
                                     />
                                   </div>
                                   
                                   {formatoGlobal && (
                                     <div className="flex-1 min-w-[200px]">
-                                      <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">Auditor / Inspector</label>
+                                      <label className="block text-[9px] font-black uppercase text-slate-500 mb-1 leading-none">Auditor / Inspector (Separar por comas)</label>
                                       <input 
                                         list="auditores-list"
-                                        className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase"
+                                        className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase font-bold"
                                         value={det.auditorNombre || ''}
                                         onChange={e => setEditingPlan({
                                           ...editingPlan!,
@@ -1744,10 +1783,10 @@ export const Planes: React.FC = () => {
                                   
                                   {formatoGlobal && (
                                     <>
-                                      <div className="w-32">
-                                        <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">Nº IF</label>
+                                      <div className="w-48">
+                                        <label className="block text-[9px] font-black uppercase text-slate-500 mb-1 leading-none">Nº IF / Informe</label>
                                         <input 
-                                          className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase font-mono"
+                                          className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase font-mono font-bold"
                                           value={det.nroIF || ''}
                                           onChange={e => setEditingPlan({
                                             ...editingPlan!,
@@ -1756,12 +1795,13 @@ export const Planes: React.FC = () => {
                                               [y]: { ...det, nroIF: e.target.value }
                                             }
                                           })}
+                                          placeholder="VARIOS SEPARADOS POR COMA"
                                         />
                                       </div>
                                       <div className="w-40">
-                                        <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">Nº Expediente</label>
+                                        <label className="block text-[9px] font-black uppercase text-slate-500 mb-1 leading-none">Nº Expediente</label>
                                         <input 
-                                          className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase font-mono"
+                                          className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase font-mono font-bold"
                                           value={det.nroExpediente || ''}
                                           onChange={e => setEditingPlan({
                                             ...editingPlan!,
@@ -1789,22 +1829,23 @@ export const Planes: React.FC = () => {
                                     </>
                                   )}
 
-                                  {formatoGlobal === 'digital' && (
-                                    <div className="w-32">
-                                      <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">Nº Certificado</label>
-                                      <input 
-                                        className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary uppercase font-mono"
-                                        value={det.nroCertificado || ''}
-                                        onChange={e => setEditingPlan({
-                                          ...editingPlan!,
-                                          convalidacionesDetalle: {
-                                            ...editingPlan?.convalidacionesDetalle,
-                                            [y]: { ...det, nroCertificado: e.target.value }
-                                          }
-                                        })}
-                                      />
-                                    </div>
-                                  )}
+                                </div>
+                                <div className="mt-3 bg-white dark:bg-slate-900/50 p-2 rounded border border-slate-100 dark:border-slate-800">
+                                  <label className="block text-[8px] font-black uppercase text-slate-400 mb-1">Observaciones / Pendientes de Subsanación</label>
+                                  <textarea 
+                                    className="w-full px-2 py-1.5 text-[10px] bg-transparent border-none outline-none focus:ring-0 min-h-[40px] resize-none"
+                                    value={det.observaciones || ''}
+                                    onChange={e => {
+                                      setEditingPlan({
+                                        ...editingPlan!,
+                                        convalidacionesDetalle: {
+                                          ...editingPlan?.convalidacionesDetalle,
+                                          [y]: { ...det, observaciones: e.target.value }
+                                        }
+                                      });
+                                    }}
+                                    placeholder="DETALLE DE PENDIENTES O OBSERVACIONES DE LA AUDITORÍA..."
+                                  />
                                 </div>
                               </div>
                             );
@@ -1813,8 +1854,22 @@ export const Planes: React.FC = () => {
                       </div>
                     )}
 
+                      {editingPlan?.anexo === 'derrames' && (
+                        <div className="md:col-span-2 space-y-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                          <div className="flex justify-between items-center">
+                            <p className="text-[10px] font-black uppercase text-slate-400">Bases Operativas EMCODECON</p>
+                          </div>
+                          <textarea 
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary text-xs h-24" 
+                            value={(editingPlan as any)?.basesOperativasDetalle || ''} 
+                            onChange={e => setEditingPlan({...editingPlan!, basesOperativasDetalle: e.target.value})}
+                            placeholder="Detalle de bases, ubicación y equipamiento por base..."
+                          />
+                        </div>
+                      )}
+
                       <div className="md:col-span-2">
-                        <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Observaciones</label>
+                        <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Observaciones Generales</label>
                         <textarea 
                           className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary text-xs h-20" 
                           value={editingPlan?.observaciones || ''} 
@@ -2232,8 +2287,8 @@ export const Planes: React.FC = () => {
                     <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 print:break-inside-avoid">
                       <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Registro de Convalidaciones</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {(['anio1', 'anio2', 'anio3', 'anio4'] as const).map((y, i) => {
-                        const dateVal = (selectedPlan.convalidaciones as any)?.[y];
+                      {(selectedPlan.anexo === 'derrames' ? ['anio1', 'anio2'] : ['anio1', 'anio2', 'anio3', 'anio4']).map((y, i) => {
+                        const dateVal = (selectedPlan.convalidaciones as any)?.[y] || (selectedPlan.convalidacionesDetalle as any)?.[y]?.fecha;
                         const det = (selectedPlan.convalidacionesDetalle as any)?.[y];
                         if (!dateVal && !det) return null;
                         
@@ -2245,14 +2300,38 @@ export const Planes: React.FC = () => {
                                 {!!(det?.nroIF && det?.nroExpediente) ? `✅ CONVALIDADO (${formatDate(dateVal)})` : formatDate(dateVal)}
                               </span>
                             </div>
-                            {det?.auditorNombre && (
-                              <div className="mt-2 space-y-1 text-[9px] bg-white dark:bg-slate-900 p-2 rounded border border-slate-100 dark:border-slate-800">
-                                {det.auditorNombre && <p><span className="text-slate-400 font-bold uppercase">Auditor:</span> <span className="font-bold uppercase">{det.auditorNombre}</span></p>}
-                                {selectedPlan.formatoDisposicion === 'digital' && det.nroCertificado && (
-                                  <p><span className="text-slate-400 font-bold uppercase">Certificado:</span> <span className="font-mono">{det.nroCertificado}</span></p>
+                            {det && (det.auditorNombre || det.nroIF || det.nroExpediente || det.observaciones) && (
+                              <div className="mt-2 space-y-1.5 text-[9px] bg-white dark:bg-slate-900 p-2 rounded border border-slate-100 dark:border-slate-800 shadow-sm">
+                                {det.auditorNombre && (
+                                  <div className="flex items-start gap-1">
+                                    <span className="text-slate-400 font-bold uppercase shrink-0">Auditor:</span> 
+                                    <span className="font-bold uppercase text-slate-700 dark:text-slate-300">{det.auditorNombre}</span>
+                                  </div>
                                 )}
-                                {det.nroIF && <p><span className="text-slate-400 font-bold uppercase">IF:</span> <span className="font-mono">{det.nroIF}</span></p>}
-                                {det.nroExpediente && <p><span className="text-slate-400 font-bold uppercase">Expediente:</span> <span className="font-mono">{det.nroExpediente}</span></p>}
+                                {(selectedPlan.formatoDisposicion === 'digital' || selectedPlan.anexo === 'derrames') && det.nroCertificado && (
+                                  <div className="flex items-start gap-1">
+                                    <span className="text-slate-400 font-bold uppercase shrink-0">Certificado:</span> 
+                                    <span className="font-mono text-slate-700 dark:text-slate-300">{det.nroCertificado}</span>
+                                  </div>
+                                )}
+                                {det.nroIF && (
+                                  <div className="flex items-start gap-1">
+                                    <span className="text-slate-400 font-bold uppercase shrink-0">IF:</span> 
+                                    <span className="font-mono text-slate-700 dark:text-slate-300">{det.nroIF}</span>
+                                  </div>
+                                )}
+                                {det.nroExpediente && (
+                                  <div className="flex items-start gap-1">
+                                    <span className="text-slate-400 font-bold uppercase shrink-0">Expediente:</span> 
+                                    <span className="font-mono text-slate-700 dark:text-slate-300">{det.nroExpediente}</span>
+                                  </div>
+                                )}
+                                {det.observaciones && (
+                                  <div className="mt-1 pt-1 border-t border-slate-50 dark:border-slate-800">
+                                    <p className="text-slate-400 font-black uppercase text-[8px] mb-0.5">Pendientes / Observaciones:</p>
+                                    <p className="text-slate-600 dark:text-slate-400 italic">"{det.observaciones}"</p>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
