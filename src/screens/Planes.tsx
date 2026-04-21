@@ -2089,6 +2089,17 @@ export const Planes: React.FC = () => {
                       )}
                     </div>
                   </section>
+
+                  {selectedPlan.anexo === 'anexo_15' && (
+                    <section className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800/50 mt-6 print:break-inside-avoid flex flex-col items-center justify-center text-center">
+                      <span className="material-symbols-outlined text-blue-500 text-3xl mb-2">folder_supervised</span>
+                      <h3 className="text-[10px] font-black uppercase text-blue-600 dark:text-blue-400 tracking-widest mb-1">Planes bajo su Jurisdicción</h3>
+                      <p className="text-4xl font-black text-blue-700 dark:text-blue-300">
+                        {planes.filter(p => p.anexo !== 'anexo_15' && p.dependencia && p.dependencia.trim().toUpperCase() === selectedPlan.empresa.trim().toUpperCase()).length}
+                      </p>
+                      <p className="text-[9px] font-bold text-blue-500/80 uppercase mt-1">Planes activos registrados en sistema</p>
+                    </section>
+                  )}
                 </div>
 
                 {/* Columna Historial / Timeline */}
