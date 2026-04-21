@@ -37,6 +37,9 @@ export const Inspecciones: React.FC = () => {
     }
   };
   const currentUser: User = getUser();
+  const role = (currentUser.role || '').toLowerCase();
+  const isJefe = role === 'jefe' || role === 'admin' || role === 'administrator';
+  const isSuperior = role === 'superior';
 
   useEffect(() => {
     if (location.state?.prefill) {
@@ -488,10 +491,12 @@ export const Inspecciones: React.FC = () => {
               <h1 className="text-slate-900 dark:text-white text-2xl font-black uppercase tracking-tight">Registro de Inspecciones</h1>
               <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest text-primary italic">Control y Seguimiento de Campo</p>
             </div>
-            <button onClick={() => { setEditingInsp({ fecha: new Date().toISOString().split('T')[0], resultado: 'CON PENDIENTES', tipo: 'INICIAL', jurisdiccion: '' }); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
-              <span className="material-symbols-outlined text-[18px]">assignment_add</span>
-              <span>Nueva Inspección</span>
-            </button>
+            {!isSuperior && (
+              <button onClick={() => { setEditingInsp({ fecha: new Date().toISOString().split('T')[0], resultado: 'CON PENDIENTES', tipo: 'INICIAL', jurisdiccion: '' }); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
+                <span className="material-symbols-outlined text-[18px]">assignment_add</span>
+                <span>Nueva Inspección</span>
+              </button>
+            )}
           </div>
 
           {/* KPI CARDS */}
@@ -578,13 +583,13 @@ export const Inspecciones: React.FC = () => {
                            <button onClick={() => { setHistoryTarget(item); setIsHistorialModalOpen(true); }} className="text-slate-400 hover:text-blue-500 p-1" title="Ver Historial">
                               <span className="material-symbols-outlined text-[18px]">history</span>
                            </button>
-                           {item.resultado === 'CON PENDIENTES' && (
+                           {!isSuperior && item.resultado === 'CON PENDIENTES' && (
                               <button onClick={() => openSubsanarModal(item)} className="bg-green-100 hover:bg-green-200 text-green-700 p-1 rounded border border-green-200 transition-colors" title="Levantar Pendientes (Emitir Certificado)">
                                  <span className="material-symbols-outlined text-[18px]">playlist_add_check</span>
                               </button>
                            )}
-                           <button onClick={() => { setEditingInsp(item); setIsModalOpen(true); }} className="text-slate-400 hover:text-primary p-1"><span className="material-symbols-outlined text-[18px]">edit_note</span></button>
-                           <button onClick={() => handleDelete(item.id)} className="text-slate-400 hover:text-red-500 p-1"><span className="material-symbols-outlined text-[18px]">delete_forever</span></button>
+                           {!isSuperior && <button onClick={() => { setEditingInsp(item); setIsModalOpen(true); }} className="text-slate-400 hover:text-primary p-1"><span className="material-symbols-outlined text-[18px]">edit_note</span></button>}
+                           {!isSuperior && <button onClick={() => handleDelete(item.id)} className="text-slate-400 hover:text-red-500 p-1"><span className="material-symbols-outlined text-[18px]">delete_forever</span></button>}
                         </div>
                     </td>
                   </tr>
