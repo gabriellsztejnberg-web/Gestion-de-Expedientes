@@ -1,84 +1,147 @@
 
-import React, { useState, useEffect } from 'react';
-// FIX: Using react-router instead of react-router-dom to resolve missing named exports
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { db, currentConfig } from '../firebase';
-import { collection, getDocs, query, where, setDoc, doc } from 'firebase/firestore';
+import { auth, db, currentConfig } from '../firebase';
+import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { doc, getDocs, setDoc, query, collection, where } from 'firebase/firestore';
 import { User } from '../types';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // Linking state
+  const [needsLinking, setNeedsLinking] = useState(false);
+  const [googleUser, setGoogleUser] = useState<any>(null);
+  const [linkUsername, setLinkUsername] = useState('');
+  const [linkPassword, setLinkPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Classic Login Fallback
+  const [useClassicLogin, setUseClassicLogin] = useState(false);
+  const [classicUsername, setClassicUsername] = useState('');
+  const [classicPassword, setClassicPassword] = useState('');
 
   // Config Modal State
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [configJson, setConfigJson] = useState('');
 
-  useEffect(() => {
-    const seedInitialUsers = async () => {
-      try {
-        // ACTUALIZACIÓN: Forzamos la creación/actualización del usuario Admin solicitado
-        // para garantizar el acceso inmediato.
-        await setDoc(doc(db, 'usuarios', 'admin-id'), {
-            id: 'admin-id', 
-            username: 'admin', 
-            name: 'Administrador Sistema', 
-            password: 'Qwerty.123', 
-            role: 'jefe' 
-        });
-
-        const q = query(collection(db, 'usuarios'));
-        const snapshot = await getDocs(q);
-        
-        if (snapshot.empty) {
-          const initialUsers = [
-            { id: 'gabriel-id', username: 'gabriel', name: 'Gabriel', password: '123', role: 'jefe' }
-          ];
-          for (const u of initialUsers) {
-            await setDoc(doc(db, 'usuarios', u.id), u);
-          }
-        }
-      } catch (err) {
-        console.error("Error inicializando usuarios:", err);
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setError('');
+    
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      const qUid = query(collection(db, 'usuarios'), where('uid', '==', user.uid));
+      const snapUid = await getDocs(qUid);
+      
+      if (!snapUid.empty) {
+          const userDoc = snapUid.docs[0].data() as User;
+          localStorage.setItem('currentUser', JSON.stringify(userDoc));
+          navigate('/dashboard');
+          return;
       }
-    };
-    seedInitialUsers();
-  }, []);
+      
+      const qEmail = query(collection(db, 'usuarios'), where('email', '==', user.email));
+      const snapEmail = await getDocs(qEmail);
+      
+      if (!snapEmail.empty) {
+          const userDoc = snapEmail.docs[0].data() as User;
+          await setDoc(doc(db, 'usuarios', snapEmail.docs[0].id), { 
+              uid: user.uid 
+          }, { merge: true });
+          
+          const finalUser = { ...userDoc, uid: user.uid };
+          localStorage.setItem('currentUser', JSON.stringify(finalUser));
+          navigate('/dashboard');
+          return;
+      }
+      
+      setGoogleUser(user);
+      setNeedsLinking(true);
+      
+    } catch (err: any) {
+      if (err.code === 'auth/configuration-not-found') {
+          setError('⚠️ REPARACIÓN REQUERIDA POR EL ADMINISTRADOR: Debes entrar a console.firebase.google.com -> Proyecto gestion-de-expedientes-7ce57 -> "Authentication" -> "Sign-in method" -> Habilitar "Google". Usa el ingreso clásico aquí abajo.');
+          setUseClassicLogin(true);
+      } else {
+          setError('Error al iniciar sesión con Google. ' + (err.code || err.message || ''));
+      }
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLinkAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     
-    // Normalizamos el usuario a minúsculas antes de buscar
-    const normalizedUser = username.toLowerCase().trim();
+    try {
+        const normalizedUser = linkUsername.toLowerCase().trim();
+        const q = query(
+          collection(db, 'usuarios'), 
+          where('username', '==', normalizedUser)
+        );
+        
+        const snapshot = await getDocs(q);
+        
+        if (!snapshot.empty) {
+            const docSnap = snapshot.docs[0];
+            const userDoc = docSnap.data() as User;
+            
+            if (userDoc.password === linkPassword) {
+                const userRef = doc(db, 'usuarios', docSnap.id);
+                await setDoc(userRef, {
+                    email: googleUser.email,
+                    uid: googleUser.uid,
+                }, { merge: true });
+                
+                const finalUser = { ...userDoc, email: googleUser.email, uid: googleUser.uid };
+                localStorage.setItem('currentUser', JSON.stringify(finalUser));
+                navigate('/dashboard');
+            } else {
+                setError('Contraseña incorrecta de la cuenta anterior.');
+            }
+        } else {
+            setError('No se encontró la cuenta antigua proporcionada.');
+        }
+    } catch (err: any) {
+        setError('Error al vincular: ' + (err.message || ''));
+        console.error(err);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleClassicLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
     
     try {
-      const q = query(
-        collection(db, 'usuarios'), 
-        where('username', '==', normalizedUser)
-      );
-      
+      const normalizedUser = classicUsername.toLowerCase().trim();
+      const q = query(collection(db, 'usuarios'), where('username', '==', normalizedUser));
       const snapshot = await getDocs(q);
 
       if (!snapshot.empty) {
         const userDoc = snapshot.docs[0].data() as User;
-        // Comparación simple de texto plano (para este prototipo)
-        if (userDoc.password === password) {
+        if (userDoc.password === classicPassword) {
           localStorage.setItem('currentUser', JSON.stringify(userDoc));
           navigate('/dashboard');
         } else {
           setError('Contraseña incorrecta.');
         }
       } else {
-        setError('El usuario no existe o no tiene permisos en la nube.');
+        setError('Usuario no encontrado.');
       }
     } catch (err) {
-      setError('No se pudo conectar con Firestore. Verifique su conexión a Internet.');
+      setError('Problema de red o conectividad.');
       console.error(err);
     } finally {
       setLoading(false);
@@ -123,7 +186,7 @@ export const Login: React.FC = () => {
               <span className="material-symbols-outlined text-4xl">water_damage</span>
               División Planes - DPAM Cloud
             </h2>
-            <p className="max-w-xl text-lg font-medium text-slate-100">Acceso compartido y sincronizado en tiempo real.</p>
+            <p className="max-w-xl text-lg font-medium text-slate-100">Acceso seguro con Google sincronizado en tiempo real.</p>
           </div>
         </div>
       </div>
@@ -142,56 +205,139 @@ export const Login: React.FC = () => {
 
         <div className="mx-auto w-full max-w-sm lg:w-96">
           <div className="flex flex-col gap-2 mb-8 text-center lg:text-left">
-            <p className="text-slate-900 dark:text-white text-3xl font-black tracking-tight">Acceso Oficina</p>
-            <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest">Ingrese sus credenciales</p>
+            <p className="text-slate-900 dark:text-white text-3xl font-black tracking-tight">{needsLinking ? 'Vincular Cuenta' : 'Acceso Oficina'}</p>
+            <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest">
+                {needsLinking ? 'Conecte su usuario existente a Google' : 'Ingrese usando su cuenta de Google'}
+            </p>
           </div>
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-6">
             {error && <div className="bg-red-50 text-red-600 p-3 rounded text-xs font-bold border border-red-100 flex items-center gap-2">
               <span className="material-symbols-outlined text-sm">error</span>
               {error}
             </div>}
-            <div className="flex flex-col gap-2">
-              <label className="text-slate-900 dark:text-slate-200 text-[10px] font-black uppercase">Usuario</label>
-              <input 
-                className="w-full bg-white dark:bg-slate-800 text-slate-900 dark:text-white h-12 px-4 text-sm outline-none border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm focus:ring-2 focus:ring-primary/20" 
-                placeholder="Nombre de usuario" 
-                required 
-                value={username} 
-                onChange={e => setUsername(e.target.value)}
-                disabled={loading}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-slate-900 dark:text-slate-200 text-[10px] font-black uppercase">Contraseña</label>
-              <div className="relative">
-                <input 
-                  className="w-full bg-white dark:bg-slate-800 text-slate-900 dark:text-white h-12 px-4 text-sm outline-none border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm focus:ring-2 focus:ring-primary/20" 
-                  type={showPassword ? "text" : "password"} 
-                  placeholder="••••••••" 
-                  required 
-                  value={password} 
-                  onChange={e => setPassword(e.target.value)}
-                  disabled={loading}
-                />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-slate-400">
-                  <span className="material-symbols-outlined text-[20px]">{showPassword ? "visibility" : "visibility_off"}</span>
-                </button>
-              </div>
-            </div>
-            <button 
-              className={`flex w-full justify-center rounded-lg bg-primary px-4 py-3.5 text-sm font-black uppercase text-white shadow-lg hover:bg-blue-600 transition-all ${loading ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`} 
-              type="submit"
-              disabled={loading}
-            >
-              {loading ? 'Sincronizando...' : 'Ingresar al Sistema'}
-            </button>
-          </form>
+            
+            {!needsLinking ? (
+              !useClassicLogin ? (
+                <>
+                  <button 
+                    onClick={handleGoogleSignIn}
+                    className={`flex w-full items-center justify-center gap-3 rounded-lg bg-white dark:bg-slate-800 px-4 py-3.5 text-sm font-black uppercase text-slate-700 dark:text-white border border-slate-300 dark:border-slate-600 shadow hover:bg-slate-50 dark:hover:bg-slate-700 transition-all ${loading ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`} 
+                    type="button"
+                    disabled={loading}
+                  >
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5"/>
+                    {loading ? 'Acreditando ID...' : 'Ingresar con Google'}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setUseClassicLogin(true)}
+                    className="w-full mt-4 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline underline-offset-2"
+                  >
+                    Problemas con el servidor? Ingreso Clásico
+                  </button>
+                </>
+              ) : (
+                <form onSubmit={handleClassicLogin} className="space-y-6">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-slate-900 dark:text-slate-200 text-[10px] font-black uppercase">Usuario</label>
+                      <input 
+                        className="w-full bg-white dark:bg-slate-800 text-slate-900 dark:text-white h-12 px-4 text-sm outline-none border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm focus:ring-2 focus:ring-primary/20" 
+                        placeholder="Nombre de usuario" 
+                        required 
+                        value={classicUsername} 
+                        onChange={e => setClassicUsername(e.target.value)}
+                        disabled={loading}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-slate-900 dark:text-slate-200 text-[10px] font-black uppercase">Contraseña</label>
+                      <div className="relative">
+                        <input 
+                          className="w-full bg-white dark:bg-slate-800 text-slate-900 dark:text-white h-12 px-4 text-sm outline-none border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm focus:ring-2 focus:ring-primary/20" 
+                          type={showPassword ? "text" : "password"} 
+                          placeholder="••••••••" 
+                          required 
+                          value={classicPassword} 
+                          onChange={e => setClassicPassword(e.target.value)}
+                          disabled={loading}
+                        />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-slate-400">
+                          <span className="material-symbols-outlined text-[20px]">{showPassword ? "visibility" : "visibility_off"}</span>
+                        </button>
+                      </div>
+                    </div>
+                    <button 
+                      className={`flex w-full justify-center rounded-lg bg-primary px-4 py-3.5 text-sm font-black uppercase text-white shadow-lg hover:bg-blue-600 transition-all ${loading ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`} 
+                      type="submit"
+                      disabled={loading}
+                    >
+                      {loading ? 'Ingresando...' : 'Entrar Clásico'}
+                    </button>
+                    <button 
+                        type="button" 
+                        onClick={() => { setUseClassicLogin(false); setError(''); }} 
+                        className="w-full text-center text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 mt-2"
+                        disabled={loading}
+                    >
+                        Volver a Google Auth
+                    </button>
+                </form>
+              )
+            ) : (
+                <form onSubmit={handleLinkAccount} className="space-y-6">
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 rounded text-xs font-medium border border-blue-100 dark:border-blue-900/30">
+                        Se ha detectado un ingreso exitoso con Google pero <strong>no encontramos una cuenta asociada</strong>. Por favor, 
+                        ingrese su antiguo Usuario y Contraseña para vincularlos.
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-slate-900 dark:text-slate-200 text-[10px] font-black uppercase">Antiguo Usuario</label>
+                      <input 
+                        className="w-full bg-white dark:bg-slate-800 text-slate-900 dark:text-white h-12 px-4 text-sm outline-none border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm focus:ring-2 focus:ring-primary/20" 
+                        placeholder="admin, gabriel, etc." 
+                        required 
+                        value={linkUsername} 
+                        onChange={e => setLinkUsername(e.target.value)}
+                        disabled={loading}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-slate-900 dark:text-slate-200 text-[10px] font-black uppercase">Contraseña</label>
+                      <div className="relative">
+                        <input 
+                          className="w-full bg-white dark:bg-slate-800 text-slate-900 dark:text-white h-12 px-4 text-sm outline-none border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm focus:ring-2 focus:ring-primary/20" 
+                          type={showPassword ? "text" : "password"} 
+                          placeholder="••••••••" 
+                          required 
+                          value={linkPassword} 
+                          onChange={e => setLinkPassword(e.target.value)}
+                          disabled={loading}
+                        />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-slate-400">
+                          <span className="material-symbols-outlined text-[20px]">{showPassword ? "visibility" : "visibility_off"}</span>
+                        </button>
+                      </div>
+                    </div>
+                    <button 
+                      className={`flex w-full justify-center rounded-lg bg-primary px-4 py-3.5 text-sm font-black uppercase text-white shadow-lg hover:bg-blue-600 transition-all ${loading ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`} 
+                      type="submit"
+                      disabled={loading}
+                    >
+                      {loading ? 'Vinculando...' : 'Vincular y Entrar'}
+                    </button>
+                    <button 
+                        type="button" 
+                        onClick={() => { setNeedsLinking(false); setError(''); }} 
+                        className="w-full text-center text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 mt-2"
+                        disabled={loading}
+                    >
+                        Cancelar
+                    </button>
+                </form>
+            )}
+          </div>
           <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center italic">
-              Conexión forzada vía HTTPS Polling (Office-Ready)
-            </p>
-            <p className="text-[9px] text-primary/70 font-bold text-center mt-2 cursor-pointer hover:underline" onClick={() => { setUsername('admin'); setPassword('Qwerty.123'); }}>
-              Credenciales por defecto: admin / Qwerty.123
+              Autenticación Segura y Cifrada por Google
             </p>
           </div>
         </div>
