@@ -66,7 +66,7 @@ export interface TimelineEvent {
   isPending?: boolean; // Para marcar como tarea pendiente
 }
 
-export type UserRole = 'jefe' | 'operador';
+export type UserRole = 'jefe' | 'operador' | 'superior';
 
 export interface User {
   id: string;
