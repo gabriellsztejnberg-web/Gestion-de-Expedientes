@@ -58,11 +58,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage }) => {
   // Validación de rol ultra-flexible para evitar bloqueos
   const role = (currentUser.role || '').toLowerCase();
   const isJefe = role === 'jefe' || role === 'admin' || role === 'administrator';
+  const isSuperior = role === 'superior';
 
   if (isJefe) {
     navItems.push({ id: 'users', icon: 'badge', label: 'Personal DPAM', path: '/users' });
     navItems.push({ id: 'configuracion', icon: 'settings_backup_restore', label: 'Respaldo de Datos', path: '/configuracion' });
   }
+
+  // Filtrar items para el rol "superior"
+  const filteredNavItems = isSuperior 
+    ? navItems.filter(item => item.id !== 'asistencia' && item.id !== 'users' && item.id !== 'auditores' && item.id !== 'configuracion')
+    : navItems;
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
@@ -111,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage }) => {
           </div>
         </div>
         <nav className="flex-1 px-4 flex flex-col gap-1 overflow-y-auto">
-          {navItems.map((item) => (
+          {filteredNavItems.map((item) => (
             <Link 
               key={item.id} 
               to={item.path} 
