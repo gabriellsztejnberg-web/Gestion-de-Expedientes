@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, getDocs, writeBatch, doc, deleteDoc } from 'firebase/firestore';
+import { Navigate } from 'react-router-dom';
 
 const COLLECTIONS = [
   'expedientes',
@@ -131,6 +132,14 @@ export const Configuracion: React.FC = () => {
       setIsImporting(false);
     }
   };
+
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario"}');
+  const role = (currentUser.role || '').toLowerCase();
+  const isSuperior = role === 'superior';
+
+  if (isSuperior) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   return (
     <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden">
