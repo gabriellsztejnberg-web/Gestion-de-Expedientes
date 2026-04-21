@@ -12,6 +12,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { User, AttendanceLog, AttendanceType } from '../types';
+import { Navigate } from 'react-router-dom';
 
 // CONFIGURACIÓN
 const WEEKLY_BASE_HOURS = 35;
@@ -48,7 +49,9 @@ export const Asistencia: React.FC = () => {
   });
 
   const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario"}');
-  const isJefe = (currentUser.role || '').toLowerCase() === 'jefe' || (currentUser.role || '').toLowerCase() === 'admin';
+  const role = (currentUser.role || '').toLowerCase();
+  const isJefe = role === 'jefe' || role === 'admin';
+  const isSuperior = role === 'superior';
   const todayStr = new Date().toISOString().split('T')[0];
 
   function getMonday(d: Date) {
@@ -331,6 +334,10 @@ export const Asistencia: React.FC = () => {
   const weekStartDisplay = formatShortDate(weekDates[0]);
   const weekEndDisplay = formatShortDate(weekDates[4]);
   const isPastWeek = new Date(weekDates[4]) < new Date();
+
+  if (isSuperior) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   return (
     <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden font-display">
