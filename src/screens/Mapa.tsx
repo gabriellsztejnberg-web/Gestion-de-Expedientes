@@ -42,9 +42,21 @@ let DefaultIcon = L.icon({
 L.Marker.prototype.options.icon = DefaultIcon;
 
 const getMarkerIcon = (anexo: string) => {
+  if (anexo === 'anexo_15') {
+    return L.divIcon({
+      className: 'custom-div-icon',
+      html: `<div style="background-color: white; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #1d4ed8; box-shadow: 0 2px 5px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; position: relative; color: #1d4ed8;">
+        <span class="material-symbols-outlined" style="position: absolute; font-size: 16px; transform: rotate(45deg); font-variation-settings: 'FILL' 1;">anchor</span>
+        <span class="material-symbols-outlined" style="position: absolute; font-size: 16px; transform: rotate(-45deg); font-variation-settings: 'FILL' 1;">anchor</span>
+      </div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+      popupAnchor: [0, -14]
+    });
+  }
+
   let color = '#3b82f6'; // default blue
   switch (anexo) {
-    case 'anexo_15': color = '#8b5cf6'; break; // purple
     case 'anexo_16': color = '#ef4444'; break; // red
     case 'anexo_17': color = '#f97316'; break; // orange
     case 'anexo_18': color = '#eab308'; break; // yellow
@@ -64,10 +76,12 @@ const getMarkerIcon = (anexo: string) => {
 const getOsroIcon = () => {
   return L.divIcon({
     className: 'custom-div-icon',
-    html: `<div style="background-color: #0f172a; width: 22px; height: 22px; border-radius: 4px; border: 2px solid #334155; box-shadow: 0 2px 5px rgba(0,0,0,0.5); display: flex; items-center; justify-center; color: white;"><span class="material-symbols-outlined" style="font-size: 14px;">warehouse</span></div>`,
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
-    popupAnchor: [0, -11]
+    html: `<div style="background-color: white; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #334155; box-shadow: 0 2px 5px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; color: #334155;">
+      <span class="material-symbols-outlined" style="font-size: 20px; font-variation-settings: 'FILL' 1;">water_drop</span>
+    </div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14]
   });
 };
 
