@@ -1,8 +1,9 @@
 
-import firebase from "firebase/compat/app";
-import { initializeFirestore } from "firebase/firestore";
+import { initializeApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
-// Configuración por defecto
+// Configuración original de tu base de datos para no perder los expedientes ni los usuarios
 const DEFAULT_CONFIG = {
   apiKey: "AIzaSyDAVp0wzhkKwWzEKrl4VQgSYuzl7t4fKFk",
   authDomain: "gestion-de-expedientes-7ce57.firebaseapp.com",
@@ -24,16 +25,9 @@ const getFirebaseConfig = () => {
 
 export const currentConfig = getFirebaseConfig();
 
-// Use compat initialization to resolve import issues in some environments
-// Ensure we don't double-initialize if HMR happens, though usually this file runs once.
-const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(currentConfig);
+const app = initializeApp(currentConfig);
 
-// Forzamos Long Polling pero eliminamos el caché persistente para asegurar que 
-// los datos que ve el usuario sean SIEMPRE los de la nube y no una versión vieja local.
-// We cast app to any because initializeFirestore expects a modular FirebaseApp, but compat app works at runtime.
-export const db = initializeFirestore(app as any, {
-  experimentalForceLongPolling: true,
-  useFetchStreams: false
-} as any);
+export const db = getFirestore(app);
+export const auth = getAuth(app);
 
-console.log("🔥 Firebase Cloud Initialized with Long Polling");
+console.log("🔥 Firebase Cloud Initialized with Original Database");
