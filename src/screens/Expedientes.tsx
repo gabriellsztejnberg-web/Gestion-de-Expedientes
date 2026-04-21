@@ -82,7 +82,9 @@ export const Expedientes: React.FC = () => {
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
 
   const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
-  const isJefe = (currentUser.role || '').toLowerCase() === 'jefe' || (currentUser.role || '').toLowerCase() === 'admin';
+  const role = (currentUser.role || '').toLowerCase();
+  const isJefe = role === 'jefe' || role === 'admin' || role === 'administrator';
+  const isSuperior = role === 'superior';
 
   useEffect(() => {
     const q = query(collection(db, 'expedientes'));
@@ -815,22 +817,24 @@ export const Expedientes: React.FC = () => {
               <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest text-primary italic">Sábana Informativa DPAM</p>
             </div>
             <div className="flex gap-2">
-                {activeTab === 'mails' && (
+                {!isSuperior && activeTab === 'mails' && (
                      <button onClick={() => setIsMailModalOpen(true)} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-purple-600 text-white text-xs font-black uppercase shadow-lg hover:bg-purple-700 transition-all">
                         <span className="material-symbols-outlined text-[18px]">mail</span>
                         <span>Registrar Mail</span>
                     </button>
                 )}
-                {activeTab === 'mois' && (
+                {!isSuperior && activeTab === 'mois' && (
                      <button onClick={openNewMoiModal} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-black uppercase shadow-lg hover:opacity-90 transition-all">
                         <span className="material-symbols-outlined text-[18px]">add</span>
                         <span>Nuevo MOI</span>
                     </button>
                 )}
-                <button onClick={() => { setEditingExp({ tramite: 'Iniciación', asignadoA: 'buzon' }); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
-                <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                <span>Nuevo GDE</span>
-                </button>
+                {!isSuperior && (
+                  <button onClick={() => { setEditingExp({ tramite: 'Iniciación', asignadoA: 'buzon' }); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
+                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                  <span>Nuevo GDE</span>
+                  </button>
+                )}
             </div>
           </div>
 
@@ -949,11 +953,11 @@ export const Expedientes: React.FC = () => {
                       </td>
                       <td className="px-4 py-4 text-right">
                         <div className="flex justify-end gap-2">
-                          <button onClick={() => handleCreateInspection(c)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all" title="Cargar Inspección"><span className="material-symbols-outlined text-[16px]">assignment_add</span><span className="font-bold uppercase text-[9px]">Cargar Insp.</span></button>
-                          {isBuzon && !isPase && !isGuarda && <button onClick={() => handleAcquire(c.id)} className="bg-primary hover:bg-blue-600 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all"><span className="material-symbols-outlined text-[16px]">person_add</span><span className="font-bold uppercase text-[9px]">Tomar</span></button>}
-                          {canMove && <button onClick={() => { setEditingExp(c); setIsMovimientoModalOpen(true); }} className="bg-slate-800 hover:bg-slate-700 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all"><span className="material-symbols-outlined text-[16px]">sync_alt</span><span className="font-bold uppercase text-[9px]">Actividad</span></button>}
+                          {!isSuperior && <button onClick={() => handleCreateInspection(c)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all" title="Cargar Inspección"><span className="material-symbols-outlined text-[16px]">assignment_add</span><span className="font-bold uppercase text-[9px]">Cargar Insp.</span></button>}
+                          {!isSuperior && isBuzon && !isPase && !isGuarda && <button onClick={() => handleAcquire(c.id)} className="bg-primary hover:bg-blue-600 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all"><span className="material-symbols-outlined text-[16px]">person_add</span><span className="font-bold uppercase text-[9px]">Tomar</span></button>}
+                          {!isSuperior && canMove && <button onClick={() => { setEditingExp(c); setIsMovimientoModalOpen(true); }} className="bg-slate-800 hover:bg-slate-700 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all"><span className="material-symbols-outlined text-[16px]">sync_alt</span><span className="font-bold uppercase text-[9px]">Actividad</span></button>}
                           
-                          {canAdmin && (
+                          {!isSuperior && canAdmin && (
                             <div className="flex gap-1 border-l pl-2 border-slate-200 dark:border-slate-700">
                               <button onClick={() => { setEditingExp(c); setIsModalOpen(true); }} className="text-slate-400 hover:text-primary p-1"><span className="material-symbols-outlined text-[18px]">edit_note</span></button>
                               <button onClick={() => handleDelete(c.id!)} className="text-slate-400 hover:text-red-500 p-1"><span className="material-symbols-outlined text-[18px]">delete_forever</span></button>
@@ -998,7 +1002,7 @@ export const Expedientes: React.FC = () => {
                                 </td>
                                 <td className="px-4 py-4 text-right">
                                     <div className="flex justify-end gap-2">
-                                        {m.estado === 'pendiente' && (
+                                        {!isSuperior && m.estado === 'pendiente' && (
                                             <button onClick={() => { setCurrentMail(m); setIsReplyMailModalOpen(true); }} className="bg-purple-600 hover:bg-purple-700 text-white px-2 py-1.5 rounded flex items-center gap-1 shadow-sm transition-all" title="Responder">
                                                 <span className="material-symbols-outlined text-[16px]">reply</span>
                                                 <span className="font-bold uppercase text-[9px]">Responder</span>
@@ -1007,7 +1011,7 @@ export const Expedientes: React.FC = () => {
                                         {m.estado === 'respondido' && (
                                             <span className="text-[9px] text-slate-400 font-bold uppercase italic mr-2">Respondido por: {m.respondidoPor}</span>
                                         )}
-                                        <button onClick={() => handleDeleteMail(m.id)} className="text-slate-300 hover:text-red-500 p-1"><span className="material-symbols-outlined text-[18px]">delete</span></button>
+                                        {!isSuperior && <button onClick={() => handleDeleteMail(m.id)} className="text-slate-300 hover:text-red-500 p-1"><span className="material-symbols-outlined text-[18px]">delete</span></button>}
                                     </div>
                                 </td>
                             </tr>
@@ -1057,7 +1061,7 @@ export const Expedientes: React.FC = () => {
                                     <td className="px-4 py-4 text-right">
                                         <div className="flex justify-end gap-2" onClick={e => e.stopPropagation()}>
                                             <button onClick={() => openViewMoiModal(m)} className="text-slate-400 hover:text-primary p-1" title="Ver Mensaje"><span className="material-symbols-outlined text-[18px]">visibility</span></button>
-                                            <button onClick={() => handleDeleteMoi(m.id)} className="text-slate-400 hover:text-red-500 p-1" title="Eliminar"><span className="material-symbols-outlined text-[18px]">delete</span></button>
+                                            {!isSuperior && <button onClick={() => handleDeleteMoi(m.id)} className="text-slate-400 hover:text-red-500 p-1" title="Eliminar"><span className="material-symbols-outlined text-[18px]">delete</span></button>}
                                         </div>
                                     </td>
                                 </tr>
