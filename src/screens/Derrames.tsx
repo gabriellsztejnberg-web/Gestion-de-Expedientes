@@ -137,7 +137,9 @@ export const Derrames: React.FC = () => {
   const [inspecciones, setInspecciones] = useState<Inspeccion[]>([]);
   
   const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
-  const isJefe = (currentUser.role || '').toLowerCase() === 'jefe' || (currentUser.role || '').toLowerCase() === 'admin';
+  const role = (currentUser.role || '').toLowerCase();
+  const isJefe = role === 'jefe' || role === 'admin' || role === 'administrator';
+  const isSuperior = role === 'superior';
 
   useEffect(() => {
     // Escuchamos ambas colecciones para no perder datos por cambios de nombre
@@ -545,14 +547,18 @@ export const Derrames: React.FC = () => {
           </div>
           <div className="flex gap-3">
              <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
-             <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors shadow-sm">
-               <span className="material-symbols-outlined text-[18px]">upload_file</span>
-               Importar CSV
-             </button>
-             <button onClick={openNewEmpresa} className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors shadow-sm">
-               <span className="material-symbols-outlined text-[18px]">add_circle</span>
-               Nueva Empresa
-             </button>
+             {!isSuperior && (
+               <>
+                 <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors shadow-sm">
+                   <span className="material-symbols-outlined text-[18px]">upload_file</span>
+                   Importar CSV
+                 </button>
+                 <button onClick={openNewEmpresa} className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors shadow-sm">
+                   <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                   Nueva Empresa
+                 </button>
+               </>
+             )}
           </div>
         </header>
         
