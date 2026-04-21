@@ -10,6 +10,10 @@ export const Timeline: React.FC = () => {
   const [cases, setCases] = useState<Case[]>([]);
   const [filter, setFilter] = useState<'pending' | 'all'>('pending');
 
+  const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
+  const role = (currentUser.role || '').toLowerCase();
+  const isSuperior = role === 'superior';
+
   useEffect(() => {
     const q = query(collection(db, 'movimientos'), orderBy('fecha', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -106,25 +110,27 @@ export const Timeline: React.FC = () => {
 
                   <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-800">
                     <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tight italic">Creado por: {item.usuario}</p>
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => handleDeleteTask(item.id)} 
-                        className="text-slate-400 hover:text-red-500 p-1 flex items-center gap-1 transition-colors"
-                        title="Eliminar de la lista"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">delete</span>
-                        <span className="text-[8px] font-black uppercase">Quitar</span>
-                      </button>
-                      {item.isPending && (
+                    {!isSuperior && (
+                      <div className="flex gap-2">
                         <button 
-                          onClick={() => handleComplete(item.id)} 
-                          className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase flex items-center gap-1.5 shadow-sm transition-all active:scale-95"
+                          onClick={() => handleDeleteTask(item.id)} 
+                          className="text-slate-400 hover:text-red-500 p-1 flex items-center gap-1 transition-colors"
+                          title="Eliminar de la lista"
                         >
-                          <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                          Marcar como Lista
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                          <span className="text-[8px] font-black uppercase">Quitar</span>
                         </button>
-                      )}
-                    </div>
+                        {item.isPending && (
+                          <button 
+                            onClick={() => handleComplete(item.id)} 
+                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase flex items-center gap-1.5 shadow-sm transition-all active:scale-95"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                            Marcar como Lista
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
