@@ -1,4 +1,4 @@
-
+    
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
@@ -184,7 +184,9 @@ export const Planes: React.FC = () => {
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
   const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
-  const isJefe = (currentUser.role || '').toLowerCase() === 'jefe' || (currentUser.role || '').toLowerCase() === 'admin';
+  const role = (currentUser.role || '').toLowerCase();
+  const isJefe = role === 'jefe' || role === 'admin' || role === 'administrator';
+  const isSuperior = role === 'superior';
 
   const handleImportPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1032,45 +1034,49 @@ export const Planes: React.FC = () => {
                     <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest text-primary italic">Control de Vencimientos y Convalidaciones Anuales</p>
                 </div>
                 <div className="flex gap-2">
-                    <button 
-                      onClick={() => pdfInputRef.current?.click()}
-                      className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-all text-xs font-black uppercase shadow-lg"
-                    >
-                       <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span> Importar PDF (IA)
-                    </button>
-                    <input 
-                      type="file" 
-                      ref={pdfInputRef} 
-                      className="hidden" 
-                      accept=".pdf" 
-                      onChange={handleImportPDF} 
-                    />
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 transition-all text-xs font-black uppercase shadow-lg"
-                    >
-                       <span className="material-symbols-outlined text-[18px]">upload_file</span> Importar CSV
-                    </button>
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      className="hidden" 
-                      accept=".csv" 
-                      onChange={handleImportCSV} 
-                    />
-                    <button 
-                      onClick={handleSyncAuditorias}
-                      className="bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-amber-700 transition-all text-xs font-black uppercase shadow-lg"
-                      title="Sincronizar auditorías históricas"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">sync</span> Sincronizar Auditorías
-                    </button>
-                    <button 
-                      onClick={() => { setEditingPlan({ convalidaciones: {}, anexo: activeTab === 'general' ? '' : activeTab }); setIsModalOpen(true); }}
-                      className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-600 transition-all text-xs font-black uppercase shadow-lg"
-                    >
-                       <span className="material-symbols-outlined text-[18px]">add</span> Nuevo Registro
-                    </button>
+                  {!isSuperior && (
+                    <>
+                      <button 
+                        onClick={() => pdfInputRef.current?.click()}
+                        className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-all text-xs font-black uppercase shadow-lg"
+                      >
+                         <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span> Importar PDF (IA)
+                      </button>
+                      <input 
+                        type="file" 
+                        ref={pdfInputRef} 
+                        className="hidden" 
+                        accept=".pdf" 
+                        onChange={handleImportPDF} 
+                      />
+                      <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 transition-all text-xs font-black uppercase shadow-lg"
+                      >
+                         <span className="material-symbols-outlined text-[18px]">upload_file</span> Importar CSV
+                      </button>
+                      <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        className="hidden" 
+                        accept=".csv" 
+                        onChange={handleImportCSV} 
+                      />
+                      <button 
+                        onClick={handleSyncAuditorias}
+                        className="bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-amber-700 transition-all text-xs font-black uppercase shadow-lg"
+                        title="Sincronizar auditorías históricas"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">sync</span> Sincronizar Auditorías
+                      </button>
+                      <button 
+                        onClick={() => { setEditingPlan({ convalidaciones: {}, anexo: activeTab === 'general' ? '' : activeTab }); setIsModalOpen(true); }}
+                        className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-600 transition-all text-xs font-black uppercase shadow-lg"
+                      >
+                         <span className="material-symbols-outlined text-[18px]">add</span> Nuevo Registro
+                      </button>
+                    </>
+                  )}
                 </div>
             </div>
 
@@ -1262,15 +1268,15 @@ export const Planes: React.FC = () => {
                                   </td>
                                   <td className="px-4 py-4 text-center">
                                       <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                          <button onClick={() => { 
+                                          {!isSuperior && <button onClick={() => { 
                                             const pData = { ...p };
                                             if (!pData.empresaRespuestaManual && pData.empresaRespuesta) {
                                               pData.empresaRespuestaManual = pData.empresaRespuesta;
                                             }
                                             setEditingPlan(pData); 
                                             setIsModalOpen(true); 
-                                          }} className="text-slate-400 hover:text-primary p-1"><span className="material-symbols-outlined text-[18px]">edit</span></button>
-                                          {isJefe && <button onClick={() => handleDelete(p.id)} className="text-slate-400 hover:text-red-500 p-1"><span className="material-symbols-outlined text-[18px]">delete</span></button>}
+                                          }} className="text-slate-400 hover:text-primary p-1"><span className="material-symbols-outlined text-[18px]">edit</span></button>}
+                                          {!isSuperior && isJefe && <button onClick={() => handleDelete(p.id)} className="text-slate-400 hover:text-red-500 p-1"><span className="material-symbols-outlined text-[18px]">delete</span></button>}
                                       </div>
                                   </td>
                               </tr>
@@ -1952,13 +1958,15 @@ export const Planes: React.FC = () => {
                         <p className="text-[9px] font-bold uppercase text-slate-400 text-center group-hover:text-primary transition-colors">Cargar Logo / Foto</p>
                       </>
                     )}
-                    <input 
-                      type="file" 
-                      className="absolute inset-0 opacity-0 cursor-pointer z-20" 
-                      accept="image/*" 
-                      title="Cargar imagen" 
-                      onChange={(e) => handleLogoUpload(e, selectedPlan.id)}
-                    />
+                    {!isSuperior && (
+                      <input 
+                        type="file" 
+                        className="absolute inset-0 opacity-0 cursor-pointer z-20" 
+                        accept="image/*" 
+                        title="Cargar imagen" 
+                        onChange={(e) => handleLogoUpload(e, selectedPlan.id)}
+                      />
+                    )}
                   </section>
 
                   <section className="print:break-inside-avoid">
