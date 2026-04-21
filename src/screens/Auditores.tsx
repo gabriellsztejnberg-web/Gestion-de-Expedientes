@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { Auditor, Curso, Inspeccion, ESSENTIAL_COURSES } from '../types';
 import { analyzeAuditorProfile } from '../services/geminiService'; // Importamos IA
+import { Navigate } from 'react-router-dom';
 
 export const Auditores: React.FC = () => {
   const [auditores, setAuditores] = useState<Auditor[]>([]);
@@ -157,7 +158,7 @@ export const Auditores: React.FC = () => {
     });
   };
 
-  const updateStats = (field: keyof EstadisticasAuditor, value: number) => {
+  const updateStats = (field: keyof Auditor['stats'], value: number) => {
     const currentStats = editingAuditor.stats || { totalHistorico: 0, anualActual: 0, anioReferencia: new Date().getFullYear() };
     setEditingAuditor({
         ...editingAuditor,
@@ -180,6 +181,14 @@ export const Auditores: React.FC = () => {
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
+
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario"}');
+  const role = (currentUser.role || '').toLowerCase();
+  const isSuperior = role === 'superior';
+
+  if (isSuperior) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   const filteredAuditores = auditoresWithStats.filter(a => 
     (a.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
