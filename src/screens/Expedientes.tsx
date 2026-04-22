@@ -37,6 +37,7 @@ export const Expedientes: React.FC = () => {
   const [mails, setMails] = useState<Mail[]>([]);
   const [mois, setMois] = useState<MOI[]>([]);
   const [planes, setPlanes] = useState<PlanEmergencia[]>([]);
+  const [derrames, setDerrames] = useState<EmpresaControlDerrame[]>([]);
   const [users, setUsers] = useState<User[]>([]); 
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [activeTab, setActiveTab] = useState<TabId>('grupal');
@@ -146,6 +147,15 @@ export const Expedientes: React.FC = () => {
     const q = query(collection(db, 'planes'), orderBy('empresa', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setPlanes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlanEmergencia)));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    // Both 'empresas_derrames' and 'control_derrames' are sometimes used, here we fetch 'control_derrames' (which is the actual one, per the setup) or both
+    const q = query(collection(db, 'control_derrames'), orderBy('empresa', 'asc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setDerrames(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmpresaControlDerrame)));
     });
     return () => unsubscribe();
   }, []);
@@ -1108,9 +1118,12 @@ export const Expedientes: React.FC = () => {
                     {planes.map(p => (
                       <option key={p.id} value={p.empresa}>{p.anexo.replace('_', ' ').toUpperCase()}</option>
                     ))}
+                    {derrames.map(d => (
+                      <option key={d.id} value={d.empresa}>CONTROL DERRAMES</option>
+                    ))}
                   </datalist>
                   <div className="absolute right-2 top-2 flex gap-1">
-                    {planes.find(p => p.empresa.toUpperCase() === (editingExp?.empresa || '').toUpperCase()) ? (
+                    {planes.find(p => p.empresa.toUpperCase() === (editingExp?.empresa || '').toUpperCase()) || derrames.find(d => d.empresa.toUpperCase() === (editingExp?.empresa || '').toUpperCase()) ? (
                       <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded font-black uppercase">Existente</span>
                     ) : (
                       <span className="text-[9px] bg-blue-100 text-blue-700 px-1 rounded font-black uppercase">Nueva</span>
@@ -1119,15 +1132,18 @@ export const Expedientes: React.FC = () => {
                 </div>
                 {/* Botón para vincular si se encontró coincidencia exacta */}
                 {(() => {
-                  const found = planes.find(p => p.empresa.toUpperCase() === (editingExp?.empresa || '').toUpperCase());
-                  if (found && editingExp?.planId !== found.id) {
+                  const foundPlan = planes.find(p => p.empresa.toUpperCase() === (editingExp?.empresa || '').toUpperCase());
+                  const foundDerrame = derrames.find(d => d.empresa.toUpperCase() === (editingExp?.empresa || '').toUpperCase());
+                  const foundId = foundPlan?.id || foundDerrame?.id;
+
+                  if (foundId && editingExp?.planId !== foundId) {
                     return (
                       <button 
                         type="button"
-                        onClick={() => setEditingExp({...editingExp, planId: found.id})}
+                        onClick={() => setEditingExp({...editingExp, planId: foundId, categoria: foundDerrame ? 'derrames' : editingExp?.categoria})}
                         className="mt-1 text-[9px] text-primary font-bold uppercase hover:underline"
                       >
-                        Vincular con Plan ID: {found.id.slice(0,5)}...
+                        Vincular con ID: {foundId.slice(0,5)}...
                       </button>
                     );
                   }
