@@ -269,6 +269,23 @@ export interface PlanEmergencia {
   }[];
 }
 
+// --- NUEVOS TIPOS PARA TAREAS / LAP ---
+
+export type TareaPrioridad = 'baja' | 'media' | 'alta' | 'urgente';
+
+export interface Tarea {
+  id: string;
+  fechaInicio: string; // YYYY-MM-DD
+  prioridad: TareaPrioridad;
+  accion: string;
+  comentarios: string;
+  usuarioAsignado: string; // User ID
+  avance: number; // 0, 0.25, 0.50, 0.75, 1
+  fechaCierre?: string; // YYYY-MM-DD
+  registradoPor: string;
+  fechaRegistro: string; // ISO DateTime
+}
+
 // --- NUEVOS TIPOS PARA EMPRESAS CONTROL DE DERRAMES ---
 
 export interface BaseOperativa {
