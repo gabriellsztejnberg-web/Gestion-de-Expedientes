@@ -1,4 +1,4 @@
-    
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
@@ -2103,7 +2103,7 @@ export const Planes: React.FC = () => {
                       <span className="material-symbols-outlined text-blue-500 text-3xl mb-2">folder_supervised</span>
                       <h3 className="text-[10px] font-black uppercase text-blue-600 dark:text-blue-400 tracking-widest mb-1">Planes bajo su Jurisdicción</h3>
                       <p className="text-4xl font-black text-blue-700 dark:text-blue-300">
-                        {planes.filter(p => p.anexo !== 'anexo_15' && p.dependencia && p.dependencia.trim().toUpperCase() === selectedPlan.empresa.trim().toUpperCase()).length}
+                        {planes.filter(p => p.anexo !== 'anexo_15' && p.dependencia && selectedPlan.dependencia && p.dependencia.trim().toUpperCase() === selectedPlan.dependencia.trim().toUpperCase()).length}
                       </p>
                       <p className="text-[9px] font-bold text-blue-500/80 uppercase mt-1">Planes activos registrados en sistema</p>
                     </section>
