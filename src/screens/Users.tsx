@@ -100,8 +100,8 @@ export const Users: React.FC = () => {
                   <td className="px-6 py-4 font-bold text-slate-700 dark:text-white">{u.name}</td>
                   <td className="px-6 py-4 font-mono">{u.username}</td>
                   <td className="px-6 py-4">
-                    <span className={`px-2 py-0.5 rounded-full font-black uppercase text-[9px] border ${u.role === 'jefe' ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
-                      {u.role === 'jefe' ? 'Jefe' : 'Operador'}
+                    <span className={`px-2 py-0.5 rounded-full font-black uppercase text-[9px] border ${u.role === 'jefe' ? 'bg-purple-100 text-purple-700 border-purple-200' : u.role === 'superior' ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
+                      {u.role === 'jefe' ? 'Jefe' : u.role === 'superior' ? 'Superior' : 'Operador'}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right flex justify-end gap-2">
@@ -143,6 +143,7 @@ export const Users: React.FC = () => {
                   <select className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 outline-none" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})}>
                     <option value="operador">Operador DPAM</option>
                     <option value="jefe">Jefe de Oficina</option>
+                    <option value="superior">Superior (Solo Lectura)</option>
                   </select>
                 </div>
                 <button type="submit" className="w-full py-3 bg-primary text-white text-xs font-black uppercase rounded shadow-lg mt-4 hover:bg-blue-600">Guardar en la Nube</button>
