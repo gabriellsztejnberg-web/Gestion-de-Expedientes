@@ -76,6 +76,7 @@ export interface User {
   email?: string;
   uid?: string;
   role: UserRole;
+  objetivoSemanalTareas?: number;
 }
 
 // --- TIPOS PARA AUDITORES ---
@@ -276,6 +277,7 @@ export type TareaPrioridad = 'baja' | 'media' | 'alta' | 'urgente';
 export interface Tarea {
   id: string;
   fechaInicio: string; // YYYY-MM-DD
+  fechaLimite?: string; // YYYY-MM-DD (Nueva fecha de finalización)
   prioridad: TareaPrioridad;
   accion: string;
   comentarios: string;
@@ -284,6 +286,7 @@ export interface Tarea {
   fechaCierre?: string; // YYYY-MM-DD
   registradoPor: string;
   fechaRegistro: string; // ISO DateTime
+  isMovimiento?: boolean; // Para identificar si viene de estadísticas/pendientes
 }
 
 // --- NUEVOS TIPOS PARA EMPRESAS CONTROL DE DERRAMES ---
