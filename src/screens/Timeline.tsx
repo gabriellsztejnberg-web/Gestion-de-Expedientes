@@ -69,13 +69,22 @@ export const Timeline: React.FC = () => {
               onClick={() => setFilter('all')} 
               className={`px-4 py-1.5 text-[10px] font-black uppercase rounded-md transition-all ${filter === 'all' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500'}`}
             >
-              Todo
+              Todo el Historial
             </button>
           </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-4xl mx-auto space-y-4">
+            
+            {filter === 'pending' && filteredEvents.length > 0 && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4 flex items-center justify-between shadow-sm">
+                <span className="text-[10px] font-bold text-blue-800 dark:text-blue-300 uppercase italic">
+                  ℹ️ Estas actividades también se reflejan automáticamente en el módulo L.A.P.
+                </span>
+              </div>
+            )}
+
             {filteredEvents.length > 0 ? filteredEvents.map((item) => {
               const exp = cases.find(c => c.id === item.expedienteId);
               
