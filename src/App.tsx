@@ -14,6 +14,7 @@ import { Derrames } from './screens/Derrames';
 import { Mapa } from './screens/Mapa';
 import { Asistencia } from './screens/Asistencia';
 import { Configuracion } from './screens/Configuracion';
+import { LAP } from './screens/LAP';
 
 const App: React.FC = () => {
   return (
@@ -22,6 +23,7 @@ const App: React.FC = () => {
         <Route path="/" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/asistencia" element={<Asistencia />} />
+        <Route path="/lap" element={<LAP />} />
         <Route path="/expedientes" element={<Expedientes />} />
         <Route path="/planes" element={<Planes />} />
         <Route path="/derrames" element={<Derrames />} />
@@ -39,4 +41,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-
