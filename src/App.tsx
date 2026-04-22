@@ -14,7 +14,7 @@ import { Derrames } from './screens/Derrames';
 import { Mapa } from './screens/Mapa';
 import { Asistencia } from './screens/Asistencia';
 import { Configuracion } from './screens/Configuracion';
-import { LAP } from './screens/LAP';
+import { LAP } from './screens/Lap';
 
 const App: React.FC = () => {
   return (
