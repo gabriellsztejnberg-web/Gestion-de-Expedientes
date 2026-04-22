@@ -11,10 +11,11 @@ import {
   orderBy, 
   query 
 } from 'firebase/firestore';
-import { User, Case, Tarea, TareaPrioridad } from '../types';
+import { User, Case, Tarea, TareaPrioridad, TimelineEvent } from '../types';
 
 export const LAP: React.FC = () => {
   const [tareas, setTareas] = useState<Tarea[]>([]);
+  const [movimientos, setMovimientos] = useState<TimelineEvent[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   
@@ -36,6 +37,14 @@ export const LAP: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const q = query(collection(db, 'movimientos'));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setMovimientos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TimelineEvent)));
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
     const unsub = onSnapshot(collection(db, 'usuarios'), (snapshot) => {
       setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
     });
@@ -49,29 +58,78 @@ export const LAP: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // Calcular carga de trabajo
+  const [editingGoal, setEditingGoal] = useState<{userId: string, goal: string} | null>(null);
+
+  // Unificar tareas y movimientos pendientes visualmente
+  const allTasks = useMemo(() => {
+    const mappedMovimientos: Tarea[] = movimientos.filter(m => m.isPending).map(m => ({
+       id: m.id,
+       fechaInicio: m.fecha.split('T')[0],
+       prioridad: 'alta' as TareaPrioridad,
+       accion: 'PENDIENTE EN HISTORIAL / EXPEDIENTE',
+       comentarios: m.texto,
+       usuarioAsignado: users.find(u => u.username === m.usuario || u.name === m.usuario)?.id || m.usuario,
+       avance: 0,
+       registradoPor: m.usuario,
+       fechaRegistro: m.fecha,
+       isMovimiento: true
+    }));
+
+    return [...tareas, ...mappedMovimientos];
+  }, [tareas, movimientos, users]);
+
+  // Calcular carga de trabajo y progreso
   const userWorkloads = useMemo(() => {
+    // Calcular inicio y fin de la semana actual
+    const now = new Date();
+    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1))); 
+    startOfWeek.setHours(0, 0, 0, 0);
+
     return users.map(user => {
       const activeCases = cases.filter(c => c.asignadoA === user.id && c.instancia !== 'guarda').length;
-      const activeTareas = tareas.filter(t => t.usuarioAsignado === user.id && t.avance < 1).length;
+      
+      const userTasks = allTasks.filter(t => t.usuarioAsignado === user.id || t.usuarioAsignado === user.username);
+      const activeTareas = userTasks.filter(t => t.avance < 1).length;
+      
+      const tareasCompletadasSemana = tareas.filter(t => 
+        (t.usuarioAsignado === user.id) && 
+        t.avance === 1 && 
+        t.fechaCierre && 
+        new Date(t.fechaCierre) >= startOfWeek
+      ).length;
+
+      const meta = user.objetivoSemanalTareas || 0;
+      const progresoMeta = meta > 0 ? Math.min(Math.round((tareasCompletadasSemana / meta) * 100), 100) : 0;
+
       return {
         ...user,
         activeCases,
         activeTareas,
-        totalOpen: activeCases + activeTareas
+        totalOpen: activeCases + activeTareas,
+        tareasCompletadasSemana,
+        meta,
+        progresoMeta
       };
     }).sort((a, b) => b.totalOpen - a.totalOpen);
-  }, [users, cases, tareas]);
+  }, [users, cases, allTasks, tareas]);
 
   const filteredTareas = useMemo(() => {
-    return tareas.filter(t => {
-        if (filterUser !== 'todos' && t.usuarioAsignado !== filterUser) return false;
+    return allTasks.filter(t => {
+        if (filterUser !== 'todos' && t.usuarioAsignado !== filterUser && t.usuarioAsignado !== users.find(u=>u.id === filterUser)?.username) return false;
         if (filterPriority !== 'todas' && t.prioridad !== filterPriority) return false;
         if (filterStatus === 'pendientes' && t.avance === 1) return false;
         if (filterStatus === 'completadas' && t.avance !== 1) return false;
         return true;
     });
-  }, [tareas, filterUser, filterPriority, filterStatus]);
+  }, [allTasks, filterUser, filterPriority, filterStatus, users]);
+
+  const handleSaveGoal = async (userId: string, goalStr: string) => {
+    const goal = parseInt(goalStr);
+    if (!isNaN(goal) && goal >= 0) {
+       await updateDoc(doc(db, 'usuarios', userId), { objetivoSemanalTareas: goal });
+    }
+    setEditingGoal(null);
+  };
 
   const handleSaveTarea = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,16 +215,50 @@ export const LAP: React.FC = () => {
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
               {userWorkloads.map(u => (
-                <div key={u.id} className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between hover:border-primary/30 transition-colors">
+                <div key={u.id} className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between hover:border-primary/30 transition-colors relative group">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-slate-700 dark:text-slate-200 text-sm truncate pr-2">{u.name}</span>
-                    <span className={`text-[10px] uppercase font-black px-1.5 rounded ${u.totalOpen > 10 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    <span className="font-bold text-slate-700 dark:text-slate-200 text-sm truncate pr-2" title={u.name}>{u.name}</span>
+                    <span className={`text-[10px] uppercase font-black px-1.5 rounded ${u.totalOpen > 10 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`} title="Carga total abierta">
                        {u.totalOpen}
                     </span>
                   </div>
-                  <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase">
+                  <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase border-b border-slate-100 dark:border-slate-800 pb-2 mb-2">
                     <span>{u.activeCases} Exp.</span>
                     <span>{u.activeTareas} Tar.</span>
+                  </div>
+                  
+                  {/* Objetivo Semanal */}
+                  <div className="flex flex-col gap-1">
+                     <div className="flex justify-between items-center text-[9px] font-black uppercase text-slate-400">
+                        <span>Obj. Semanal: {u.meta > 0 ? `${u.tareasCompletadasSemana}/${u.meta}` : 'No Asignado'}</span>
+                        <button onClick={() => setEditingGoal({ userId: u.id, goal: u.meta.toString() })} className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-primary">
+                           <span className="material-symbols-outlined text-[12px]">edit</span>
+                        </button>
+                     </div>
+                     {u.meta > 0 && (
+                       <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                         <div 
+                           className={`h-full ${u.progresoMeta >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                           style={{ width: `${Math.min(u.progresoMeta, 100)}%` }}
+                         />
+                       </div>
+                     )}
+                     
+                     {editingGoal?.userId === u.id && (
+                        <div className="absolute inset-0 bg-white dark:bg-slate-900 rounded-xl p-2 flex flex-col gap-2 border border-primary shadow-lg z-10">
+                           <span className="text-[9px] font-black uppercase text-slate-500">Definir Objetivo</span>
+                           <input 
+                             type="number" 
+                             className="w-full text-xs p-1 border rounded"
+                             value={editingGoal.goal}
+                             onChange={e => setEditingGoal({...editingGoal, goal: e.target.value})}
+                           />
+                           <div className="flex gap-1 justify-end mt-auto">
+                              <button onClick={() => setEditingGoal(null)} className="text-[9px] px-2 py-1 bg-slate-100 rounded font-bold uppercase">Cancel</button>
+                              <button onClick={() => handleSaveGoal(u.id, editingGoal.goal)} className="text-[9px] px-2 py-1 bg-primary text-white rounded font-bold uppercase">Guardar</button>
+                           </div>
+                        </div>
+                     )}
                   </div>
                 </div>
               ))}
@@ -204,6 +296,7 @@ export const LAP: React.FC = () => {
                 <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
                   <tr>
                     <th className="px-4 py-3 font-black uppercase text-slate-500 text-[10px] whitespace-nowrap">Inicio</th>
+                    <th className="px-4 py-3 font-black uppercase text-slate-500 text-[10px] whitespace-nowrap">Límite</th>
                     <th className="px-4 py-3 font-black uppercase text-slate-500 text-[10px] w-24">Prioridad</th>
                     <th className="px-4 py-3 font-black uppercase text-slate-500 text-[10px] min-w-[200px]">Acción / Título</th>
                     <th className="px-4 py-3 font-black uppercase text-slate-500 text-[10px] min-w-[250px]">Comentarios</th>
@@ -216,7 +309,7 @@ export const LAP: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {filteredTareas.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-400 font-bold italic">
+                      <td colSpan={9} className="px-4 py-8 text-center text-slate-400 font-bold italic">
                         No hay actividades bajo los filtros seleccionados
                       </td>
                     </tr>
@@ -224,9 +317,12 @@ export const LAP: React.FC = () => {
                     const assignedUser = users.find(u => u.id === tarea.usuarioAsignado);
                     const isCompleted = tarea.avance === 1;
                     return (
-                      <tr key={tarea.id} className={`${isCompleted ? 'bg-slate-50 dark:bg-slate-900/50 opacity-60' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'} transition-colors`}>
+                      <tr key={tarea.id} className={`${isCompleted ? 'bg-slate-50 dark:bg-slate-900/50 opacity-60' : tarea.isMovimiento ? 'bg-orange-50 shadow-inner dark:bg-orange-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'} transition-colors`}>
                         <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-400">
                            {tarea.fechaInicio.split('-').reverse().join('/')}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-400">
+                           {tarea.fechaLimite ? tarea.fechaLimite.split('-').reverse().join('/') : '-'}
                         </td>
                         <td className="px-4 py-3">
                            <span className={`px-2 py-0.5 rounded font-black uppercase text-[9px] border ${getPriorityColor(tarea.prioridad)}`}>
@@ -240,7 +336,7 @@ export const LAP: React.FC = () => {
                           {tarea.comentarios || <span className="italic text-slate-400">Sin comentarios</span>}
                         </td>
                         <td className="px-4 py-3 font-bold text-primary dark:text-blue-400">
-                          {assignedUser?.name || 'Desconocido'}
+                          {assignedUser?.name || tarea.usuarioAsignado || 'Desconocido'}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex flex-col items-center gap-1">
@@ -256,13 +352,23 @@ export const LAP: React.FC = () => {
                         <td className="px-4 py-3 text-center font-mono text-slate-500">
                            {tarea.fechaCierre ? tarea.fechaCierre.split('-').reverse().join('/') : '-'}
                         </td>
-                        <td className="px-4 py-3 text-right">
-                          <button onClick={() => {
-                            setEditingTarea(tarea);
-                            setIsModalOpen(true);
-                          }} className="text-slate-400 hover:text-primary transition-colors">
-                            <span className="material-symbols-outlined text-[18px]">edit</span>
-                          </button>
+                        <td className="px-4 py-3 text-right flex justify-end">
+                           {tarea.isMovimiento ? (
+                             <button 
+                               title="Completar y quitar de Estadísitcas / Pendientes" 
+                               onClick={() => updateDoc(doc(db, 'movimientos', tarea.id), { isPending: false })} 
+                               className="text-orange-500 hover:text-green-600 transition-colors bg-white px-2 py-1 rounded shadow-sm border border-orange-200 text-[10px] font-black uppercase"
+                             >
+                                <span className="material-symbols-outlined text-[14px]">check</span>
+                             </button>
+                           ) : (
+                              <button onClick={() => {
+                                setEditingTarea(tarea);
+                                setIsModalOpen(true);
+                              }} className="text-slate-400 hover:text-primary transition-colors">
+                                <span className="material-symbols-outlined text-[18px]">edit</span>
+                              </button>
+                           )}
                         </td>
                       </tr>
                     );
@@ -289,7 +395,7 @@ export const LAP: React.FC = () => {
              </div>
              
              <form onSubmit={handleSaveTarea} className="p-6 overflow-y-auto space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Fecha Inicio</label>
                     <input 
@@ -298,6 +404,15 @@ export const LAP: React.FC = () => {
                       className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" 
                       value={editingTarea?.fechaInicio || ''}
                       onChange={e => setEditingTarea({...editingTarea, fechaInicio: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Fecha Límite</label>
+                    <input 
+                      type="date"
+                      className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" 
+                      value={editingTarea?.fechaLimite || ''}
+                      onChange={e => setEditingTarea({...editingTarea, fechaLimite: e.target.value})}
                     />
                   </div>
                   <div>
