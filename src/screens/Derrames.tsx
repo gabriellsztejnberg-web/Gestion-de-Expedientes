@@ -129,6 +129,10 @@ export const Derrames: React.FC = () => {
   const [editingBase, setEditingBase] = useState<Partial<BaseOperativa> | null>(null);
   const [selectedEmpresaId, setSelectedEmpresaId] = useState<string>('');
 
+  // Modal de Edición Convenio
+  const [isConvenioModalOpen, setIsConvenioModalOpen] = useState(false);
+  const [editingConvenio, setEditingConvenio] = useState<Partial<ConvenioDerrames> | null>(null);
+
   // Perfil View
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaControlDerrame | null>(null);
@@ -331,6 +335,57 @@ export const Derrames: React.FC = () => {
     setSelectedEmpresaId(empresaId);
     setEditingBase(base);
     setIsBaseModalOpen(true);
+  };
+
+  const openNewConvenio = (empresaId: string) => {
+    setSelectedEmpresaId(empresaId);
+    setEditingConvenio({});
+    setIsConvenioModalOpen(true);
+  };
+
+  const openEditConvenio = (empresaId: string, convenio: ConvenioDerrames) => {
+    setSelectedEmpresaId(empresaId);
+    setEditingConvenio(convenio);
+    setIsConvenioModalOpen(true);
+  };
+
+  const handleDeleteConvenio = async (empresaId: string, convenioId: string) => {
+    if (!confirm("¿Eliminar este convenio permanentemente?")) return;
+    const empresaDoc = empresas.find(e => e.id === empresaId);
+    if (!empresaDoc) return;
+    const sourceCol = (empresaDoc as any)?._source || 'empresas_derrames';
+
+    let current = [...(empresaDoc.convenios || [])];
+    current = current.filter(c => c.id !== convenioId);
+
+    await updateDoc(doc(db, sourceCol, empresaId), {
+      convenios: current,
+      ultimaActualizacion: new Date().toISOString()
+    });
+  };
+
+  const handleSaveConvenio = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEmpresaId) return;
+
+    const empresaDoc = empresas.find(e => e.id === selectedEmpresaId);
+    if (!empresaDoc) return;
+    const sourceCol = (empresaDoc as any)?._source || 'empresas_derrames';
+
+    let current = [...(empresaDoc.convenios || [])];
+
+    if (editingConvenio?.id) {
+      current = current.map(c => c.id === editingConvenio.id ? (editingConvenio as ConvenioDerrames) : c);
+    } else {
+      current.push({ ...editingConvenio, id: Math.random().toString(36).substr(2, 9) } as ConvenioDerrames);
+    }
+
+    await updateDoc(doc(db, sourceCol, selectedEmpresaId), {
+      convenios: current,
+      ultimaActualizacion: new Date().toISOString()
+    });
+
+    setIsConvenioModalOpen(false);
   };
 
   const viewProfile = (empresa: EmpresaControlDerrame) => {
@@ -943,33 +998,84 @@ export const Derrames: React.FC = () => {
                         </div>
 
                         <div className="pt-2">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-100 pb-2">Equipamiento PROPIO</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-100 pb-2">Capacidad de Contención</p>
                           {(() => {
-                             const totalBarreras = selectedEmpresa.basesOperativas?.reduce((acc, b) => acc + Number(b.cantidadBarreras || 0), 0) || 0;
+                             const totalPropio = selectedEmpresa.basesOperativas?.reduce((acc, b) => acc + Number(b.cantidadBarreras || 0), 0) || 0;
+                             const totalConvenido = selectedEmpresa.convenios?.reduce((acc, c) => acc + Number(c.cantidadBarreras || 0), 0) || 0;
+                             const totalCapacidad = totalPropio + totalConvenido;
+
                              const req = BARRIER_REQUIREMENTS[selectedEmpresa.categoria?.toUpperCase() || ''];
-                             const totalPropioReq = req ? req.total * req.ownPercent : 0;
-                             const complies = req ? totalBarreras >= totalPropioReq : true;
+                             const reqPropio = req ? req.total * req.ownPercent : 0;
+                             const reqTotal = req ? req.total : 0;
+                             
+                             const compliesPropio = req ? totalPropio >= reqPropio : true;
+                             const compliesTotal = req ? totalCapacidad >= reqTotal : true;
 
                              return (
-                               <div className="space-y-3">
-                                 <div className="flex items-end gap-3">
-                                   <span className={`text-4xl font-black leading-none ${complies ? 'text-emerald-600' : 'text-red-500'}`}>
-                                     {totalBarreras.toLocaleString()}
-                                   </span>
-                                   <div className="flex flex-col">
-                                      <span className="text-[10px] font-bold text-slate-500 uppercase">Metros PROPIOS</span>
-                                      {req && <span className="text-[8px] font-black uppercase text-slate-400">Min. req: {totalPropioReq.toLocaleString()}m</span>}
+                               <div className="space-y-4">
+                                 {/* PROPIO */}
+                                 <div>
+                                   <div className="flex items-end gap-3 mb-1">
+                                     <span className={`text-2xl font-black leading-none ${compliesPropio ? 'text-emerald-600' : 'text-red-500'}`}>
+                                       {totalPropio.toLocaleString()}m
+                                     </span>
+                                     <div className="flex flex-col">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase">Equipamiento PROPIO</span>
+                                        {req && <span className="text-[8px] font-black uppercase text-slate-400">Min {req.ownPercent*100}%: {reqPropio.toLocaleString()}m</span>}
+                                     </div>
                                    </div>
+                                   {req && (
+                                     <div className="w-full bg-slate-100 rounded-full h-1 overflow-hidden mt-1">
+                                        <div 
+                                          className={`h-full transition-all duration-500 rounded-full ${compliesPropio ? 'bg-emerald-500' : 'bg-red-500'}`} 
+                                          style={{ width: `${Math.min(100, (totalPropio / reqPropio) * 100)}%` }}
+                                        />
+                                     </div>
+                                   )}
                                  </div>
-                                 
-                                 {req && (
-                                   <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                                      <div 
-                                        className={`h-full transition-all duration-500 rounded-full ${complies ? 'bg-emerald-500' : 'bg-red-500'}`} 
-                                        style={{ width: `${Math.min(100, (totalBarreras / totalPropioReq) * 100)}%` }}
-                                      />
+
+                                 {/* TOTAL CONVENIDO */}
+                                 {selectedEmpresa.convenios && selectedEmpresa.convenios.length > 0 && (
+                                   <div>
+                                     <div className="flex justify-between items-end mb-1">
+                                       <div className="flex flex-col">
+                                          <span className="text-[10px] font-bold text-slate-500 uppercase">Equip. Convenido</span>
+                                          <span className="text-sm font-black text-indigo-600">+{totalConvenido.toLocaleString()}m</span>
+                                       </div>
+                                       <span className="text-[9px] font-bold text-slate-400 uppercase bg-slate-100 px-1.5 rounded">{selectedEmpresa.convenios.length} Convenios</span>
+                                     </div>
                                    </div>
                                  )}
+
+                                 {/* TOTAL COMBINADO */}
+                                 <div className="border-t border-slate-100 pt-2">
+                                   <div className="flex items-end gap-3">
+                                     <span className={`text-3xl font-black leading-none ${compliesTotal && compliesPropio ? 'text-blue-600' : 'text-red-500'}`}>
+                                       {totalCapacidad.toLocaleString()}m
+                                     </span>
+                                     <div className="flex flex-col">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase">TOTAL CAPACIDAD</span>
+                                        {req && <span className="text-[8px] font-black uppercase text-slate-400 flex items-center gap-1"> Req. Cat. {selectedEmpresa.categoria}: {reqTotal.toLocaleString()}m 
+                                          {(compliesTotal && compliesPropio) && <span className="material-symbols-outlined text-[10px] text-green-500">check_circle</span>}
+                                          {(!compliesTotal || !compliesPropio) && <span className="material-symbols-outlined text-[10px] text-red-500">error</span>}
+                                        </span>}
+                                     </div>
+                                   </div>
+                                   {req && (
+                                     <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden mt-1.5 flex align-center justify-start gap-px">
+                                        <div 
+                                          className={`h-full transition-all duration-500 ${compliesPropio ? 'bg-blue-400' : 'bg-red-400'}`} 
+                                          title="Propio"
+                                          style={{ width: `${Math.min(100, (totalPropio / reqTotal) * 100)}%` }}
+                                        />
+                                        <div 
+                                          className={`h-full transition-all duration-500 ${compliesTotal ? 'bg-blue-300' : 'bg-orange-300'} opacity-70`} 
+                                          title="Convenido"
+                                          style={{ width: `${Math.min(100, (totalConvenido / reqTotal) * 100)}%` }}
+                                        />
+                                     </div>
+                                   )}
+                                 </div>
                                </div>
                              );
                           })()}
@@ -1163,6 +1269,57 @@ export const Derrames: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* CONVENIOS DE ASISTENCIA */}
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+                    <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                      <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                        <span className="material-symbols-outlined text-indigo-600">handshake</span> Convenios Vinculantes
+                      </h4>
+                      <button onClick={() => openNewConvenio(selectedEmpresa.id)} className="bg-white border border-slate-200 hover:bg-slate-50 text-indigo-600 text-[10px] font-black uppercase px-3 py-1.5 rounded flex items-center gap-1 shadow-sm transition-colors">
+                        <span className="material-symbols-outlined text-[14px]">add</span> Añadir Convenio
+                      </button>
+                    </div>
+                    <div className="p-4">
+                      {(selectedEmpresa.convenios || []).length > 0 ? (
+                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                           {(selectedEmpresa.convenios || []).map(convenio => (
+                             <div key={convenio.id} className="border border-slate-200 rounded-lg p-4 hover:border-indigo-300 transition-colors group relative bg-slate-50">
+                                <div className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                                   <button onClick={() => openEditConvenio(selectedEmpresa.id, convenio)} className="p-1 rounded bg-white hover:bg-slate-100 text-slate-500 hover:text-indigo-600 transition-all border border-slate-200"><span className="material-symbols-outlined text-[14px]">edit</span></button>
+                                   <button onClick={() => handleDeleteConvenio(selectedEmpresa.id, convenio.id)} className="p-1 rounded bg-white hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-all border border-slate-200"><span className="material-symbols-outlined text-[14px]">delete</span></button>
+                                </div>
+                                <h5 className="font-black text-slate-800 uppercase text-sm mb-1 break-words pb-1 border-b border-slate-200 pr-12">{convenio.empresaConvenida}</h5>
+                                
+                                <div className="mt-3 grid grid-cols-2 gap-2">
+                                  <div className="bg-white p-2 rounded border border-slate-200 shadow-sm">
+                                    <p className="text-[9px] font-black uppercase text-slate-400">Total Convenido</p>
+                                    <p className="font-black text-indigo-600 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">waves</span> {convenio.cantidadBarreras || 0}m</p>
+                                  </div>
+                                  <div className="bg-white p-2 rounded border border-slate-200 shadow-sm">
+                                    <p className="text-[9px] font-black uppercase text-slate-400">Vencimiento</p>
+                                    <p className={`font-black uppercase text-[11px] ${getSemaforoColor(convenio.fechaVencimiento)}`}>
+                                      {convenio.fechaVencimiento ? formatDate(convenio.fechaVencimiento) : 'S/D'}
+                                    </p>
+                                  </div>
+                                </div>
+                                {convenio.observaciones && (
+                                  <p className="mt-3 py-1.5 px-2 bg-white rounded border border-slate-100 text-[10px] text-slate-500"><span className="font-bold uppercase text-slate-400">Obs:</span> {convenio.observaciones}</p>
+                                )}
+                             </div>
+                           ))}
+                         </div>
+                      ) : (
+                         <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                           <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center mb-4 border border-slate-100 text-slate-300">
+                             <span className="material-symbols-outlined text-2xl">handshake</span>
+                           </div>
+                           <p className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-2">Sin convenios registrados</p>
+                           <p className="text-xs text-center">Registrar convenios permite contabilizar equipamiento adicional (hasta un 60% del requerimiento total de la categoría).</p>
+                         </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* INFO DE CONTACTO */}
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
@@ -1263,6 +1420,42 @@ export const Derrames: React.FC = () => {
                 <button type="button" onClick={() => setIsBaseModalOpen(false)} className="px-4 py-2 font-black uppercase text-xs text-slate-600 hover:bg-slate-100 rounded">Cancelar</button>
                 <button type="submit" className="px-4 py-2 font-black uppercase text-xs bg-primary text-white rounded hover:bg-blue-600 shadow-sm flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">save</span> Guardar Base</button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONVENIO DE ASISTENCIA */}
+      {isConvenioModalOpen && editingConvenio && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800">
+            <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+              <span className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><span className="material-symbols-outlined text-[16px]">handshake</span> {editingConvenio.id ? 'Editar Convenio' : 'Nuevo Convenio'}</span>
+              <button onClick={() => setIsConvenioModalOpen(false)}><span className="material-symbols-outlined">close</span></button>
+            </div>
+            <form onSubmit={handleSaveConvenio} className="p-6">
+               <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nombre de Empresa Convenida</label>
+                    <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold" value={editingConvenio.empresaConvenida || ''} onChange={e => setEditingConvenio({...editingConvenio, empresaConvenida: e.target.value})} placeholder="Ej. OTRAS LÍNEAS S.A."/>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Cantidad de Equipamiento Asignado/Convenido (Metros de Barrera)</label>
+                    <input type="number" required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold" value={editingConvenio.cantidadBarreras || ''} onChange={e => setEditingConvenio({...editingConvenio, cantidadBarreras: Number(e.target.value)})} placeholder="Ej. 1000"/>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Fecha de Vencimiento del Convenio</label>
+                    <input type="date" required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingConvenio.fechaVencimiento || ''} onChange={e => setEditingConvenio({...editingConvenio, fechaVencimiento: e.target.value})}/>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Observaciones / Tipo de Acuerdo (Opcional)</label>
+                    <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none min-h-[80px]" value={editingConvenio.observaciones || ''} onChange={e => setEditingConvenio({...editingConvenio, observaciones: e.target.value})} placeholder="Detalles o alcance del convenio..."/>
+                  </div>
+               </div>
+               <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
+                  <button type="button" onClick={() => setIsConvenioModalOpen(false)} className="px-4 py-2 font-black uppercase text-xs text-slate-600 hover:bg-slate-100 rounded">Cancelar</button>
+                  <button type="submit" className="px-4 py-2 font-black uppercase text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow-sm flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">save</span> Guardar Convenio</button>
+               </div>
             </form>
           </div>
         </div>
