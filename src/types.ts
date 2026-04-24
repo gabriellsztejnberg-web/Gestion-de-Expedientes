@@ -315,6 +315,14 @@ export interface InspeccionIntermedia {
   baseNombre?: string;
 }
 
+export interface ConvenioDerrames {
+  id: string;
+  empresaConvenida: string;
+  cantidadBarreras: number;
+  fechaVencimiento?: string;
+  observaciones?: string;
+}
+
 export interface EmpresaControlDerrame {
   id: string;
   categoria?: string;
@@ -335,6 +343,7 @@ export interface EmpresaControlDerrame {
   };
   inspeccionesIntermedias?: InspeccionIntermedia[];
   basesOperativas: BaseOperativa[];
+  convenios?: ConvenioDerrames[];
   historialDisposiciones?: {
     disposicion: string;
     vencimiento: string;
