@@ -17,7 +17,7 @@ import {
   orderBy,
   writeBatch
 } from 'firebase/firestore';
-import { EmpresaControlDerrame, BaseOperativa, Case, Inspeccion, TimelineEvent, User } from '../types';
+import { EmpresaControlDerrame, BaseOperativa, ConvenioDerrames, Case, Inspeccion, TimelineEvent, User } from '../types';
 
 // Fix for default marker icons in React-Leaflet
 // @ts-ignore
