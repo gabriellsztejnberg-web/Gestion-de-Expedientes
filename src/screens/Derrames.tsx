@@ -373,17 +373,52 @@ export const Derrames: React.FC = () => {
     const sourceCol = (empresaDoc as any)?._source || 'empresas_derrames';
 
     let current = [...(empresaDoc.convenios || [])];
+    const newConvenioId = editingConvenio?.id || Math.random().toString(36).substr(2, 9);
+    const newConvenio = { ...editingConvenio, id: newConvenioId } as ConvenioDerrames;
 
     if (editingConvenio?.id) {
-      current = current.map(c => c.id === editingConvenio.id ? (editingConvenio as ConvenioDerrames) : c);
+      current = current.map(c => c.id === editingConvenio.id ? newConvenio : c);
     } else {
-      current.push({ ...editingConvenio, id: Math.random().toString(36).substr(2, 9) } as ConvenioDerrames);
+      current.push(newConvenio);
     }
 
     await updateDoc(doc(db, sourceCol, selectedEmpresaId), {
       convenios: current,
       ultimaActualizacion: new Date().toISOString()
     });
+
+    // Auto-link reciprocal
+    if (newConvenio.empresaConvenidaId) {
+       const otherEmpresa = empresas.find(e => e.id === newConvenio.empresaConvenidaId);
+       if (otherEmpresa) {
+          const otherSource = (otherEmpresa as any)?._source || 'empresas_derrames';
+          let otherCurrent = [...(otherEmpresa.convenios || [])];
+          
+          // Note: In a reciprocal, what they GAVE is what the OTHER receives
+          const reciprocalConvenio: ConvenioDerrames = {
+             id: newConvenioId + '_r', // Use a related ID or any random
+             empresaConvenida: empresaDoc.empresa,
+             empresaConvenidaId: empresaDoc.id,
+             cantidadBarreras: newConvenio.cantidadAporta || 0, // Reciben lo que aporto
+             cantidadAporta: newConvenio.cantidadBarreras || 0, // Aporto lo que ellos reciben
+             fechaVencimiento: newConvenio.fechaVencimiento,
+             renovacionAutomatica: newConvenio.renovacionAutomatica,
+             observaciones: 'Vinculado Automáticamente - ' + (newConvenio.observaciones || '')
+          };
+          
+          const existingReciprocalIndex = otherCurrent.findIndex(c => c.empresaConvenidaId === empresaDoc.id && c.id.includes('_r'));
+          if (existingReciprocalIndex >= 0) {
+             otherCurrent[existingReciprocalIndex] = {...otherCurrent[existingReciprocalIndex], ...reciprocalConvenio, id: otherCurrent[existingReciprocalIndex].id};
+          } else {
+             otherCurrent.push(reciprocalConvenio);
+          }
+
+          await updateDoc(doc(db, otherSource, otherEmpresa.id), {
+             convenios: otherCurrent,
+             ultimaActualizacion: new Date().toISOString()
+          });
+       }
+    }
 
     setIsConvenioModalOpen(false);
   };
@@ -793,6 +828,10 @@ export const Derrames: React.FC = () => {
                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nombre de la Empresa</label>
                      <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold" value={editingEmpresa.empresa || ''} onChange={e => setEditingEmpresa({...editingEmpresa, empresa: e.target.value})} placeholder="Ej. LÍNEAS MARÍTIMAS S.A."/>
                    </div>
+                   <div className="col-span-1 md:col-span-2">
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Responsable Técnico (Obligatorio)</label>
+                     <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold text-indigo-700 uppercase" value={editingEmpresa.responsableTecnico || ''} onChange={e => setEditingEmpresa({...editingEmpresa, responsableTecnico: e.target.value})} placeholder="Ej. Ing. Juan Pérez"/>
+                   </div>
                    <div>
                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Jurisdicción (Dependencia)</label>
                      <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={editingEmpresa.dependencia || ''} onChange={e => setEditingEmpresa({...editingEmpresa, dependencia: e.target.value})} placeholder="PNA..."/>
@@ -907,9 +946,12 @@ export const Derrames: React.FC = () => {
                    )}
                    <div>
                      <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight leading-none mb-1">{selectedEmpresa.empresa}</h2>
-                     <div className="flex items-center gap-2">
-                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">EMPRESA <span className="w-1 h-1 bg-slate-300 rounded-full"></span> JURISDICCIÓN: {selectedEmpresa.dependencia || 'S/D'}</p>
-                       {selectedEmpresa.categoria && <span className="text-[10px] bg-indigo-600 text-white font-black px-2 py-0.5 rounded uppercase tracking-widest leading-none">CAT {selectedEmpresa.categoria}</span>}
+                     <div className="flex flex-col gap-1 mt-2">
+                       <div className="flex items-center gap-2">
+                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">EMPRESA <span className="w-1 h-1 bg-slate-300 rounded-full"></span> JURISDICCIÓN: {selectedEmpresa.dependencia || 'S/D'}</p>
+                         {selectedEmpresa.categoria && <span className="text-[10px] bg-indigo-600 text-white font-black px-2 py-0.5 rounded uppercase tracking-widest leading-none">CAT {selectedEmpresa.categoria}</span>}
+                       </div>
+                       <p className="text-[10px] font-black text-indigo-700 uppercase flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">engineering</span> Resp. Técnico: {selectedEmpresa.responsableTecnico || 'No Asignado'}</p>
                      </div>
                    </div>
                  </div>
@@ -950,6 +992,41 @@ export const Derrames: React.FC = () => {
                               </p>
                            </div>
                          </div>
+                         {isJefe && selectedEmpresa.vencimiento && (
+                            <button 
+                              onClick={() => {
+                                 if (!confirm("¿Renovar habilitación? Esto archivará la disposición actual y limpiará las fechas de vencimiento y convalidaciones para empezar un nuevo ciclo.")) return;
+                                 
+                                 const sourceCol = (selectedEmpresa as any)?._source || 'empresas_derrames';
+                                 const historyEntry = {
+                                   disposicion: selectedEmpresa.disposicion || 'S/D',
+                                   vencimiento: selectedEmpresa.vencimiento,
+                                   fechaArchivo: new Date().toISOString(),
+                                   inspeccionesIntermedias: selectedEmpresa.convalidacionesDetalle || {}
+                                 };
+                                 const newHistory = [...(selectedEmpresa.historialDisposiciones || []), historyEntry];
+                                 
+                                 updateDoc(doc(db, sourceCol, selectedEmpresa.id), {
+                                    historialDisposiciones: newHistory,
+                                    disposicion: '',
+                                    vencimiento: '',
+                                    convalidacionesDetalle: {},
+                                    ultimaActualizacion: new Date().toISOString()
+                                 });
+                                 
+                                 setSelectedEmpresa({
+                                    ...selectedEmpresa,
+                                    historialDisposiciones: newHistory,
+                                    disposicion: '',
+                                    vencimiento: '',
+                                    convalidacionesDetalle: {}
+                                 });
+                              }}
+                              className="mt-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase px-3 py-1.5 rounded flex items-center gap-1 border border-indigo-200 transition-colors w-max"
+                            >
+                               <span className="material-symbols-outlined text-[14px]">autorenew</span> Renovar Disp.
+                            </button>
+                         )}
                        </div>
                      </div>
 
@@ -1000,7 +1077,15 @@ export const Derrames: React.FC = () => {
                         <div className="pt-2">
                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 border-b border-slate-100 pb-2">Capacidad de Contención</p>
                           {(() => {
-                             const totalPropio = selectedEmpresa.basesOperativas?.reduce((acc, b) => acc + Number(b.cantidadBarreras || 0), 0) || 0;
+                             const totalPuerto = selectedEmpresa.basesOperativas?.reduce((acc, b) => acc + Number(b.barrerasPuerto || 0), 0) || 0;
+                             const totalFluvial = selectedEmpresa.basesOperativas?.reduce((acc, b) => acc + Number(b.barrerasFluvial || 0), 0) || 0;
+                             const totalMaritima = selectedEmpresa.basesOperativas?.reduce((acc, b) => acc + Number(b.barrerasMaritima || 0), 0) || 0;
+                             
+                             // Calculate total propio preferring the individual components if they exist, otherwise fallback to legacy `cantidadBarreras`
+                             const totalPropioComponents = totalPuerto + totalFluvial + totalMaritima;
+                             const totalPropioLegacy = selectedEmpresa.basesOperativas?.reduce((acc, b) => acc + Number(b.cantidadBarreras || 0), 0) || 0;
+                             const totalPropio = totalPropioComponents > 0 ? totalPropioComponents : totalPropioLegacy;
+
                              const totalConvenido = selectedEmpresa.convenios?.reduce((acc, c) => acc + Number(c.cantidadBarreras || 0), 0) || 0;
                              const totalCapacidad = totalPropio + totalConvenido;
 
@@ -1010,6 +1095,10 @@ export const Derrames: React.FC = () => {
                              
                              const compliesPropio = req ? totalPropio >= reqPropio : true;
                              const compliesTotal = req ? totalCapacidad >= reqTotal : true;
+
+                             // Aggregate embarcaciones and others
+                             const totalEmbarcaciones = selectedEmpresa.basesOperativas?.reduce((acc, b) => acc + Number(b.embarcaciones || 0), 0) || 0;
+                             const totalSkimmers = selectedEmpresa.basesOperativas?.reduce((acc, b) => acc + Number(b.skimmers || 0), 0) || 0;
 
                              return (
                                <div className="space-y-4">
@@ -1032,6 +1121,26 @@ export const Derrames: React.FC = () => {
                                         />
                                      </div>
                                    )}
+                                   
+                                   {/* DESGLOSE */}
+                                   <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-100 pt-3">
+                                      <div className="text-center">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Puerto</p>
+                                        <p className="text-xs font-black text-slate-800">{totalPuerto}m</p>
+                                      </div>
+                                      <div className="text-center border-l border-r border-slate-100">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Fluvial</p>
+                                        <p className="text-xs font-black text-slate-800">{totalFluvial}m</p>
+                                      </div>
+                                      <div className="text-center">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Marítima</p>
+                                        <p className="text-xs font-black text-slate-800">{totalMaritima}m</p>
+                                      </div>
+                                   </div>
+                                   <div className="mt-2 flex justify-around text-center text-[10px] text-slate-500 border-t border-slate-100 pt-2">
+                                      <div><span className="font-black text-slate-700">{totalEmbarcaciones}</span> Embarcaciones</div>
+                                      <div><span className="font-black text-slate-700">{totalSkimmers}</span> Skimmers</div>
+                                   </div>
                                  </div>
 
                                  {/* TOTAL CONVENIDO */}
@@ -1283,28 +1392,45 @@ export const Derrames: React.FC = () => {
                       {(selectedEmpresa.convenios || []).length > 0 ? (
                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                            {(selectedEmpresa.convenios || []).map(convenio => (
-                             <div key={convenio.id} className="border border-slate-200 rounded-lg p-4 hover:border-indigo-300 transition-colors group relative bg-slate-50">
-                                <div className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                             <div key={convenio.id} className="border border-slate-200 rounded-lg p-4 hover:border-indigo-300 transition-colors group relative bg-slate-50 flex flex-col justify-between">
+                                <div className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 z-10">
                                    <button onClick={() => openEditConvenio(selectedEmpresa.id, convenio)} className="p-1 rounded bg-white hover:bg-slate-100 text-slate-500 hover:text-indigo-600 transition-all border border-slate-200"><span className="material-symbols-outlined text-[14px]">edit</span></button>
                                    <button onClick={() => handleDeleteConvenio(selectedEmpresa.id, convenio.id)} className="p-1 rounded bg-white hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-all border border-slate-200"><span className="material-symbols-outlined text-[14px]">delete</span></button>
                                 </div>
-                                <h5 className="font-black text-slate-800 uppercase text-sm mb-1 break-words pb-1 border-b border-slate-200 pr-12">{convenio.empresaConvenida}</h5>
-                                
-                                <div className="mt-3 grid grid-cols-2 gap-2">
-                                  <div className="bg-white p-2 rounded border border-slate-200 shadow-sm">
-                                    <p className="text-[9px] font-black uppercase text-slate-400">Total Convenido</p>
-                                    <p className="font-black text-indigo-600 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">waves</span> {convenio.cantidadBarreras || 0}m</p>
-                                  </div>
-                                  <div className="bg-white p-2 rounded border border-slate-200 shadow-sm">
-                                    <p className="text-[9px] font-black uppercase text-slate-400">Vencimiento</p>
-                                    <p className={`font-black uppercase text-[11px] ${getSemaforoColor(convenio.fechaVencimiento)}`}>
-                                      {convenio.fechaVencimiento ? formatDate(convenio.fechaVencimiento) : 'S/D'}
-                                    </p>
+                                <div>
+                                  <h5 className="font-black text-slate-800 uppercase text-sm mb-1 break-words pb-1 border-b border-slate-200 pr-12 flex items-center gap-1">
+                                     {convenio.empresaConvenidaId && <span className="material-symbols-outlined text-[14px] text-indigo-500" title="Vinculado al Sistema">link</span>}
+                                     {convenio.empresaConvenida}
+                                  </h5>
+                                  
+                                  <div className="mt-3 grid grid-cols-2 gap-2">
+                                    <div className="bg-white p-2 rounded border border-slate-200 shadow-sm flex flex-col justify-center">
+                                      <p className="text-[9px] font-black uppercase text-slate-400 leading-tight">Total que RECIBE</p>
+                                      <p className="font-black text-teal-600 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">call_received</span> {convenio.cantidadBarreras || 0}m</p>
+                                    </div>
+                                    <div className="bg-white p-2 rounded border border-slate-200 shadow-sm flex flex-col justify-center">
+                                      <p className="text-[9px] font-black uppercase text-slate-400 leading-tight">Total que APORTA</p>
+                                      <p className="font-black text-indigo-600 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">call_made</span> {convenio.cantidadAporta || 0}m</p>
+                                    </div>
                                   </div>
                                 </div>
-                                {convenio.observaciones && (
-                                  <p className="mt-3 py-1.5 px-2 bg-white rounded border border-slate-100 text-[10px] text-slate-500"><span className="font-bold uppercase text-slate-400">Obs:</span> {convenio.observaciones}</p>
-                                )}
+                                <div className="mt-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                     <span className="text-[9px] font-black uppercase text-slate-400">Vence:</span>
+                                     <span className={`font-black uppercase text-[11px] px-1.5 rounded ${getSemaforoColor(convenio.fechaVencimiento)}`}>
+                                       {convenio.fechaVencimiento ? formatDate(convenio.fechaVencimiento) : 'S/D'}
+                                     </span>
+                                     {convenio.renovacionAutomatica && (
+                                        <span className="material-symbols-outlined text-[14px] text-green-500 bg-green-50 px-1 py-0.5 rounded border border-green-100" title="Renovación Automática / Prórroga Tácita">autorenew</span>
+                                     )}
+                                     <button onClick={(e) => { e.stopPropagation(); openEditConvenio(selectedEmpresa.id, convenio); }} className="ml-auto flex items-center gap-1 text-[9px] font-black uppercase text-indigo-600 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 px-2 py-1 rounded transition-colors">
+                                       <span className="material-symbols-outlined text-[12px]">edit_calendar</span> Renovar
+                                     </button>
+                                  </div>
+                                  {convenio.observaciones && (
+                                    <p className="py-1.5 px-2 bg-white rounded border border-slate-100 text-[10px] text-slate-500"><span className="font-bold uppercase text-slate-400">Obs:</span> {convenio.observaciones}</p>
+                                  )}
+                                </div>
                              </div>
                            ))}
                          </div>
@@ -1404,12 +1530,27 @@ export const Derrames: React.FC = () => {
                   <input type="number" className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingBase.skimmers || ''} onChange={e => setEditingBase({...editingBase, skimmers: e.target.value ? Number(e.target.value) : undefined})} placeholder="0"/>
                 </div>
                 <div className="col-span-1">
-                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Embarcaciones</label>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Embarcaciones (Cantidad Total)</label>
                   <input type="number" className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingBase.embarcaciones || ''} onChange={e => setEditingBase({...editingBase, embarcaciones: e.target.value ? Number(e.target.value) : undefined})} placeholder="0"/>
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Materiales y Equipamiento Disponibles</label>
-                  <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none min-h-[120px]" value={editingBase.materiales || ''} onChange={e => setEditingBase({...editingBase, materiales: e.target.value})} placeholder="Ej: 50mts Barreras Cilíndricas, 2 skimmers Manta Ray, 1 lancha rápida..."/>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Detalle de Embarcaciones Propias (Opcional)</label>
+                  <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none min-h-[60px]" value={editingBase.embarcacionesDetalle ? JSON.stringify(editingBase.embarcacionesDetalle) : ''} onChange={e => {
+                     try {
+                       setEditingBase({...editingBase, embarcacionesDetalle: JSON.parse(e.target.value)});
+                     } catch(err) {
+                       // ignore while typing or make a custom string field.
+                     }
+                  }} placeholder="[ {&quot;nombre&quot;: &quot;...&quot;, &quot;matricula&quot;: &quot;...&quot;} ]" style={{display: 'none'}} />
+                  {/* Better: a simple string text area for Embarcaciones that we parse later, or just a simple multiline. Wait, since it's an array, let's just make a text field that saves to a string for simplicity, then we can convert it. Let's use `otroEquipamiento` for "Otro Equipamiento" and ignore the strict array for embarcaciones if it's too hard in this simple modal, or just make a simple text area. I will make a simple text area for 'Otro Equipamiento'. */}
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Detalle de Embarcaciones Propias (Ej: 1 Lancha REY - MAT: 1234)</label>
+                  <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none min-h-[60px]" value={editingBase.materiales || ''} onChange={e => setEditingBase({...editingBase, materiales: e.target.value})} placeholder="Ej: 1 Lancha 'Marea', Matrícula Rey 1111..."/>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Otro Equipamiento (Opcional)</label>
+                  <textarea className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none min-h-[80px]" value={editingBase.otroEquipamiento || ''} onChange={e => setEditingBase({...editingBase, otroEquipamiento: e.target.value})} placeholder="Camiones de vacío, bombas, grupos electrógenos..."/>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Información Adicional (Opcional)</label>
@@ -1436,16 +1577,44 @@ export const Derrames: React.FC = () => {
             <form onSubmit={handleSaveConvenio} className="p-6">
                <div className="space-y-4">
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nombre de Empresa Convenida</label>
-                    <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold" value={editingConvenio.empresaConvenida || ''} onChange={e => setEditingConvenio({...editingConvenio, empresaConvenida: e.target.value})} placeholder="Ej. OTRAS LÍNEAS S.A."/>
+                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa Convenida (Seleccione o escriba manualmente)</label>
+                     <div className="relative">
+                       <input required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold pr-10" value={editingConvenio.empresaConvenida || ''} onChange={e => {
+                         const val = e.target.value;
+                         const matched = empresas.find(em => em.empresa.toUpperCase() === val.toUpperCase() && em.id !== selectedEmpresaId);
+                         setEditingConvenio({...editingConvenio, empresaConvenida: val, empresaConvenidaId: matched ? matched.id : undefined});
+                       }} placeholder="Ej. OTRAS LÍNEAS S.A." list="empresas-list"/>
+                       <datalist id="empresas-list">
+                         {empresas.filter(e => e.id !== selectedEmpresaId).map(e => (
+                           <option key={e.id} value={e.empresa} />
+                         ))}
+                       </datalist>
+                       {editingConvenio.empresaConvenidaId && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center bg-indigo-100 text-indigo-700 text-[9px] px-2 py-0.5 rounded font-black tracking-widest gap-1">
+                            <span className="material-symbols-outlined text-[12px]">link</span> SIS
+                          </div>
+                       )}
+                     </div>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Cantidad de Equipamiento Asignado/Convenido (Metros de Barrera)</label>
-                    <input type="number" required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold" value={editingConvenio.cantidadBarreras || ''} onChange={e => setEditingConvenio({...editingConvenio, cantidadBarreras: Number(e.target.value)})} placeholder="Ej. 1000"/>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Metros que RECIBE</label>
+                      <input type="number" required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold text-teal-600" value={editingConvenio.cantidadBarreras || ''} onChange={e => setEditingConvenio({...editingConvenio, cantidadBarreras: Number(e.target.value)})} placeholder="Ej. 1000"/>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Metros que APORTA</label>
+                      <input type="number" className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold text-indigo-600" value={editingConvenio.cantidadAporta || ''} onChange={e => setEditingConvenio({...editingConvenio, cantidadAporta: Number(e.target.value)})} placeholder="Opcional. Ej. 500"/>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Fecha de Vencimiento del Convenio</label>
                     <input type="date" required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingConvenio.fechaVencimiento || ''} onChange={e => setEditingConvenio({...editingConvenio, fechaVencimiento: e.target.value})}/>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <input type="checkbox" id="renovacionAutomatica" checked={editingConvenio.renovacionAutomatica || false} onChange={e => setEditingConvenio({...editingConvenio, renovacionAutomatica: e.target.checked})} className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" />
+                    <label htmlFor="renovacionAutomatica" className="text-[10px] font-black uppercase text-slate-500 cursor-pointer">
+                      Renovación Automática / Prórroga Tácita
+                    </label>
                   </div>
                   <div>
                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Observaciones / Tipo de Acuerdo (Opcional)</label>
