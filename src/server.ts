@@ -149,7 +149,11 @@ const parseCoordinates = (coordStr?: string): [number, number][] => {
   return results;
 };
 
-app.get("/api/geojson-mapa", async (req, res) => {
+app.get(["/api/geojson-mapa", "/api/export-geojson"], async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS, POST");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
   try {
     const features: any[] = [];
 
@@ -168,6 +172,7 @@ app.get("/api/geojson-mapa", async (req, res) => {
               id: `${doc.id}_${i}`,
               nombre: data.buque || `Plan ${data.n_plan || 'S/D'}`,
               tipo_poi: "plan",
+              tipo: "plan",
               imagen_url: data.fotoUrl || "",
               anexo: data.anexo || "",
               n_plan: data.n_plan || "",
@@ -200,6 +205,7 @@ app.get("/api/geojson-mapa", async (req, res) => {
                     id: `${doc.id}-base-${index}-${j}`,
                     nombre: data.empresa || "Empresa OSRO",
                     tipo_poi: "empresa",
+                    tipo: "empresa",
                     imagen_url: data.logoUrl || "",
                     anexo: "",
                     n_plan: "",
