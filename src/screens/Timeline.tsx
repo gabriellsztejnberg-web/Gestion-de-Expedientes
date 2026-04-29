@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { TimelineEvent, Case } from '../types';
+import { TimelineEvent, Case, User } from '../types';
 
 export const Timeline: React.FC = () => {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
