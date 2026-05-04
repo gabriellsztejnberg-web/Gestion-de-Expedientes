@@ -243,9 +243,9 @@ export const Dashboard: React.FC = () => {
   ninetyDaysFromNow.setDate(now.getDate() + 90);
 
   const statsPorAnexo: Record<string, { porVencer: number, vencidos: number, vigentes: number, label: string }> = {
-     'anexo_15': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'Anexo 15 (Instalaciones)' },
-     'anexo_16': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'Anexo 16 (Buques)' },
-     'derrames': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'Bases y Derrames' }
+     'anexo_15': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'ANEXO 15 (ZONALES/LOCALES)' },
+     'anexo_16': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'ANEXO 16 (REF)' },
+     'derrames': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'CONTROL DE DERRAMES' }
   };
   
   const causasGlobales = {
@@ -292,13 +292,13 @@ export const Dashboard: React.FC = () => {
 
      if (!statsPorAnexo[ax]) {
        let label = ax.toUpperCase();
-       if (ax === 'anexo_15') label = 'ANEXO 15 (Instalaciones)';
-       if (ax === 'anexo_16') label = 'ANEXO 16 (Buques)';
-       if (ax === 'anexo_17') label = 'ANEXO 17 (Termap/Oil)';
-       if (ax === 'anexo_18') label = 'ANEXO 18 (Buques/Barcazas)';
-       if (ax === 'anexo_19') label = 'ANEXO 19 (Puertos Ref)';
-       if (ax === 'anexo_20') label = 'ANEXO 20 (Plataformas)';
-       if (ax === 'derrames') label = 'Bases y Derrames';
+       if (ax === 'anexo_15') label = 'ANEXO 15 (ZONALES/LOCALES)';
+       if (ax === 'anexo_16') label = 'ANEXO 16 (REF)';
+       if (ax === 'anexo_17') label = 'ANEXO 17 (TERMAP/OIL)';
+       if (ax === 'anexo_18') label = 'ANEXO 18 (BUQUES/BARCAZAS)';
+       if (ax === 'anexo_19') label = 'ANEXO 19 (PUERTOS REF)';
+       if (ax === 'anexo_20') label = 'ANEXO 20 (PLATAFORMAS)';
+       if (ax === 'derrames') label = 'CONTROL DE DERRAMES';
        statsPorAnexo[ax] = { porVencer: 0, vencidos: 0, vigentes: 0, label };
      }
      
@@ -482,8 +482,8 @@ export const Dashboard: React.FC = () => {
                            <span className="block text-[10px] font-bold uppercase tracking-widest text-orange-600/70 dark:text-orange-400/70 pt-1 mb-2">Por Vencer (90d)</span>
                         </div>
                         <div className="flex justify-between items-center text-[9px] font-bold text-orange-700/70 dark:text-orange-400/70 border-t border-orange-200/50 dark:border-orange-900/50 pt-2 mt-auto">
-                           <span><span className="text-orange-600">{causasGlobales.porVencerDispo}</span> DISPO</span>
-                           <span><span className="text-orange-600">{causasGlobales.porVencerConv}</span> CONVAL</span>
+                           <span title="Planes por vencer su Disposición"><span className="text-orange-600">{causasGlobales.porVencerDispo}</span> POR DISPO</span>
+                           <span title="Planes por vencer su Convalidación"><span className="text-orange-600">{causasGlobales.porVencerConv}</span> POR CONVAL</span>
                         </div>
                      </div>
                      <div className="bg-red-50 dark:bg-red-900/10 px-4 py-3 rounded-xl border border-red-100 dark:border-red-900/30 flex-1 min-w-[140px] flex flex-col justify-between">
@@ -492,8 +492,8 @@ export const Dashboard: React.FC = () => {
                            <span className="block text-[10px] font-bold uppercase tracking-widest text-red-600/70 dark:text-red-400/70 pt-1 mb-2">Vencidos</span>
                         </div>
                         <div className="flex justify-between items-center text-[9px] font-bold text-red-700/70 dark:text-red-400/70 border-t border-red-200/50 dark:border-red-900/50 pt-2 mt-auto">
-                           <span><span className="text-red-600">{causasGlobales.vencidoDispo}</span> DISPO</span>
-                           <span><span className="text-red-600">{causasGlobales.vencidoConv}</span> CONVAL</span>
+                           <span title="Planes con Disposición vencida"><span className="text-red-600">{causasGlobales.vencidoDispo}</span> POR DISPO</span>
+                           <span title="Planes con Convalidación vencida (se cuenta como máximo 1 por plan)"><span className="text-red-600">{causasGlobales.vencidoConv}</span> POR CONVAL</span>
                         </div>
                      </div>
                   </div>
