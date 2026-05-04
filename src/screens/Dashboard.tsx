@@ -191,15 +191,51 @@ export const Dashboard: React.FC = () => {
   const maxLoad = Math.max(...userLoadArray.map(u => u.count), 1); // Para escalar la barra
 
   // --- METRICAS MARINOS/BARRERAS Y PLANES ---
-  let totalBarreras = 0;
+  let totalBarrerasGlobal = 0;
+  const barrerasPorTipo = { prefecturas: 0, propias: 0, empresas: 0 };
+  const barrerasPorJurisdiccion: Record<string, number> = {};
+
+  const addBarrerasJur = (jur: string | undefined, amount: number) => {
+    if (amount <= 0) return;
+    const j = jur ? jur.trim().toUpperCase() : 'S/D';
+    barrerasPorJurisdiccion[j] = (barrerasPorJurisdiccion[j] || 0) + amount;
+  };
+
   derrames.forEach(d => {
+    let accEmpresa = 0;
     (d.basesOperativas || []).forEach(bo => {
       const b1 = parseInt(String(bo.cantidadBarreras || '0'), 10) || 0;
       const b2 = parseInt(String(bo.barrerasPuerto || '0'), 10) || 0;
       const b3 = parseInt(String(bo.barrerasFluvial || '0'), 10) || 0;
       const b4 = parseInt(String(bo.barrerasMaritima || '0'), 10) || 0;
-      totalBarreras += (b1 || (b2 + b3 + b4));
+      const totalBase = (b1 || (b2 + b3 + b4));
+      accEmpresa += totalBase;
     });
+    barrerasPorTipo.empresas += accEmpresa;
+    totalBarrerasGlobal += accEmpresa;
+    addBarrerasJur(d.dependencia, accEmpresa);
+  });
+
+  planes.forEach(p => {
+    let accPlan = 0;
+    if (p.isSIPA && p.sipaEquipamiento) {
+      const b1 = parseInt(String(p.sipaEquipamiento.cantidadBarreras || '0'), 10) || 0;
+      const b2 = parseInt(String(p.sipaEquipamiento.barrerasPuerto || '0'), 10) || 0;
+      const b3 = parseInt(String(p.sipaEquipamiento.barrerasFluvial || '0'), 10) || 0;
+      const b4 = parseInt(String(p.sipaEquipamiento.barrerasMaritima || '0'), 10) || 0;
+      const t = (b1 || (b2 + b3 + b4));
+      barrerasPorTipo.prefecturas += t;
+      accPlan += t;
+    } else if (p.tipoRespuesta === 'propia') {
+      const t = parseInt(String(p.cantidadBarreras || '0'), 10) || 0;
+      barrerasPorTipo.propias += t;
+      accPlan += t;
+    }
+
+    if (accPlan > 0) {
+      totalBarrerasGlobal += accPlan;
+      addBarrerasJur(p.dependencia, accPlan);
+    }
   });
 
   const now = new Date();
@@ -373,55 +409,93 @@ export const Dashboard: React.FC = () => {
                   <div className="absolute right-[-20px] top-[-20px] opacity-20 transform rotate-12 group-hover:rotate-0 transition-all duration-500">
                      <span className="material-symbols-outlined text-[100px]">waves</span>
                   </div>
-                  <h3 className="text-4xl font-black mb-1 relative z-10">{totalBarreras.toLocaleString('es-AR')} <span className="text-xl">m</span></h3>
+                  <h3 className="text-4xl font-black mb-1 relative z-10">{totalBarrerasGlobal.toLocaleString('es-AR')} <span className="text-xl">m</span></h3>
                   <p className="text-xs font-bold uppercase tracking-widest opacity-80 relative z-10">Barreras Desplegables</p>
                   <p className="text-[10px] opacity-60 mt-2 relative z-10">Capacidad nacional instalada</p>
                </div>
             </div>
 
-            <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 mt-8 mb-4 border-b border-slate-200 dark:border-slate-800 pb-2">Estado de Planes y Convalidaciones</h3>
+            <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 mt-8 mb-4 border-b border-slate-200 dark:border-slate-800 pb-2">Despliegue Nacional de Barreras</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-
-               <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
-                  <div className="flex justify-between items-start">
-                     <h3 className="text-4xl font-black text-slate-900 dark:text-white mb-1">{totalesGlobales.vigentes}</h3>
-                     {planesDesafectados > 0 && (
-                       <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] px-2 py-1 rounded font-bold uppercase" title={`${planesDesafectados} planes desafectados no sumados`}>
-                          +{planesDesafectados} Inact.
-                       </span>
-                     )}
-                  </div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Planes Vigentes</p>
-                  <p className="text-[10px] text-slate-500 mt-2">Documentación activa actual</p>
-               </div>
-
-               <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-orange-200 dark:border-orange-900/30 border-l-4 border-l-orange-500 shadow-sm relative overflow-hidden flex flex-col justify-between">
+               <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
                   <div>
-                    <h3 className="text-4xl font-black text-slate-900 dark:text-white mb-1">{totalesGlobales.porVencer}</h3>
-                    <p className="text-xs font-bold uppercase tracking-widest text-orange-600 dark:text-orange-400">Por Vencer (90d)</p>
-                  </div>
-                  <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                    <div className="flex-1">
-                      <p className="text-[10px] text-slate-500 uppercase font-black"><span className="text-orange-600">{causasGlobales.porVencerDispo}</span> DISPOSICIÓN</p>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] text-slate-500 uppercase font-black"><span className="text-orange-600">{causasGlobales.porVencerConv}</span> CONVAL.</p>
-                    </div>
+                    <h3 className="text-3xl font-black text-slate-900 dark:text-white">{barrerasPorTipo.empresas.toLocaleString('es-AR')} m</h3>
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mt-1">Empresas Control</p>
                   </div>
                </div>
-
-               <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-red-200 dark:border-red-900/30 border-l-4 border-l-red-500 shadow-sm relative overflow-hidden flex flex-col justify-between">
+               <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
                   <div>
-                    <h3 className="text-4xl font-black text-slate-900 dark:text-white mb-1">{totalesGlobales.vencidos}</h3>
-                    <p className="text-xs font-bold uppercase tracking-widest text-red-600 dark:text-red-400">Planes Vencidos</p>
+                    <h3 className="text-3xl font-black text-slate-900 dark:text-white">{barrerasPorTipo.prefecturas.toLocaleString('es-AR')} m</h3>
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mt-1">Prefecturas (SIPA)</p>
                   </div>
-                  <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                    <div className="flex-1">
-                      <p className="text-[10px] text-slate-500 uppercase font-black"><span className="text-red-600">{causasGlobales.vencidoDispo}</span> DISPOSICIÓN</p>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] text-slate-500 uppercase font-black"><span className="text-red-600">{causasGlobales.vencidoConv}</span> CONVAL.</p>
-                    </div>
+               </div>
+               <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-3xl font-black text-slate-900 dark:text-white">{barrerasPorTipo.propias.toLocaleString('es-AR')} m</h3>
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mt-1">Respuesta Propia</p>
+                  </div>
+               </div>
+            </div>
+
+            <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm mb-8">
+               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4 border-b border-slate-100 dark:border-slate-800/50 pb-2">Distribución por Jurisdicción</h4>
+               <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4">
+                  {Object.entries(barrerasPorJurisdiccion)
+                     .sort((a, b) => b[1] - a[1]) // Sort desc
+                     .map(([jur, amount]) => (
+                     <div key={jur} className="flex flex-col">
+                        <span className="text-lg font-black text-slate-800 dark:text-slate-200">{amount.toLocaleString('es-AR')}</span>
+                        <span className="text-[9px] font-bold uppercase text-slate-500 truncate" title={jur}>{jur}</span>
+                     </div>
+                  ))}
+                  {Object.keys(barrerasPorJurisdiccion).length === 0 && (
+                     <div className="col-span-full py-4 text-center">
+                        <p className="text-xs text-slate-500">No hay datos de distribución disponibles.</p>
+                     </div>
+                  )}
+               </div>
+            </div>
+
+            <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 mt-8 mb-4 border-b border-slate-200 dark:border-slate-800 pb-2">Estado de Planes y Convalidaciones</h3>
+            <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm mb-6">
+               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div>
+                     <div className="flex items-start gap-2">
+                        <h3 className="text-5xl font-black text-slate-900 dark:text-white leading-none">{totalesGlobales.vigentes + totalesGlobales.vencidos + totalesGlobales.porVencer}</h3>
+                        {planesDesafectados > 0 && (
+                          <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] px-2 py-1 rounded font-bold uppercase" title={`${planesDesafectados} planes desafectados no sumados`}>
+                             +{planesDesafectados} Inact.
+                          </span>
+                        )}
+                     </div>
+                     <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mt-2">Planes Documentados</p>
+                  </div>
+                  
+                  <div className="flex-1 flex flex-wrap lg:flex-nowrap gap-4 lg:justify-end">
+                     <div className="bg-emerald-50 dark:bg-emerald-900/10 px-4 py-3 rounded-xl border border-emerald-100 dark:border-emerald-900/30 flex-1 min-w-[140px] flex flex-col justify-center">
+                        <span className="block text-3xl font-black text-emerald-600 dark:text-emerald-400">{totalesGlobales.vigentes}</span>
+                        <span className="block text-[10px] font-bold uppercase tracking-widest text-emerald-600/70 dark:text-emerald-400/70 pt-1">Vigentes</span>
+                     </div>
+                     <div className="bg-orange-50 dark:bg-orange-900/10 px-4 py-3 rounded-xl border border-orange-100 dark:border-orange-900/30 flex-1 min-w-[140px] flex flex-col justify-between">
+                        <div>
+                           <span className="block text-3xl font-black text-orange-600 dark:text-orange-400">{totalesGlobales.porVencer}</span>
+                           <span className="block text-[10px] font-bold uppercase tracking-widest text-orange-600/70 dark:text-orange-400/70 pt-1 mb-2">Por Vencer (90d)</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[9px] font-bold text-orange-700/70 dark:text-orange-400/70 border-t border-orange-200/50 dark:border-orange-900/50 pt-2 mt-auto">
+                           <span><span className="text-orange-600">{causasGlobales.porVencerDispo}</span> DISPO</span>
+                           <span><span className="text-orange-600">{causasGlobales.porVencerConv}</span> CONVAL</span>
+                        </div>
+                     </div>
+                     <div className="bg-red-50 dark:bg-red-900/10 px-4 py-3 rounded-xl border border-red-100 dark:border-red-900/30 flex-1 min-w-[140px] flex flex-col justify-between">
+                        <div>
+                           <span className="block text-3xl font-black text-red-600 dark:text-red-400">{totalesGlobales.vencidos}</span>
+                           <span className="block text-[10px] font-bold uppercase tracking-widest text-red-600/70 dark:text-red-400/70 pt-1 mb-2">Vencidos</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[9px] font-bold text-red-700/70 dark:text-red-400/70 border-t border-red-200/50 dark:border-red-900/50 pt-2 mt-auto">
+                           <span><span className="text-red-600">{causasGlobales.vencidoDispo}</span> DISPO</span>
+                           <span><span className="text-red-600">{causasGlobales.vencidoConv}</span> CONVAL</span>
+                        </div>
+                     </div>
                   </div>
                </div>
             </div>
