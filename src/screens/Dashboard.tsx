@@ -3,13 +3,14 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, getDocs } from 'firebase/firestore';
-import { Case, TimelineEvent, PlanEmergencia, EmpresaControlDerrame, BaseOperativa } from '../types';
+import { Case, TimelineEvent, PlanEmergencia, EmpresaControlDerrame, BaseOperativa, IncidenteDerrame } from '../types';
 
 export const Dashboard: React.FC = () => {
   const [cases, setCases] = useState<Case[]>([]);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [planes, setPlanes] = useState<PlanEmergencia[]>([]);
   const [derrames, setDerrames] = useState<EmpresaControlDerrame[]>([]);
+  const [incidentes, setIncidentes] = useState<IncidenteDerrame[]>([]);
 
   useEffect(() => {
     // 1. Cargar Expedientes
@@ -33,7 +34,7 @@ export const Dashboard: React.FC = () => {
       setPlanes(docs);
     });
 
-    // 4. Cargar Derrames
+    // 4. Cargar Derrames (Empresas de control de derrames)
     const qDerrames1 = query(collection(db, 'empresas_derrames'));
     const qDerrames2 = query(collection(db, 'control_derrames')); // Legacy Support
     
@@ -57,12 +58,20 @@ export const Dashboard: React.FC = () => {
     const unsubD1 = onSnapshot(qDerrames1, s => { snap1 = s; updateDerrames(snap1, snap2); });
     const unsubD2 = onSnapshot(qDerrames2, s => { snap2 = s; updateDerrames(snap1, snap2); });
 
+    // 5. Cargar Incidentes
+    const qIncidentes = query(collection(db, 'incidentes'));
+    const unsubscribeIncidentes = onSnapshot(qIncidentes, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as IncidenteDerrame));
+      setIncidentes(docs);
+    });
+
     return () => {
       unsubscribeCases();
       unsubscribeEvents();
       unsubscribePlanes();
       unsubD1();
       unsubD2();
+      unsubscribeIncidentes();
     };
   }, []);
 
@@ -236,11 +245,26 @@ export const Dashboard: React.FC = () => {
      
      empresasTotalesActivas++;
      
-     let ax = p.anexo || 'desconocido';
-     // Merge legacy
-     if (ax === 'general') ax = 'desconocido';
+     let ax = (p.anexo || 'desconocido').toString().toLowerCase().trim();
+     if (ax.includes('15') || ax === 'anexo 15') ax = 'anexo_15';
+     else if (ax.includes('16') || ax === 'anexo 16') ax = 'anexo_16';
+     else if (ax.includes('17') || ax === 'anexo 17') ax = 'anexo_17';
+     else if (ax.includes('18') || ax === 'anexo 18') ax = 'anexo_18';
+     else if (ax.includes('19') || ax === 'anexo 19') ax = 'anexo_19';
+     else if (ax.includes('20') || ax === 'anexo 20') ax = 'anexo_20';
+     else if (ax === 'general') ax = 'desconocido';
 
-     if (!statsPorAnexo[ax]) statsPorAnexo[ax] = { porVencer: 0, vencidos: 0, vigentes: 0, label: ax.toUpperCase() };
+     if (!statsPorAnexo[ax]) {
+       let label = ax.toUpperCase();
+       if (ax === 'anexo_15') label = 'ANEXO 15 (Instalaciones)';
+       if (ax === 'anexo_16') label = 'ANEXO 16 (Buques)';
+       if (ax === 'anexo_17') label = 'ANEXO 17 (Termap/Oil)';
+       if (ax === 'anexo_18') label = 'ANEXO 18 (Buques/Barcazas)';
+       if (ax === 'anexo_19') label = 'ANEXO 19 (Puertos Ref)';
+       if (ax === 'anexo_20') label = 'ANEXO 20 (Plataformas)';
+       if (ax === 'derrames') label = 'Bases y Derrames';
+       statsPorAnexo[ax] = { porVencer: 0, vencidos: 0, vigentes: 0, label };
+     }
      
      let isVencido = false;
      let isPorVencer = false;
@@ -319,15 +343,44 @@ export const Dashboard: React.FC = () => {
           {/* NUEVO PANEL: SISTEMA NACIONAL */}
           <div className="mb-10">
             <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4 border-b border-slate-200 dark:border-slate-800 pb-2">Sistema Nacional de Lucha contra Derrames</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            
+            {/* KPI INCIDENTES */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+               <div className="bg-red-600 rounded-xl p-6 text-white shadow-lg relative overflow-hidden group border border-red-500">
+                  <div className="absolute right-[-20px] top-[-20px] opacity-20 transform rotate-12 group-hover:rotate-0 transition-all duration-500">
+                     <span className="material-symbols-outlined text-[100px]">warning</span>
+                  </div>
+                  <h3 className="text-4xl font-black mb-1 relative z-10">{incidentes.filter(i => i.estado === 'en_curso').length}</h3>
+                  <p className="text-xs font-bold uppercase tracking-widest opacity-90 relative z-10">Derrames en Curso</p>
+                  <p className="text-[10px] opacity-70 mt-2 relative z-10 text-red-100">Siniestros activos</p>
+               </div>
+               
+               <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+                  <h3 className="text-4xl font-black text-slate-900 dark:text-white mb-1">{incidentes.filter(i => i.anio === new Date().getFullYear()).length}</h3>
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Acumulado {new Date().getFullYear()}</p>
+                  <p className="text-[10px] text-slate-400 mt-2 font-bold">Total histórico: {incidentes.length}</p>
+               </div>
+               
+               <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+                  <h3 className="text-4xl font-black text-slate-900 dark:text-white mb-1">
+                     ~{Number(incidentes.reduce((acc, curr) => acc + (curr.volumenEstimado || 0), 0).toFixed(2)).toLocaleString('es-AR')}
+                  </h3>
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Vol. Estimado (m3/l)</p>
+                  <p className="text-[10px] text-slate-400 mt-2 font-bold">Declarados en el sistema</p>
+               </div>
+               
                <div className="bg-primary rounded-xl p-6 text-white shadow-lg relative overflow-hidden group">
                   <div className="absolute right-[-20px] top-[-20px] opacity-20 transform rotate-12 group-hover:rotate-0 transition-all duration-500">
                      <span className="material-symbols-outlined text-[100px]">waves</span>
                   </div>
                   <h3 className="text-4xl font-black mb-1 relative z-10">{totalBarreras.toLocaleString('es-AR')} <span className="text-xl">m</span></h3>
                   <p className="text-xs font-bold uppercase tracking-widest opacity-80 relative z-10">Barreras Desplegables</p>
-                  <p className="text-[10px] opacity-60 mt-2 relative z-10">Metros declarados a nivel nacional</p>
+                  <p className="text-[10px] opacity-60 mt-2 relative z-10">Capacidad nacional instalada</p>
                </div>
+            </div>
+
+            <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 mt-8 mb-4 border-b border-slate-200 dark:border-slate-800 pb-2">Estado de Planes y Convalidaciones</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
 
                <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
                   <div className="flex justify-between items-start">
