@@ -152,6 +152,7 @@ export const Planes: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AnexoTipo | 'general'>('general');
   const [searchTerm, setSearchTerm] = useState('');
   const [jurisdictionFilter, setJurisdictionFilter] = useState('');
+  const [estadoFilter, setEstadoFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   
   // Datos para el Perfil de Empresa
@@ -941,13 +942,47 @@ export const Planes: React.FC = () => {
     });
   };
 
+  const handleExportCSV = () => {
+    // Collect data to export based on filteredPlanes
+    const csvData = filteredPlanes.map(p => ({
+      'ID': p.id,
+      'EMPRESA/BUQUE': p.empresa,
+      'ANEXO': p.anexo,
+      'JURISDICCION': p.dependencia,
+      'DISPOSICION': p.disposicion,
+      'VENCIMIENTO PLAN': p.vencimiento,
+      'ESTADO': p.estado || 'vigente',
+      'CONV AÑO 1': p.convalidaciones?.anio1 || '',
+      'CONV AÑO 2': p.convalidaciones?.anio2 || '',
+      'CONV AÑO 3': p.convalidaciones?.anio3 || '',
+      'CONV AÑO 4': p.convalidaciones?.anio4 || '',
+      'OBSERVACIONES': p.observaciones || ''
+    }));
+
+    const csvConfig = Papa.unparse(csvData, { quotes: false, delimiter: ";" });
+    const blob = new Blob([csvConfig], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "planes_export.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const filteredPlanes = planes.filter(p => {
     if (activeTab !== 'general' && p.anexo !== activeTab) return false;
-    const matchSearch = p.empresa.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                        (p.disposicion || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        (p.numeroPlan || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const searchLower = searchTerm.toLowerCase();
+    const matchSearch = !searchTerm || 
+                        Object.values(p).some(val => typeof val === 'string' && val.toLowerCase().includes(searchLower)) ||
+                        (p.empresa && p.empresa.toLowerCase().includes(searchLower)) ||
+                        (p.disposicion && p.disposicion.toLowerCase().includes(searchLower)) ||
+                        (p.numeroPlan && p.numeroPlan.toLowerCase().includes(searchLower));
+    
     const matchJur = jurisdictionFilter ? p.dependencia === jurisdictionFilter : true;
-    return matchSearch && matchJur;
+    const matchEstado = estadoFilter ? (p.estado || 'vigente') === estadoFilter : true;
+    
+    return matchSearch && matchJur && matchEstado;
   });
 
   const uniqueJur = Array.from(new Set(planes.filter(p => activeTab === 'general' || p.anexo === activeTab).map(p => p.dependencia))).filter(Boolean).sort();
@@ -988,16 +1023,27 @@ export const Planes: React.FC = () => {
     if (p.anexo === 'anexo_15') return;
     if (p.estado === 'desafectado') return;
 
+    let isPlanVencido = false;
+    let isPlanPorVencer = false;
+
     // Plan Disposicion Vencimiento
     if (p.vencimiento && p.vencimiento !== '-' && p.vencimiento.length >= 5) {
       const vDate = new Date(p.vencimiento);
       if (!isNaN(vDate.getTime())) {
-        if (vDate < now) planesVencidos++;
-        else if (vDate <= ninetyDaysFromNow) planesPorVencer++;
+        if (vDate < now) {
+          planesVencidos++;
+          isPlanVencido = true;
+        } else if (vDate <= ninetyDaysFromNow) {
+          planesPorVencer++;
+          isPlanPorVencer = true;
+        }
       }
     }
 
     // Convalidaciones
+    let hasConvVencida = false;
+    let hasConvPorVencer = false;
+
     if (p.convalidaciones) {
       Object.entries(p.convalidaciones).forEach(([key, dateStr]) => {
         if (typeof dateStr === 'string' && dateStr && dateStr !== '-' && dateStr.length >= 5) {
@@ -1009,14 +1055,20 @@ export const Planes: React.FC = () => {
             
             if (!isFulfilled) {
               if (cDate < now) {
-                convalidacionesVencidas++;
+                hasConvVencida = true;
               } else if (cDate <= ninetyDaysFromNow) {
-                convalidacionesPorVencer++;
+                hasConvPorVencer = true;
               }
             }
           }
         }
       });
+    }
+
+    if (hasConvVencida) {
+      convalidacionesVencidas++;
+    } else if (hasConvPorVencer && !hasConvVencida) {
+      convalidacionesPorVencer++;
     }
   });
 
@@ -1037,19 +1089,6 @@ export const Planes: React.FC = () => {
                   {!isSuperior && (
                     <>
                       <button 
-                        onClick={() => pdfInputRef.current?.click()}
-                        className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-all text-xs font-black uppercase shadow-lg"
-                      >
-                         <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span> Importar PDF (IA)
-                      </button>
-                      <input 
-                        type="file" 
-                        ref={pdfInputRef} 
-                        className="hidden" 
-                        accept=".pdf" 
-                        onChange={handleImportPDF} 
-                      />
-                      <button 
                         onClick={() => fileInputRef.current?.click()}
                         className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 transition-all text-xs font-black uppercase shadow-lg"
                       >
@@ -1062,6 +1101,12 @@ export const Planes: React.FC = () => {
                         accept=".csv" 
                         onChange={handleImportCSV} 
                       />
+                      <button 
+                        onClick={handleExportCSV}
+                        className="bg-sky-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-sky-700 transition-all text-xs font-black uppercase shadow-lg"
+                      >
+                         <span className="material-symbols-outlined text-[18px]">download</span> Exportar CSV
+                      </button>
                       <button 
                         onClick={handleSyncAuditorias}
                         className="bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-amber-700 transition-all text-xs font-black uppercase shadow-lg"
@@ -1081,7 +1126,7 @@ export const Planes: React.FC = () => {
             </div>
 
             {/* DASHBOARD PANEL */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 shrink-0">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6 shrink-0">
               <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
                 <div className="size-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
                   <span className="material-symbols-outlined">corporate_fare</span>
@@ -1097,7 +1142,7 @@ export const Planes: React.FC = () => {
                   <span className="material-symbols-outlined">warning</span>
                 </div>
                 <div>
-                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Planes por Vencer (90d)</p>
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest leading-tight mb-0.5">Disposic.<br/>Por Vencer</p>
                   <p className="text-2xl font-black text-slate-900 dark:text-white leading-none">{planesPorVencer}</p>
                 </div>
               </div>
@@ -1107,8 +1152,18 @@ export const Planes: React.FC = () => {
                   <span className="material-symbols-outlined">error</span>
                 </div>
                 <div>
-                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Planes Vencidos</p>
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest leading-tight mb-0.5">Disposic.<br/>Vencidas</p>
                   <p className="text-2xl font-black text-slate-900 dark:text-white leading-none">{planesVencidos}</p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                <div className="size-10 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
+                  <span className="material-symbols-outlined">schedule</span>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest leading-tight mb-0.5">Conval.<br/>Por Vencer</p>
+                  <p className="text-2xl font-black text-slate-900 dark:text-white leading-none">{convalidacionesPorVencer}</p>
                 </div>
               </div>
 
@@ -1117,7 +1172,7 @@ export const Planes: React.FC = () => {
                   <span className="material-symbols-outlined">event_busy</span>
                 </div>
                 <div>
-                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-0.5">Conval. Vencidas</p>
+                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest leading-tight mb-0.5">Conval.<br/>Vencidas</p>
                   <p className="text-2xl font-black text-slate-900 dark:text-white leading-none">{convalidacionesVencidas}</p>
                 </div>
               </div>
@@ -1146,8 +1201,13 @@ export const Planes: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800 mb-6 shrink-0 shadow-sm flex gap-3">
                 <div className="relative flex-1 flex items-center">
                     <span className="absolute left-3 text-slate-400 material-symbols-outlined text-[20px]">search</span>
-                    <input className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary uppercase" placeholder="Buscar por Empresa o Disposición..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
+                    <input className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary uppercase" placeholder="Buscar por todos los atributos..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
                 </div>
+                <select className="w-48 px-3 py-2 text-xs font-bold uppercase bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none" value={estadoFilter} onChange={e => setEstadoFilter(e.target.value)}>
+                    <option value="">Cualquier Estado</option>
+                    <option value="vigente">Vigente</option>
+                    <option value="desafectado">Desafectado</option>
+                </select>
                 <select className="w-48 px-3 py-2 text-xs font-bold uppercase bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none" value={jurisdictionFilter} onChange={e => setJurisdictionFilter(e.target.value)}>
                     <option value="">Todas las Jurisdicciones</option>
                     {uniqueJur.map(j => <option key={j} value={j}>{j}</option>)}
