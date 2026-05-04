@@ -245,7 +245,6 @@ export const Dashboard: React.FC = () => {
   const statsPorAnexo: Record<string, { porVencer: number, vencidos: number, vigentes: number, label: string }> = {
      'anexo_15': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'ANEXO 15 (ZONALES/LOCALES)' },
      'anexo_16': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'ANEXO 16 (REF)' },
-     'derrames': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'CONTROL DE DERRAMES' }
   };
   
   const causasGlobales = {
@@ -255,31 +254,13 @@ export const Dashboard: React.FC = () => {
      porVencerConv: 0,
   };
 
-  const unificarConDerrames = [...planes];
-  derrames.forEach(d => {
-    if (!unificarConDerrames.find(p => p.id === d.id)) {
-      unificarConDerrames.push({
-         ...d,
-         anexo: 'derrames',
-         estado: 'vigente',
-         convalidaciones: {
-           anio1: d.convalidacionesDetalle?.anio1?.fecha,
-           anio2: d.convalidacionesDetalle?.anio2?.fecha
-         }
-      } as any);
-    }
-  });
-
   let planesDesafectados = 0;
-  let empresasTotalesActivas = 0;
 
-  unificarConDerrames.forEach(p => {
+  planes.forEach(p => {
      if (p.estado === 'desafectado') {
          planesDesafectados++;
          return;
      }
-     
-     empresasTotalesActivas++;
      
      let ax = (p.anexo || 'desconocido').toString().toLowerCase().trim();
      if (ax.includes('15') || ax === 'anexo 15') ax = 'anexo_15';
@@ -298,10 +279,15 @@ export const Dashboard: React.FC = () => {
        if (ax === 'anexo_18') label = 'ANEXO 18 (BUQUES/BARCAZAS)';
        if (ax === 'anexo_19') label = 'ANEXO 19 (PUERTOS REF)';
        if (ax === 'anexo_20') label = 'ANEXO 20 (PLATAFORMAS)';
-       if (ax === 'derrames') label = 'CONTROL DE DERRAMES';
        statsPorAnexo[ax] = { porVencer: 0, vencidos: 0, vigentes: 0, label };
      }
      
+     if (ax === 'anexo_15') {
+       // Anexo 15 nunca vence
+       statsPorAnexo[ax].vigentes++;
+       return;
+     }
+
      let isVencido = false;
      let isPorVencer = false;
      let isVencidoDispo = false;
@@ -317,9 +303,7 @@ export const Dashboard: React.FC = () => {
       }
     }
 
-    if (p.convalidaciones && ax !== 'anexo_15') {
-      let calcVencida = false;
-      let calcPorVencer = false;
+    if (p.convalidaciones) {
       let pendingConvEvaluated = false;
 
       const convEntries = Object.entries(p.convalidaciones).sort((a, b) => a[0].localeCompare(b[0]));
@@ -331,30 +315,31 @@ export const Dashboard: React.FC = () => {
             const detalle = p.convalidacionesDetalle?.[key as keyof typeof p.convalidaciones];
             const isFulfilled = !!(detalle?.nroIF && detalle?.nroExpediente);
             
+            // Evaluamos solo la primera convalidación no cumplida
             if (!isFulfilled && !pendingConvEvaluated) {
               pendingConvEvaluated = true;
-              if (cDate < now) calcVencida = true;
-              else if (cDate <= ninetyDaysFromNow) calcPorVencer = true;
+              if (cDate < now) { isVencido = true; isVencidoConv = true; }
+              else if (cDate <= ninetyDaysFromNow && !isVencido) { isPorVencer = true; isPorVencerConv = true; }
             }
           }
         }
       }
-      
-      if (calcVencida) { isVencido = true; isVencidoConv = true; }
-      else if (calcPorVencer && !isVencido) { isPorVencer = true; isPorVencerConv = true; }
     }
 
     if (isVencido) {
        statsPorAnexo[ax].vencidos++;
+       // Si hay ambos vencidos, damos prioridad a mostrar Disposición
        if (isVencidoDispo) causasGlobales.vencidoDispo++;
-       else causasGlobales.vencidoConv++;
+       else if (isVencidoConv) causasGlobales.vencidoConv++;
     }
     else if (isPorVencer) {
        statsPorAnexo[ax].porVencer++;
        if (isPorVencerDispo) causasGlobales.porVencerDispo++;
-       else causasGlobales.porVencerConv++;
+       else if (isPorVencerConv) causasGlobales.porVencerConv++;
     }
-    else statsPorAnexo[ax].vigentes++;
+    else {
+       statsPorAnexo[ax].vigentes++;
+    }
   });
 
   const totalesGlobales = {
