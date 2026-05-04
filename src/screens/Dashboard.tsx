@@ -2,12 +2,14 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
-import { collection, onSnapshot, query } from 'firebase/firestore';
-import { Case, TimelineEvent } from '../types';
+import { collection, onSnapshot, query, getDocs } from 'firebase/firestore';
+import { Case, TimelineEvent, PlanEmergencia, EmpresaControlDerrame, BaseOperativa } from '../types';
 
 export const Dashboard: React.FC = () => {
   const [cases, setCases] = useState<Case[]>([]);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [planes, setPlanes] = useState<PlanEmergencia[]>([]);
+  const [derrames, setDerrames] = useState<EmpresaControlDerrame[]>([]);
 
   useEffect(() => {
     // 1. Cargar Expedientes
@@ -24,9 +26,43 @@ export const Dashboard: React.FC = () => {
       setEvents(docs);
     });
 
+    // 3. Cargar Planes
+    const qPlanes = query(collection(db, 'planes'));
+    const unsubscribePlanes = onSnapshot(qPlanes, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlanEmergencia));
+      setPlanes(docs);
+    });
+
+    // 4. Cargar Derrames
+    const qDerrames1 = query(collection(db, 'empresas_derrames'));
+    const qDerrames2 = query(collection(db, 'control_derrames')); // Legacy Support
+    
+    let allDerrames: EmpresaControlDerrame[] = [];
+    const updateDerrames = (snap1: any, snap2: any) => {
+        const d1 = snap1?.docs.map((d: any) => ({id: d.id, ...d.data()})) || [];
+        const d2 = snap2?.docs.map((d: any) => ({id: d.id, ...d.data()})) || [];
+        
+        // Merge without duplicates by title/empresa or ID
+        const map = new Map();
+        [...d1, ...d2].forEach(d => {
+            if (!map.has(d.empresa?.trim().toLowerCase())) {
+                map.set(d.empresa?.trim().toLowerCase(), d);
+            }
+        });
+        setDerrames(Array.from(map.values()));
+    }
+    
+    let snap1: any = null;
+    let snap2: any = null;
+    const unsubD1 = onSnapshot(qDerrames1, s => { snap1 = s; updateDerrames(snap1, snap2); });
+    const unsubD2 = onSnapshot(qDerrames2, s => { snap2 = s; updateDerrames(snap1, snap2); });
+
     return () => {
       unsubscribeCases();
       unsubscribeEvents();
+      unsubscribePlanes();
+      unsubD1();
+      unsubD2();
     };
   }, []);
 
@@ -145,6 +181,128 @@ export const Dashboard: React.FC = () => {
 
   const maxLoad = Math.max(...userLoadArray.map(u => u.count), 1); // Para escalar la barra
 
+  // --- METRICAS MARINOS/BARRERAS Y PLANES ---
+  let totalBarreras = 0;
+  derrames.forEach(d => {
+    (d.basesOperativas || []).forEach(bo => {
+      const b1 = parseInt(String(bo.cantidadBarreras || '0'), 10) || 0;
+      const b2 = parseInt(String(bo.barrerasPuerto || '0'), 10) || 0;
+      const b3 = parseInt(String(bo.barrerasFluvial || '0'), 10) || 0;
+      const b4 = parseInt(String(bo.barrerasMaritima || '0'), 10) || 0;
+      totalBarreras += (b1 || (b2 + b3 + b4));
+    });
+  });
+
+  const now = new Date();
+  const ninetyDaysFromNow = new Date();
+  ninetyDaysFromNow.setDate(now.getDate() + 90);
+
+  const statsPorAnexo: Record<string, { porVencer: number, vencidos: number, vigentes: number, label: string }> = {
+     'anexo_15': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'Anexo 15 (Instalaciones)' },
+     'anexo_16': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'Anexo 16 (Buques)' },
+     'derrames': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'Bases y Derrames' }
+  };
+  
+  const causasGlobales = {
+     vencidoDispo: 0,
+     vencidoConv: 0,
+     porVencerDispo: 0,
+     porVencerConv: 0,
+  };
+
+  const unificarConDerrames = [...planes];
+  derrames.forEach(d => {
+    if (!unificarConDerrames.find(p => p.id === d.id)) {
+      unificarConDerrames.push({
+         ...d,
+         anexo: 'derrames',
+         estado: 'vigente',
+         convalidaciones: {
+           anio1: d.convalidacionesDetalle?.anio1?.fecha,
+           anio2: d.convalidacionesDetalle?.anio2?.fecha
+         }
+      } as any);
+    }
+  });
+
+  let planesDesafectados = 0;
+  let empresasTotalesActivas = 0;
+
+  unificarConDerrames.forEach(p => {
+     if (p.estado === 'desafectado') {
+         planesDesafectados++;
+         return;
+     }
+     
+     empresasTotalesActivas++;
+     
+     let ax = p.anexo || 'desconocido';
+     // Merge legacy
+     if (ax === 'general') ax = 'desconocido';
+
+     if (!statsPorAnexo[ax]) statsPorAnexo[ax] = { porVencer: 0, vencidos: 0, vigentes: 0, label: ax.toUpperCase() };
+     
+     let isVencido = false;
+     let isPorVencer = false;
+     let isVencidoDispo = false;
+     let isPorVencerDispo = false;
+     let isVencidoConv = false;
+     let isPorVencerConv = false;
+     
+     if (p.vencimiento && p.vencimiento !== '-' && p.vencimiento.length >= 5) {
+      const vDate = new Date(p.vencimiento);
+      if (!isNaN(vDate.getTime())) {
+        if (vDate < now) { isVencido = true; isVencidoDispo = true; }
+        else if (vDate <= ninetyDaysFromNow) { isPorVencer = true; isPorVencerDispo = true; }
+      }
+    }
+
+    if (p.convalidaciones && ax !== 'anexo_15') {
+      let calcVencida = false;
+      let calcPorVencer = false;
+      let pendingConvEvaluated = false;
+
+      const convEntries = Object.entries(p.convalidaciones).sort((a, b) => a[0].localeCompare(b[0]));
+
+      for (const [key, dateStr] of convEntries) {
+        if (typeof dateStr === 'string' && dateStr && dateStr !== '-' && dateStr.length >= 5) {
+          const cDate = new Date(dateStr);
+          if (!isNaN(cDate.getTime())) {
+            const detalle = p.convalidacionesDetalle?.[key as keyof typeof p.convalidaciones];
+            const isFulfilled = !!(detalle?.nroIF && detalle?.nroExpediente);
+            
+            if (!isFulfilled && !pendingConvEvaluated) {
+              pendingConvEvaluated = true;
+              if (cDate < now) calcVencida = true;
+              else if (cDate <= ninetyDaysFromNow) calcPorVencer = true;
+            }
+          }
+        }
+      }
+      
+      if (calcVencida) { isVencido = true; isVencidoConv = true; }
+      else if (calcPorVencer && !isVencido) { isPorVencer = true; isPorVencerConv = true; }
+    }
+
+    if (isVencido) {
+       statsPorAnexo[ax].vencidos++;
+       if (isVencidoDispo) causasGlobales.vencidoDispo++;
+       else causasGlobales.vencidoConv++;
+    }
+    else if (isPorVencer) {
+       statsPorAnexo[ax].porVencer++;
+       if (isPorVencerDispo) causasGlobales.porVencerDispo++;
+       else causasGlobales.porVencerConv++;
+    }
+    else statsPorAnexo[ax].vigentes++;
+  });
+
+  const totalesGlobales = {
+     vigentes: Object.values(statsPorAnexo).reduce((acc, curr) => acc + curr.vigentes, 0),
+     porVencer: Object.values(statsPorAnexo).reduce((acc, curr) => acc + curr.porVencer, 0),
+     vencidos: Object.values(statsPorAnexo).reduce((acc, curr) => acc + curr.vencidos, 0),
+  };
+
   return (
     <div className="flex h-screen w-full bg-background-light dark:bg-background-dark">
       <Sidebar activePage="dashboard" />
@@ -155,9 +313,94 @@ export const Dashboard: React.FC = () => {
               <span className="bg-primary/10 p-2 rounded-lg material-symbols-outlined text-primary">analytics</span>
               Tablero de Control
             </h2>
-            <p className="text-slate-500 dark:text-slate-400 font-bold text-sm">Estadísticas en tiempo real - División Planes</p>
+            <p className="text-slate-500 dark:text-slate-400 font-bold text-sm">Resumen del control nacional de incidentes y preparación</p>
           </div>
 
+          {/* NUEVO PANEL: SISTEMA NACIONAL */}
+          <div className="mb-10">
+            <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4 border-b border-slate-200 dark:border-slate-800 pb-2">Sistema Nacional de Lucha contra Derrames</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+               <div className="bg-primary rounded-xl p-6 text-white shadow-lg relative overflow-hidden group">
+                  <div className="absolute right-[-20px] top-[-20px] opacity-20 transform rotate-12 group-hover:rotate-0 transition-all duration-500">
+                     <span className="material-symbols-outlined text-[100px]">waves</span>
+                  </div>
+                  <h3 className="text-4xl font-black mb-1 relative z-10">{totalBarreras.toLocaleString('es-AR')} <span className="text-xl">m</span></h3>
+                  <p className="text-xs font-bold uppercase tracking-widest opacity-80 relative z-10">Barreras Desplegables</p>
+                  <p className="text-[10px] opacity-60 mt-2 relative z-10">Metros declarados a nivel nacional</p>
+               </div>
+
+               <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+                  <div className="flex justify-between items-start">
+                     <h3 className="text-4xl font-black text-slate-900 dark:text-white mb-1">{totalesGlobales.vigentes}</h3>
+                     {planesDesafectados > 0 && (
+                       <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] px-2 py-1 rounded font-bold uppercase" title={`${planesDesafectados} planes desafectados no sumados`}>
+                          +{planesDesafectados} Inact.
+                       </span>
+                     )}
+                  </div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Planes Vigentes</p>
+                  <p className="text-[10px] text-slate-500 mt-2">Documentación activa actual</p>
+               </div>
+
+               <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-orange-200 dark:border-orange-900/30 border-l-4 border-l-orange-500 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-4xl font-black text-slate-900 dark:text-white mb-1">{totalesGlobales.porVencer}</h3>
+                    <p className="text-xs font-bold uppercase tracking-widest text-orange-600 dark:text-orange-400">Por Vencer (90d)</p>
+                  </div>
+                  <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex-1">
+                      <p className="text-[10px] text-slate-500 uppercase font-black"><span className="text-orange-600">{causasGlobales.porVencerDispo}</span> DISPOSICIÓN</p>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-[10px] text-slate-500 uppercase font-black"><span className="text-orange-600">{causasGlobales.porVencerConv}</span> CONVAL.</p>
+                    </div>
+                  </div>
+               </div>
+
+               <div className="bg-white dark:bg-[#15202b] rounded-xl p-6 border border-red-200 dark:border-red-900/30 border-l-4 border-l-red-500 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-4xl font-black text-slate-900 dark:text-white mb-1">{totalesGlobales.vencidos}</h3>
+                    <p className="text-xs font-bold uppercase tracking-widest text-red-600 dark:text-red-400">Planes Vencidos</p>
+                  </div>
+                  <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex-1">
+                      <p className="text-[10px] text-slate-500 uppercase font-black"><span className="text-red-600">{causasGlobales.vencidoDispo}</span> DISPOSICIÓN</p>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-[10px] text-slate-500 uppercase font-black"><span className="text-red-600">{causasGlobales.vencidoConv}</span> CONVAL.</p>
+                    </div>
+                  </div>
+               </div>
+            </div>
+
+            {/* ESTADO POR ANEXO */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+               {Object.entries(statsPorAnexo).map(([key, stat]) => {
+                 const total = stat.vigentes + stat.porVencer + stat.vencidos;
+                 if (total === 0) return null;
+                 return (
+                 <div key={key} className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+                    <p className="text-[10px] font-black uppercase text-slate-500 mb-3">{stat.label}</p>
+                    <div className="flex gap-2">
+                       <div className="flex-1 text-center bg-slate-50 dark:bg-slate-800/50 rounded p-2">
+                          <p className="text-lg font-black text-slate-700 dark:text-slate-200">{stat.vigentes}</p>
+                          <p className="text-[8px] font-bold uppercase text-emerald-500">Vigentes</p>
+                       </div>
+                       <div className="flex-1 text-center bg-slate-50 dark:bg-slate-800/50 rounded p-2">
+                          <p className="text-lg font-black text-slate-700 dark:text-slate-200">{stat.porVencer}</p>
+                          <p className="text-[8px] font-bold uppercase text-orange-500">Por Vencer</p>
+                       </div>
+                       <div className="flex-1 text-center bg-slate-50 dark:bg-slate-800/50 rounded p-2">
+                          <p className="text-lg font-black text-slate-700 dark:text-slate-200">{stat.vencidos}</p>
+                          <p className="text-[8px] font-bold uppercase text-red-500">Vencidos</p>
+                       </div>
+                    </div>
+                 </div>
+               )})}
+            </div>
+          </div>
+
+          <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4 border-b border-slate-200 dark:border-slate-800 pb-2">Gestión de Expedientes</h3>
           {/* FILA 1: KPI PRINCIPALES */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
             {stats.map((stat, i) => (
