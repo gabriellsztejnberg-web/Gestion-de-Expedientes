@@ -153,6 +153,7 @@ export const Planes: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [jurisdictionFilter, setJurisdictionFilter] = useState('');
   const [estadoFilter, setEstadoFilter] = useState('');
+  const [metricFilter, setMetricFilter] = useState<'all' | 'planes_vencidos' | 'planes_por_vencer' | 'conval_vencidas' | 'conval_por_vencer'>('all');
   const [isLoading, setIsLoading] = useState(true);
   
   // Datos para el Perfil de Empresa
@@ -970,6 +971,56 @@ export const Planes: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  // --- DASHBOARD METRICS ---
+  const now = new Date();
+  const ninetyDaysFromNow = new Date();
+  ninetyDaysFromNow.setDate(now.getDate() + 90);
+
+  const getPlanMetrics = (p: PlanEmergencia | any) => {
+    let status = {
+      isPlanVencido: false,
+      isPlanPorVencer: false,
+      hasConvVencida: false,
+      hasConvPorVencer: false,
+    };
+
+    if (p.anexo === 'anexo_15' || p.estado === 'desafectado') return status;
+
+    if (p.vencimiento && p.vencimiento !== '-' && p.vencimiento.length >= 5) {
+      const vDate = new Date(p.vencimiento);
+      if (!isNaN(vDate.getTime())) {
+        if (vDate < now) status.isPlanVencido = true;
+        else if (vDate <= ninetyDaysFromNow) status.isPlanPorVencer = true;
+      }
+    }
+
+    if (p.convalidaciones) {
+      // Ordenar convalidaciones anio1 a anio4
+      const convEntries = Object.entries(p.convalidaciones).sort((a, b) => a[0].localeCompare(b[0]));
+      
+      let pendingConvEvaluated = false;
+
+      for (const [key, dateStr] of convEntries) {
+        if (typeof dateStr === 'string' && dateStr && dateStr !== '-' && dateStr.length >= 5) {
+          const cDate = new Date(dateStr);
+          if (!isNaN(cDate.getTime())) {
+            const detalle = p.convalidacionesDetalle?.[key as keyof typeof p.convalidaciones];
+            const isFulfilled = !!(detalle?.nroIF && detalle?.nroExpediente);
+            
+            if (!isFulfilled && !pendingConvEvaluated) {
+              // Esta es la primera convalidación (cronológicamente) que no está cumplida.
+              // Solo miramos la última pendiente para considerarla como vencida/por vencer
+              pendingConvEvaluated = true;
+              if (cDate < now) status.hasConvVencida = true;
+              else if (cDate <= ninetyDaysFromNow) status.hasConvPorVencer = true;
+            }
+          }
+        }
+      }
+    }
+    return status;
+  };
+
   const filteredPlanes = planes.filter(p => {
     if (activeTab !== 'general' && p.anexo !== activeTab) return false;
     const searchLower = searchTerm.toLowerCase();
@@ -982,15 +1033,17 @@ export const Planes: React.FC = () => {
     const matchJur = jurisdictionFilter ? p.dependencia === jurisdictionFilter : true;
     const matchEstado = estadoFilter ? (p.estado || 'vigente') === estadoFilter : true;
     
-    return matchSearch && matchJur && matchEstado;
+    const metrics = getPlanMetrics(p);
+    let matchMetric = true;
+    if (metricFilter === 'planes_vencidos') matchMetric = metrics.isPlanVencido;
+    if (metricFilter === 'planes_por_vencer') matchMetric = metrics.isPlanPorVencer;
+    if (metricFilter === 'conval_vencidas') matchMetric = metrics.hasConvVencida;
+    if (metricFilter === 'conval_por_vencer') matchMetric = metrics.hasConvPorVencer && !metrics.hasConvVencida;
+
+    return matchSearch && matchJur && matchEstado && matchMetric;
   });
 
   const uniqueJur = Array.from(new Set(planes.filter(p => activeTab === 'general' || p.anexo === activeTab).map(p => p.dependencia))).filter(Boolean).sort();
-
-  // --- DASHBOARD METRICS ---
-  const now = new Date();
-  const ninetyDaysFromNow = new Date();
-  ninetyDaysFromNow.setDate(now.getDate() + 90);
 
   // Unificamos para las métricas
   const allPlanes = [...planes];
@@ -1045,7 +1098,9 @@ export const Planes: React.FC = () => {
     let hasConvPorVencer = false;
 
     if (p.convalidaciones) {
-      Object.entries(p.convalidaciones).forEach(([key, dateStr]) => {
+      let pendingConvEvaluated = false;
+      const convEntries = Object.entries(p.convalidaciones).sort((a, b) => a[0].localeCompare(b[0]));
+      for (const [key, dateStr] of convEntries) {
         if (typeof dateStr === 'string' && dateStr && dateStr !== '-' && dateStr.length >= 5) {
           const cDate = new Date(dateStr);
           if (!isNaN(cDate.getTime())) {
@@ -1053,7 +1108,8 @@ export const Planes: React.FC = () => {
             const detalle = p.convalidacionesDetalle?.[key as keyof typeof p.convalidaciones];
             const isFulfilled = !!(detalle?.nroIF && detalle?.nroExpediente);
             
-            if (!isFulfilled) {
+            if (!isFulfilled && !pendingConvEvaluated) {
+              pendingConvEvaluated = true;
               if (cDate < now) {
                 hasConvVencida = true;
               } else if (cDate <= ninetyDaysFromNow) {
@@ -1062,7 +1118,7 @@ export const Planes: React.FC = () => {
             }
           }
         }
-      });
+      }
     }
 
     if (hasConvVencida) {
@@ -1127,7 +1183,10 @@ export const Planes: React.FC = () => {
 
             {/* DASHBOARD PANEL */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6 shrink-0">
-              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+              <div 
+                onClick={() => setMetricFilter('all')}
+                className={`bg-white dark:bg-slate-900 p-4 rounded-xl border ${metricFilter === 'all' ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-200 dark:border-slate-800'} shadow-sm flex items-center gap-4 cursor-pointer hover:shadow-md transition-all`}
+              >
                 <div className="size-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
                   <span className="material-symbols-outlined">corporate_fare</span>
                 </div>
@@ -1137,7 +1196,10 @@ export const Planes: React.FC = () => {
                 </div>
               </div>
               
-              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+              <div 
+                onClick={() => setMetricFilter(metricFilter === 'planes_por_vencer' ? 'all' : 'planes_por_vencer')}
+                className={`bg-white dark:bg-slate-900 p-4 rounded-xl border ${metricFilter === 'planes_por_vencer' ? 'border-orange-500 ring-1 ring-orange-500' : 'border-slate-200 dark:border-slate-800'} shadow-sm flex items-center gap-4 cursor-pointer hover:shadow-md transition-all`}
+              >
                 <div className="size-10 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
                   <span className="material-symbols-outlined">warning</span>
                 </div>
@@ -1147,7 +1209,10 @@ export const Planes: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+              <div 
+                onClick={() => setMetricFilter(metricFilter === 'planes_vencidos' ? 'all' : 'planes_vencidos')}
+                className={`bg-white dark:bg-slate-900 p-4 rounded-xl border ${metricFilter === 'planes_vencidos' ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-200 dark:border-slate-800'} shadow-sm flex items-center gap-4 cursor-pointer hover:shadow-md transition-all`}
+              >
                 <div className="size-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400">
                   <span className="material-symbols-outlined">error</span>
                 </div>
@@ -1157,7 +1222,10 @@ export const Planes: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+              <div 
+                onClick={() => setMetricFilter(metricFilter === 'conval_por_vencer' ? 'all' : 'conval_por_vencer')}
+                className={`bg-white dark:bg-slate-900 p-4 rounded-xl border ${metricFilter === 'conval_por_vencer' ? 'border-yellow-500 ring-1 ring-yellow-500' : 'border-slate-200 dark:border-slate-800'} shadow-sm flex items-center gap-4 cursor-pointer hover:shadow-md transition-all`}
+              >
                 <div className="size-10 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
                   <span className="material-symbols-outlined">schedule</span>
                 </div>
@@ -1167,7 +1235,10 @@ export const Planes: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4">
+              <div 
+                onClick={() => setMetricFilter(metricFilter === 'conval_vencidas' ? 'all' : 'conval_vencidas')}
+                className={`bg-white dark:bg-slate-900 p-4 rounded-xl border ${metricFilter === 'conval_vencidas' ? 'border-purple-500 ring-1 ring-purple-500' : 'border-slate-200 dark:border-slate-800'} shadow-sm flex items-center gap-4 cursor-pointer hover:shadow-md transition-all`}
+              >
                 <div className="size-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
                   <span className="material-symbols-outlined">event_busy</span>
                 </div>
@@ -1377,7 +1448,7 @@ export const Planes: React.FC = () => {
                   </div>
                   
                   <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto flex-1">
-                      <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div className="md:col-span-1">
                           <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Anexo</label>
                           <select 
@@ -1390,6 +1461,17 @@ export const Planes: React.FC = () => {
                             {ANEXOS.map(a => (
                               <option key={a.id} value={a.id}>{a.label}</option>
                             ))}
+                          </select>
+                        </div>
+                        <div className="md:col-span-1">
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Estado</label>
+                          <select 
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-primary uppercase font-bold text-xs" 
+                            value={editingPlan?.estado || 'vigente'} 
+                            onChange={e => setEditingPlan({...editingPlan!, estado: e.target.value as 'vigente'|'desafectado'})}
+                          >
+                            <option value="vigente">Vigente</option>
+                            <option value="desafectado">Desafectado</option>
                           </select>
                         </div>
                         <div className="md:col-span-2">
