@@ -734,7 +734,7 @@ export const Expedientes: React.FC = () => {
 
     const caseData: any = {
       numero: numeroGDE,
-      empresa: (editingExp?.empresa || '').trim(),
+      empresa: (editingExp?.empresa || '').trim().toUpperCase(),
       planId: editingExp?.planId || '',
       plan: editingExp?.plan || '',
       tramite: editingExp?.tramite || 'Iniciación',
