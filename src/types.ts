@@ -12,12 +12,12 @@ export interface Instancia {
 export type AnexoTipo = 'anexo_15' | 'anexo_16' | 'anexo_17' | 'anexo_18' | 'anexo_19' | 'anexo_20' | 'derrames';
 
 export const ANEXOS: { id: AnexoTipo; label: string }[] = [
-  { id: 'anexo_15', label: 'ANEXO 15 (Zonales/Locales)' },
-  { id: 'anexo_16', label: 'ANEXO 16 (Ref)' },
-  { id: 'anexo_17', label: 'ANEXO 17 (Termap/Oil)' },
-  { id: 'anexo_18', label: 'ANEXO 18 (Buques/Barcazas)' },
-  { id: 'anexo_19', label: 'ANEXO 19 (Puertos Ref)' },
-  { id: 'anexo_20', label: 'ANEXO 20 (Plataformas)' },
+  { id: 'anexo_15', label: 'ANEXO 15' },
+  { id: 'anexo_16', label: 'ANEXO 16' },
+  { id: 'anexo_17', label: 'ANEXO 17' },
+  { id: 'anexo_18', label: 'ANEXO 18' },
+  { id: 'anexo_19', label: 'ANEXO 19' },
+  { id: 'anexo_20', label: 'ANEXO 20' },
   { id: 'derrames', label: 'CONTROL DE DERRAMES' }
 ];
 
@@ -219,12 +219,16 @@ export interface PlanEmergencia {
     anio2?: string;
     anio3?: string;
     anio4?: string;
+    renovacion?: string;
+    auditoriaOficio?: string;
   };
   convalidacionesDetalle?: {
     anio1?: ConvalidacionDetalle;
     anio2?: ConvalidacionDetalle;
     anio3?: ConvalidacionDetalle;
     anio4?: ConvalidacionDetalle;
+    renovacion?: ConvalidacionDetalle;
+    auditoriaOficio?: ConvalidacionDetalle;
   };
   historialDisposiciones?: {
     disposicion: string;
@@ -294,15 +298,25 @@ export interface IncidenteDerrame {
   fecha: string; // YYYY-MM-DD
   mes: string; // YYYY-MM
   anio: number; // YYYY
+  moi: string; // Mensaje Oficial Interno
   ubicacion: string;
+  latitud?: number;
+  longitud?: number;
   jurisdiccion: string;
-  productoTipo: 'hidrocarburo' | 'quimico' | 'agua_produccion' | 'otro';
+  estadoPlanacon: 'alerta' | 'evaluacion' | 'derrame_efectivo';
+  origenConocido: boolean;
+  origenTipo?: 'empresa' | 'buque' | 'otro';
+  origenNombre?: string;
+  planVinculadoId?: string; // ID del Plan/Empresa registrada si lo está
+  productoTipo?: 'hidrocarburo' | 'quimico' | 'agua_produccion' | 'otro';
   productoNombre?: string;
-  volumenEstimado: number; // m3 o litros
-  unidadMedida: 'm3' | 'litros';
-  empresaInvolucrada?: string;
+  volumenEstimado?: number; // m3 o litros
+  unidadMedida?: 'm3' | 'litros';
+  tipoDerrame?: string;
+  empresaInvolucrada?: string; // Legacy o fallback
   empresaSanamiento?: string; // Que EMCODECON actuó
-  estado: 'en_curso' | 'controlado' | 'remediado';
+  estado: 'en_curso' | 'controlado' | 'remediado' | 'falsa_alarma' | 'finalizado';
+  resultadoFinalizacion?: string; // Como finalizó
   observaciones?: string;
   registradoPor: string;
   fechaRegistro: string; // ISO
@@ -371,6 +385,7 @@ export interface EmpresaControlDerrame {
   convalidacionesDetalle?: {
     anio1?: ConvalidacionDetalle;
     anio2?: ConvalidacionDetalle;
+    auditoriaOficio?: ConvalidacionDetalle;
   };
   inspeccionesIntermedias?: InspeccionIntermedia[];
   basesOperativas: BaseOperativa[];
