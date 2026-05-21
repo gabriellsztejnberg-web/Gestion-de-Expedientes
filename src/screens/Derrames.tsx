@@ -212,6 +212,7 @@ export const Derrames: React.FC = () => {
     try {
       const dataToSave = {
         empresa: (editingEmpresa.empresa || '').toUpperCase(),
+        categoria: (editingEmpresa.categoria || '').toUpperCase(),
         dependencia: (editingEmpresa.dependencia || '').toUpperCase(),
         disposicion: (editingEmpresa.disposicion || '').toUpperCase(),
         vencimiento: editingEmpresa.vencimiento || '',
@@ -221,7 +222,7 @@ export const Derrames: React.FC = () => {
         localidad: editingEmpresa.localidad || '',
         email: editingEmpresa.email || '',
         telefono: editingEmpresa.telefono || '',
-        responsable: editingEmpresa.responsable || '',
+        responsableTecnico: editingEmpresa.responsableTecnico || '',
         logoUrl: editingEmpresa.logoUrl || '',
         notas: editingEmpresa.notas || '',
         basesOperativas: editingEmpresa.basesOperativas || [],
@@ -877,6 +878,15 @@ export const Derrames: React.FC = () => {
                          <div className="grid grid-cols-2 gap-2">
                             <input className="w-full px-2 py-1.5 text-[10px] bg-white border border-slate-200 rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" placeholder="Nº Expediente" value={(editingEmpresa.convalidacionesDetalle as any)?.anio2?.nroExpediente || ''} onChange={e => setEditingEmpresa({...editingEmpresa, convalidacionesDetalle: { ...editingEmpresa.convalidacionesDetalle, anio2: { ...(editingEmpresa.convalidacionesDetalle as any)?.anio2, nroExpediente: e.target.value } }})}/>
                             <input className="w-full px-2 py-1.5 text-[10px] bg-white border border-slate-200 rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" placeholder="Certificado" value={(editingEmpresa.convalidacionesDetalle as any)?.anio2?.nroCertificadoConvalidacion || ''} onChange={e => setEditingEmpresa({...editingEmpresa, convalidacionesDetalle: { ...editingEmpresa.convalidacionesDetalle, anio2: { ...(editingEmpresa.convalidacionesDetalle as any)?.anio2, nroCertificadoConvalidacion: e.target.value } }})}/>
+                         </div>
+                       </div>
+                       <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2">
+                         <label className="block text-[9px] font-bold uppercase text-slate-500 mb-1">Auditoría / Extraordinaria</label>
+                         <input type="date" className="w-full px-2 py-1.5 text-[10px] bg-white border border-slate-200 rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={(editingEmpresa.convalidacionesDetalle as any)?.auditoriaOficio?.fecha || ''} onChange={e => setEditingEmpresa({...editingEmpresa, convalidacionesDetalle: { ...editingEmpresa.convalidacionesDetalle, auditoriaOficio: { ...(editingEmpresa.convalidacionesDetalle as any)?.auditoriaOficio, fecha: e.target.value } }})}/>
+                         <input className="w-full px-2 py-1.5 text-[10px] bg-white border border-slate-200 rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase placeholder:capitalize" placeholder="Inspector/Auditor" value={(editingEmpresa.convalidacionesDetalle as any)?.auditoriaOficio?.auditorNombre || ''} onChange={e => setEditingEmpresa({...editingEmpresa, convalidacionesDetalle: { ...editingEmpresa.convalidacionesDetalle, auditoriaOficio: { ...(editingEmpresa.convalidacionesDetalle as any)?.auditoriaOficio, auditorNombre: e.target.value } }})}/>
+                         <div className="grid grid-cols-2 gap-2">
+                            <input className="w-full px-2 py-1.5 text-[10px] bg-white border border-slate-200 rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" placeholder="Nº Expediente" value={(editingEmpresa.convalidacionesDetalle as any)?.auditoriaOficio?.nroExpediente || ''} onChange={e => setEditingEmpresa({...editingEmpresa, convalidacionesDetalle: { ...editingEmpresa.convalidacionesDetalle, auditoriaOficio: { ...(editingEmpresa.convalidacionesDetalle as any)?.auditoriaOficio, nroExpediente: e.target.value } }})}/>
+                            <input className="w-full px-2 py-1.5 text-[10px] bg-white border border-slate-200 rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" placeholder="Certificado" value={(editingEmpresa.convalidacionesDetalle as any)?.auditoriaOficio?.nroCertificadoConvalidacion || ''} onChange={e => setEditingEmpresa({...editingEmpresa, convalidacionesDetalle: { ...editingEmpresa.convalidacionesDetalle, auditoriaOficio: { ...(editingEmpresa.convalidacionesDetalle as any)?.auditoriaOficio, nroCertificadoConvalidacion: e.target.value } }})}/>
                          </div>
                        </div>
                      </div>
