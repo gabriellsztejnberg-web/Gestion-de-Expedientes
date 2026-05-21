@@ -266,26 +266,63 @@ export const Inspecciones: React.FC = () => {
               ],
               ultimaActualizacion: new Date().toISOString()
             });
-          } else if (!isDerrame && dataToSave.tipo === 'CONVALIDACIÓN ANUAL') {
-            const planData = planSnap.data() as PlanEmergencia;
-            const convalidaciones = { ...(planData.convalidaciones || {}) };
-            
-            const num = dataToSave.convalidacionNumero;
-            if (num === 1) convalidaciones.anio1 = dataToSave.fecha;
-            else if (num === 2) convalidaciones.anio2 = dataToSave.fecha;
-            else if (num === 3) convalidaciones.anio3 = dataToSave.fecha;
-            else if (num === 4) convalidaciones.anio4 = dataToSave.fecha;
-            else {
-              if (!convalidaciones.anio1) convalidaciones.anio1 = dataToSave.fecha;
-              else if (!convalidaciones.anio2) convalidaciones.anio2 = dataToSave.fecha;
-              else if (!convalidaciones.anio3) convalidaciones.anio3 = dataToSave.fecha;
-              else if (!convalidaciones.anio4) convalidaciones.anio4 = dataToSave.fecha;
-            }
-            
+          } else if (isDerrame && dataToSave.tipo === 'AUDITORÍA DE OFICIO') {
+            const planData = planSnap.data() as EmpresaControlDerrame;
+            const convalidacionesDetalle = { ...(planData.convalidacionesDetalle || {}) };
+            convalidacionesDetalle.auditoriaOficio = {
+                fecha: dataToSave.fecha,
+                auditorNombre: dataToSave.auditorNombre + (dataToSave.auditorNombreSecundario ? ` / ${dataToSave.auditorNombreSecundario}` : ''),
+                nroExpediente: dataToSave.expedienteNumero,
+                nroIF: dataToSave.nroInforme,
+                nroCertificado: dataToSave.nroCertificado,
+                observaciones: dataToSave.observaciones
+            };
             await updateDoc(planRef, {
-              convalidaciones,
+              convalidacionesDetalle,
               ultimaActualizacion: new Date().toISOString()
             });
+          } else if (!isDerrame && (dataToSave.tipo === 'CONVALIDACIÓN ANUAL' || dataToSave.tipo === 'RENOVACIÓN' || dataToSave.tipo === 'AUDITORÍA DE OFICIO')) {
+            const planData = planSnap.data() as PlanEmergencia;
+            const convalidaciones = { ...(planData.convalidaciones || {}) };
+            const convalidacionesDetalle = { ...(planData.convalidacionesDetalle || {}) };
+            
+            const num = dataToSave.convalidacionNumero;
+            let targetAnio: 'anio1' | 'anio2' | 'anio3' | 'anio4' | 'renovacion' | 'auditoriaOficio' | null = null;
+            
+            if (dataToSave.tipo === 'RENOVACIÓN') {
+               targetAnio = 'renovacion';
+            } else if (dataToSave.tipo === 'AUDITORÍA DE OFICIO') {
+               targetAnio = 'auditoriaOficio';
+            } else {
+               if (num === 1) targetAnio = 'anio1';
+               else if (num === 2) targetAnio = 'anio2';
+               else if (num === 3) targetAnio = 'anio3';
+               else if (num === 4) targetAnio = 'anio4';
+               else {
+                 if (!convalidaciones.anio1) targetAnio = 'anio1';
+                 else if (!convalidaciones.anio2) targetAnio = 'anio2';
+                 else if (!convalidaciones.anio3) targetAnio = 'anio3';
+                 else if (!convalidaciones.anio4) targetAnio = 'anio4';
+               }
+            }
+            
+            if (targetAnio) {
+              convalidaciones[targetAnio] = dataToSave.fecha;
+              convalidacionesDetalle[targetAnio] = {
+                  fecha: dataToSave.fecha,
+                  auditorNombre: dataToSave.auditorNombre + (dataToSave.auditorNombreSecundario ? ` / ${dataToSave.auditorNombreSecundario}` : ''),
+                  nroExpediente: dataToSave.expedienteNumero,
+                  nroIF: dataToSave.nroInforme,
+                  nroCertificado: dataToSave.nroCertificado,
+                  observaciones: dataToSave.observaciones
+              };
+              
+              await updateDoc(planRef, {
+                convalidaciones,
+                convalidacionesDetalle,
+                ultimaActualizacion: new Date().toISOString()
+              });
+            }
           }
         }
       }
@@ -624,6 +661,7 @@ export const Inspecciones: React.FC = () => {
                         <option>INICIAL</option>
                         <option>CONVALIDACIÓN ANUAL</option>
                         <option>RENOVACIÓN</option>
+                        <option>AUDITORÍA DE OFICIO</option>
                         <option>EXTRAORDINARIA</option>
                         <option>INSPECCIÓN INTERMEDIA (DERRAMES)</option>
                     </select>
