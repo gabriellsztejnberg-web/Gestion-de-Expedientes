@@ -243,8 +243,8 @@ export const Dashboard: React.FC = () => {
   ninetyDaysFromNow.setDate(now.getDate() + 90);
 
   const statsPorAnexo: Record<string, { porVencer: number, vencidos: number, vigentes: number, label: string }> = {
-     'anexo_15': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'ANEXO 15 (ZONALES/LOCALES)' },
-     'anexo_16': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'ANEXO 16 (REF)' },
+     'anexo_15': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'ANEXO 15' },
+     'anexo_16': { porVencer: 0, vencidos: 0, vigentes: 0, label: 'ANEXO 16' },
   };
   
   const causasGlobales = {
@@ -263,6 +263,8 @@ export const Dashboard: React.FC = () => {
      }
      
      let ax = (p.anexo || 'desconocido').toString().toLowerCase().trim();
+     if (ax === 'derrames') return; // Do not count "empresas control de derrames" here 
+     
      if (ax.includes('15') || ax === 'anexo 15') ax = 'anexo_15';
      else if (ax.includes('16') || ax === 'anexo 16') ax = 'anexo_16';
      else if (ax.includes('17') || ax === 'anexo 17') ax = 'anexo_17';
@@ -272,13 +274,7 @@ export const Dashboard: React.FC = () => {
      else if (ax === 'general') ax = 'desconocido';
 
      if (!statsPorAnexo[ax]) {
-       let label = ax.toUpperCase();
-       if (ax === 'anexo_15') label = 'ANEXO 15 (ZONALES/LOCALES)';
-       if (ax === 'anexo_16') label = 'ANEXO 16 (REF)';
-       if (ax === 'anexo_17') label = 'ANEXO 17 (TERMAP/OIL)';
-       if (ax === 'anexo_18') label = 'ANEXO 18 (BUQUES/BARCAZAS)';
-       if (ax === 'anexo_19') label = 'ANEXO 19 (PUERTOS REF)';
-       if (ax === 'anexo_20') label = 'ANEXO 20 (PLATAFORMAS)';
+       let label = ax.toUpperCase().replace('_', ' ');
        statsPorAnexo[ax] = { porVencer: 0, vencidos: 0, vigentes: 0, label };
      }
      
