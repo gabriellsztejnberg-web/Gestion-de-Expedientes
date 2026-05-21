@@ -1887,15 +1887,25 @@ export const Planes: React.FC = () => {
                           <p className="text-[10px] font-black uppercase text-slate-400 mb-4">Registro de Convalidaciones Anuales</p>
                         </div>
                         <div className="space-y-4">
-                          {(editingPlan?.anexo === 'derrames' ? ['anio1', 'anio2'] : ['anio1', 'anio2', 'anio3', 'anio4']).map((y, i) => {
-                            const dateVal = (editingPlan?.convalidaciones as any)?.[y] || (editingPlan?.convalidacionesDetalle as any)?.[y]?.fecha || '';
-                            const det = (editingPlan?.convalidacionesDetalle as any)?.[y] || {};
-                            const formatoGlobal = (editingPlan?.formatoDisposicion || editingPlan?.anexo === 'derrames');
-                            return (
-                              <div key={y} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                                <div className="flex flex-wrap gap-3 items-start">
-                                  <div className="w-32">
-                                    <label className="block text-[9px] font-black uppercase text-slate-500 mb-1 leading-none">{i+1}º Conval. (Fecha)</label>
+                          {(() => {
+                            const yKeys = editingPlan?.anexo === 'derrames' ? ['anio1', 'anio2', 'auditoriaOficio'] : ['anio1', 'anio2', 'anio3', 'anio4', 'renovacion', 'auditoriaOficio'];
+                            const labels: Record<string, string> = {
+                              anio1: '1º Conval. (Fecha)',
+                              anio2: '2º Conval. (Fecha)',
+                              anio3: '3º Conval. (Fecha)',
+                              anio4: '4º Conval. (Fecha)',
+                              renovacion: 'Renovación (Fecha)',
+                              auditoriaOficio: 'Aud. de Oficio (Fecha)'
+                            };
+                            return yKeys.map((y, i) => {
+                              const dateVal = (editingPlan?.convalidaciones as any)?.[y] || (editingPlan?.convalidacionesDetalle as any)?.[y]?.fecha || '';
+                              const det = (editingPlan?.convalidacionesDetalle as any)?.[y] || {};
+                              const formatoGlobal = (editingPlan?.formatoDisposicion || editingPlan?.anexo === 'derrames');
+                              return (
+                                <div key={y} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                                  <div className="flex flex-wrap gap-3 items-start">
+                                    <div className="w-32">
+                                      <label className="block text-[9px] font-black uppercase text-slate-500 mb-1 leading-none">{labels[y]}</label>
                                     <input 
                                       type="date"
                                       className="w-full px-2 py-1.5 text-[10px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded outline-none focus:ring-1 focus:ring-primary font-mono font-bold" 
@@ -1997,7 +2007,8 @@ export const Planes: React.FC = () => {
                                 </div>
                               </div>
                             );
-                          })}
+                            });
+                          })()}
                         </div>
                       </div>
                     )}
@@ -2448,15 +2459,25 @@ export const Planes: React.FC = () => {
                     <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 print:break-inside-avoid">
                       <h3 className="text-[10px] font-black uppercase text-slate-500 mb-3">Registro de Convalidaciones</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {(selectedPlan.anexo === 'derrames' ? ['anio1', 'anio2'] : ['anio1', 'anio2', 'anio3', 'anio4']).map((y, i) => {
-                        const dateVal = (selectedPlan.convalidaciones as any)?.[y] || (selectedPlan.convalidacionesDetalle as any)?.[y]?.fecha;
-                        const det = (selectedPlan.convalidacionesDetalle as any)?.[y];
-                        if (!dateVal && !det) return null;
-                        
-                        return (
-                          <div key={y} className="border-l-2 border-primary pl-3 py-1 print:break-inside-avoid">
-                            <div className="flex justify-between items-center mb-1">
-                              <span className="text-[10px] font-black uppercase text-slate-700 dark:text-slate-300">{i+1}º Convalidación</span>
+                      {(() => {
+                        const yKeys = selectedPlan.anexo === 'derrames' ? ['anio1', 'anio2', 'auditoriaOficio'] : ['anio1', 'anio2', 'anio3', 'anio4', 'renovacion', 'auditoriaOficio'];
+                        const labels: Record<string, string> = {
+                          anio1: '1º Convalidación',
+                          anio2: '2º Convalidación',
+                          anio3: '3º Convalidación',
+                          anio4: '4º Convalidación',
+                          renovacion: 'Renovación',
+                          auditoriaOficio: 'Aud. de Oficio'
+                        };
+                        return yKeys.map((y, i) => {
+                          const dateVal = (selectedPlan.convalidaciones as any)?.[y] || (selectedPlan.convalidacionesDetalle as any)?.[y]?.fecha;
+                          const det = (selectedPlan.convalidacionesDetalle as any)?.[y];
+                          if (!dateVal && !det) return null;
+                          
+                          return (
+                            <div key={y} className="border-l-2 border-primary pl-3 py-1 print:break-inside-avoid">
+                              <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] font-black uppercase text-slate-700 dark:text-slate-300">{labels[y]}</span>
                               <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${getStatusColor(dateVal, true, !!(det?.nroIF && det?.nroExpediente))}`}>
                                 {!!(det?.nroIF && det?.nroExpediente) ? `✅ CONVALIDADO (${formatDate(dateVal)})` : formatDate(dateVal)}
                               </span>
@@ -2497,10 +2518,11 @@ export const Planes: React.FC = () => {
                             )}
                           </div>
                         );
-                      })}
-                      {(!selectedPlan.convalidaciones || Object.values(selectedPlan.convalidaciones).every(v => !v)) && (
-                        <p className="text-[10px] text-slate-400 italic col-span-full">No hay convalidaciones registradas.</p>
-                      )}
+                      });
+                    })()}
+                    {(!selectedPlan.convalidaciones || Object.values(selectedPlan.convalidaciones).every(v => !v)) && (
+                      <p className="text-[10px] text-slate-400 italic col-span-full">No hay convalidaciones registradas.</p>
+                    )}
                     </div>
                   </section>
                 )}
