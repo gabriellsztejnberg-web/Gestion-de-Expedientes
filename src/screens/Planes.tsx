@@ -1313,6 +1313,7 @@ export const Planes: React.FC = () => {
                                   <td className="px-4 py-4 font-bold text-primary uppercase">
                                     {p.dependencia || '-'}
                                     {p.estado === 'desafectado' && <span className="block text-[8px] text-orange-600 dark:text-orange-400 mt-1 font-black">DESAFECTADO</span>}
+                                    {p.estado === 'en_tramite' && <span className="block text-[8px] text-yellow-600 dark:text-yellow-400 mt-1 font-black bg-yellow-100 dark:bg-yellow-900/50 px-1 rounded inline-block">EN TRÁMITE</span>}
                                   </td>
                                   <td className="px-4 py-4">
                                       <div className="flex flex-col">
