@@ -21,6 +21,7 @@ import { analyzeExpedienteHistory } from '../services/geminiService'; // Importa
 
 const INSTANCIAS: Instancia[] = [
   { id: 'analisis', label: 'Análisis', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+  { id: 'analisis_ok', label: 'Análisis Satisfactorio', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
   { id: 'obs', label: 'Obs (Observado)', color: 'bg-red-100 text-red-800 border-red-200' },
   { id: 'notificacion', label: 'Notificación', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
   { id: 'p_insp', label: 'Encuesta', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
@@ -76,11 +77,24 @@ export const Expedientes: React.FC = () => {
     vencimiento: '', 
     nroPlan: '',
     documentacionExtra: '',
+    nroPlanilla: '',
+    notificado: false,
     isTask: false 
   });
 
   // IA Loading State
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
+  const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
+  const [companySearchTerm, setCompanySearchTerm] = useState('');
+  const [isNewCompanyModalOpen, setIsNewCompanyModalOpen] = useState(false);
+  const [newCompanyData, setNewCompanyData] = useState({
+    empresa: '',
+    anexo: 'anexo_15',
+    dependencia: '',
+    email: '',
+    telefono: '',
+    domicilio: ''
+  });
 
   const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
   const role = (currentUser.role || '').toLowerCase();
@@ -327,8 +341,7 @@ export const Expedientes: React.FC = () => {
     const caseRef = doc(db, 'expedientes', caseId);
     await updateDoc(caseRef, {
       asignadoA: currentUser.id,
-      asignadoANombre: currentUser.name,
-      ultimaModificacion: new Date().toISOString()
+      asignadoANombre: currentUser.name
     });
     await addHistoryEntry(caseId, `Tomé el expediente del buzón el ${ts}.`, 'Adquisición');
   };
@@ -459,6 +472,17 @@ export const Expedientes: React.FC = () => {
         return;
     }
 
+    if (editingExp.fechaPlanillaObs) {
+        const allowTypes = ['PlanillaOK', 'Notificacion', 'Retorno', 'Tarea', 'PlanillaObs', 'Guarda', 'Pase']; // allowed fallback movements
+        // Actually the user says: "que no te permita mover el expediente si tiene una planilla de analisis con observaciones, si o si debe agregar la planilla satisfactoria (o notificación de que subsanó al menos)"
+        // Let's only restrict moving it forward (EmisionDispo, Firma, Conclusiones) and maybe Pase
+        const restrictedTypes = ['EmisionDispo', 'Firma', 'Conclusiones', 'Pase'];
+        if (restrictedTypes.includes(movData.tipo)) {
+            alert("No se puede avanzar ni realizar pases con el expediente porque tiene una Planilla Observada pendiente. Debe cargar Planilla Satisfactoria o Notificación de subsanación.");
+            return;
+        }
+    }
+
     let nuevoEstado = editingExp.instancia as InstanciaId;
     let nuevoAsignado = editingExp.asignadoA || 'buzon';
     let nuevoAsignadoNombre = editingExp.asignadoANombre || 'Buzón Grupal';
@@ -468,29 +492,40 @@ export const Expedientes: React.FC = () => {
 
     const ts = getFullTimestamp();
 
-    if (movData.tipo === 'Tarea') {
-      textoNovedad = `[PENDIENTE]: ${movData.detalle}`;
-      esTareaAutomatica = true;
-    } else {
-      switch(movData.tipo) {
-        case 'PlanillaOK':
-          // REQUERIMIENTO: Planilla OK = Pasa a Disposición
-          nuevoEstado = 'p_dispo'; 
-          textoNovedad = `Se cargó PLANILLA SATISFACTORIA. ${movData.detalle}. ${ts}.`;
+    switch(movData.tipo) {
+      case 'PlanillaOK':
+          // REQUERIMIENTO: Planilla OK = Pasa a Análisis Satisfactorio
+          nuevoEstado = 'analisis_ok'; 
+          textoNovedad = `Se cargó PLANILLA SATISFACTORIA (Nº: ${movData.nroPlanilla || 'S/N'}). ${movData.detalle ? 'Detalle: ' + movData.detalle : ''} ${ts}.`;
+          if (movData.notificado) {
+              textoNovedad += ` (Usuario notificado)`;
+          }
           esTareaAutomatica = false;
           break;
           
         case 'PlanillaObs':
           // REQUERIMIENTO: Si es observada, queda pendiente a la espera de subsanación
           nuevoEstado = 'obs';
-          textoNovedad = `Se cargó PLANILLA CON OBSERVACIONES. Expediente a la espera de subsanación. Detalle: ${movData.detalle}. ${ts}.`;
+          textoNovedad = `Se cargó PLANILLA CON OBSERVACIONES (Nº: ${movData.nroPlanilla || 'S/N'}). Expediente a la espera de subsanación. Detalle: ${movData.detalle}. ${ts}.`;
           esTareaAutomatica = true; 
           break;
 
-        case 'Encuesta':
+        case 'EnvioEncuesta':
           // REQUERIMIENTO: Encuesta subida = pendiente a la espera de respuesta o análisis
           nuevoEstado = 'p_insp';
-          textoNovedad = `Se subió ENCUESTA. A la espera de respuesta/análisis. Detalle: ${movData.detalle}. ${ts}.`;
+          textoNovedad = `Se envió ENCUESTA. A la espera de respuesta. Detalle: ${movData.detalle}. ${ts}.`;
+          esTareaAutomatica = true;
+          break;
+
+        case 'CargaInspeccion':
+          nuevoEstado = 'analisis';
+          textoNovedad = `Se cargó INSPECCIÓN. Detalle: ${movData.detalle}. ${ts}.`;
+          esTareaAutomatica = false;
+          break;
+
+        case 'InformeElevacion':
+          nuevoEstado = 'p_dispo';
+          textoNovedad = `INFORME DE ELEVACIÓN generado. Detalle: ${movData.detalle}. ${ts}.`;
           esTareaAutomatica = true;
           break;
 
@@ -516,7 +551,7 @@ export const Expedientes: React.FC = () => {
 
         case 'Notificacion':
           textoNovedad = `Se notificó a empresa. Comentario: ${movData.detalle}. ${ts}.`;
-          nuevoEstado = 'notificacion';
+          nuevoEstado = editingExp.instancia === 'obs' ? 'obs' : 'notificacion';
           break;
 
         case 'Pase':
@@ -557,6 +592,11 @@ export const Expedientes: React.FC = () => {
           nuevoDestino = "";
           break;
           
+        case 'Tarea':
+          textoNovedad = `[PENDIENTE]: ${movData.detalle}. ${ts}.`;
+          esTareaAutomatica = true;
+          break;
+
         default:
           textoNovedad = `Movimiento registrado: ${movData.detalle}. ${ts}.`;
       }
@@ -570,6 +610,12 @@ export const Expedientes: React.FC = () => {
         destinoExterno: nuevoDestino,
         ultimaModificacion: new Date().toISOString() 
       };
+
+      if (movData.tipo === 'PlanillaObs') {
+        updates.fechaPlanillaObs = editingExp.fechaPlanillaObs || new Date().toISOString();
+      } else if (movData.tipo === 'PlanillaOK' || movData.tipo === 'EmisionDispo' || movData.tipo === 'Guarda' || movData.notificado) {
+        updates.fechaPlanillaObs = null;
+      }
 
       // --- AUTOMATIZACIÓN: Emisión de Disposición ---
       if ((movData.tipo === 'Conclusiones' || movData.tipo === 'Guarda' || movData.tipo === 'EmisionDispo') && movData.nroDisposicion && movData.vencimiento) {
@@ -643,60 +689,102 @@ export const Expedientes: React.FC = () => {
             const planSnap = await getDoc(planRef);
             
             if (planSnap.exists()) {
-            const planData = planSnap.data() as PlanEmergencia;
-            const historial = planData.historialDisposiciones || [];
-            
-            // Si ya hay una disposición y se está emitiendo una nueva (o es trámite de renovación), archivamos la actual
-            if (planData.disposicion && planData.disposicion !== movData.nroDisposicion) {
-              historial.push({
-                disposicion: planData.disposicion || '',
-                vencimiento: planData.vencimiento || '',
-                formatoDisposicion: planData.formatoDisposicion || '',
-                convalidaciones: planData.convalidaciones || {},
-                convalidacionesDetalle: planData.convalidacionesDetalle || {},
-                fechaArchivo: new Date().toISOString(),
-                numeroPlan: planData.numeroPlan || '',
-                documentacionExtra: planData.documentacionExtra || ''
-              });
-            }
+              const planData = planSnap.data() as PlanEmergencia;
+              const historial = planData.historialDisposiciones || [];
+              
+              // Si ya hay una disposición y se está emitiendo una nueva (o es trámite de renovación), archivamos la actual
+              if (planData.disposicion && planData.disposicion !== movData.nroDisposicion) {
+                historial.push({
+                  disposicion: planData.disposicion || '',
+                  vencimiento: planData.vencimiento || '',
+                  formatoDisposicion: planData.formatoDisposicion || '',
+                  convalidaciones: planData.convalidaciones || {},
+                  convalidacionesDetalle: planData.convalidacionesDetalle || {},
+                  fechaArchivo: new Date().toISOString(),
+                  numeroPlan: planData.numeroPlan || '',
+                  documentacionExtra: planData.documentacionExtra || ''
+                });
+              }
 
-            const [y, m, dayStr] = movData.vencimiento.split('-');
-            const yNum = parseInt(y, 10);
-            let convalidaciones = {};
-            if (!isNaN(yNum)) {
-              convalidaciones = {
-                anio1: `${yNum - 4}-${m}-${dayStr}`,
-                anio2: `${yNum - 3}-${m}-${dayStr}`,
-                anio3: `${yNum - 2}-${m}-${dayStr}`,
-                anio4: `${yNum - 1}-${m}-${dayStr}`,
+              const [y, m, dayStr] = movData.vencimiento.split('-');
+              const yNum = parseInt(y, 10);
+              let convalidaciones = {};
+              if (!isNaN(yNum)) {
+                convalidaciones = {
+                  anio1: `${yNum - 4}-${m}-${dayStr}`,
+                  anio2: `${yNum - 3}-${m}-${dayStr}`,
+                  anio3: `${yNum - 2}-${m}-${dayStr}`,
+                  anio4: `${yNum - 1}-${m}-${dayStr}`,
+                };
+              }
+
+              const planUpdates: any = {
+                disposicion: movData.nroDisposicion,
+                vencimiento: movData.vencimiento,
+                convalidaciones,
+                convalidacionesDetalle: {}, // Limpiamos los detalles de convalidaciones al renovar
+                historialDisposiciones: historial,
+                ultimaActualizacion: new Date().toISOString()
               };
+
+              if (movData.nroPlan) planUpdates.numeroPlan = movData.nroPlan;
+              if (movData.documentacionExtra !== undefined) planUpdates.documentacionExtra = movData.documentacionExtra;
+
+              await updateDoc(planRef, planUpdates);
             }
-
-            const planUpdates: any = {
-              disposicion: movData.nroDisposicion,
-              vencimiento: movData.vencimiento,
-              convalidaciones,
-              convalidacionesDetalle: {}, // Limpiamos los detalles de convalidaciones al renovar
-              historialDisposiciones: historial,
-              ultimaActualizacion: new Date().toISOString()
-            };
-
-            if (movData.nroPlan) planUpdates.numeroPlan = movData.nroPlan;
-            if (movData.documentacionExtra !== undefined) planUpdates.documentacionExtra = movData.documentacionExtra;
-
-            await updateDoc(planRef, planUpdates);
           }
         }
-      }
       }
 
       await updateDoc(caseRef, updates);
 
       await addHistoryEntry(editingExp.id, textoNovedad, movData.tipo, esTareaAutomatica);
-    }
-    
+      
     setIsMovimientoModalOpen(false);
-    setMovData({ tipo: '', detalle: '', destino: '', nroDisposicion: '', vencimiento: '', isTask: false });
+    setMovData({ tipo: '', detalle: '', destino: '', nroDisposicion: '', vencimiento: '', nroPlan: '', documentacionExtra: '', nroPlanilla: '', notificado: false, isTask: false });
+  };
+
+  const handleCreateNewCompany = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+        const isDerrame = newCompanyData.anexo === 'derrames';
+        const collectionName = isDerrame ? 'derrames' : 'planes';
+        
+        let initialData: any = {
+            empresa: newCompanyData.empresa,
+            anexo: newCompanyData.anexo,
+            dependencia: newCompanyData.dependencia,
+            email: newCompanyData.email,
+            telefono: newCompanyData.telefono,
+            domicilio: newCompanyData.domicilio,
+            estado: 'en_tramite',
+            disposicion: '',
+            vencimiento: '',
+            ultimaActualizacion: new Date().toISOString()
+        };
+
+        if (isDerrame) {
+            initialData.basesOperativas = [];
+        } else {
+            initialData.convalidaciones = {};
+        }
+
+        const docRef = await addDoc(collection(db, collectionName), initialData);
+        
+        setEditingExp({
+            ...editingExp,
+            empresa: newCompanyData.empresa,
+            planId: docRef.id,
+            categoria: isDerrame ? 'derrames' : newCompanyData.anexo
+        });
+        
+        setIsNewCompanyModalOpen(false);
+        setIsCompanyModalOpen(false);
+        setCompanySearchTerm('');
+    } catch (err) {
+        console.error(err);
+        alert('Error al crear la nueva empresa.');
+    }
   };
 
   const handleSaveExp = async (e: React.FormEvent) => {
@@ -759,11 +847,17 @@ export const Expedientes: React.FC = () => {
 
         const docRef = await addDoc(collection(db, 'expedientes'), caseData);
         await addHistoryEntry(docRef.id, `Carga manual inicial. Asignado a: ${assignedName}. ${ts}.`, 'Carga');
+        if (caseData.observaciones) {
+            await addHistoryEntry(docRef.id, `Observaciones Iniciales: ${caseData.observaciones}`, 'Carga');
+        }
       } else {
         const caseRef = doc(db, 'expedientes', editingExp!.id!);
+        const oldExp = cases.find(c => c.id === editingExp!.id!);
         await updateDoc(caseRef, caseData);
-        if (assignedId !== (cases.find(c=>c.id === editingExp!.id!)?.asignadoA)) {
+        if (assignedId !== oldExp?.asignadoA) {
              await addHistoryEntry(editingExp!.id!, `Reasignado por Jefatura a: ${assignedName}. ${ts}.`, 'Reasignación');
+        } else if (oldExp?.observaciones !== caseData.observaciones && caseData.observaciones) {
+             await addHistoryEntry(editingExp!.id!, `Edición administrativa. Observaciones: ${caseData.observaciones}. ${ts}.`, 'Edición');
         } else {
              await addHistoryEntry(editingExp!.id!, `Edición administrativa de datos generales. ${ts}.`, 'Edición');
         }
@@ -893,6 +987,7 @@ export const Expedientes: React.FC = () => {
                   <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Nº GDE</th>
                   <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Empresa / Trámite / Marco Legal</th>
                   <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Asignado</th>
+                  <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Planilla Obs.</th>
                   <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Antigüedad</th>
                   <th className="px-4 py-3 text-right">Acciones</th>
                 </tr>
@@ -926,7 +1021,7 @@ export const Expedientes: React.FC = () => {
                     <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="px-4 py-4"><span className={`inline-block px-2 py-0.5 rounded-full font-black uppercase text-[9px] border ${inst.color}`}>{inst.label}</span></td>
                       <td className="px-4 py-4">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2" title={c.observaciones ? `Observaciones Iniciales: ${c.observaciones}` : 'Sin observaciones iniciales'}>
                             <button onClick={() => { setEditingExp(c); setIsHistorialModalOpen(true); }} className="font-bold text-slate-700 dark:text-slate-300 hover:text-primary hover:underline text-left uppercase">
                                 {c.numero}
                             </button>
@@ -956,6 +1051,16 @@ export const Expedientes: React.FC = () => {
                         )}
                       </td>
                       <td className="px-4 py-4">
+                        {c.fechaPlanillaObs ? (
+                            <div className="flex flex-col">
+                                <span className={`text-[10px] uppercase font-bold text-red-600`}>{getDaysDiff(c.fechaPlanillaObs)} días sin subsanar</span>
+                                <span className="text-[9px] text-slate-400">{new Date(c.fechaPlanillaObs).toLocaleDateString()}</span>
+                            </div>
+                        ) : (
+                            <span className="text-slate-300 dark:text-slate-600 text-[10px] italic">N/A</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
                         <div className="flex flex-col">
                           <span className={`text-[10px] uppercase ${daysColor}`}>{daysLabel}</span>
                           <span className="text-[9px] text-slate-400">{new Date(c.ultimaModificacion).toLocaleDateString()}</span>
@@ -965,7 +1070,11 @@ export const Expedientes: React.FC = () => {
                         <div className="flex justify-end gap-2">
                           {!isSuperior && <button onClick={() => handleCreateInspection(c)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all" title="Cargar Inspección"><span className="material-symbols-outlined text-[16px]">assignment_add</span><span className="font-bold uppercase text-[9px]">Cargar Insp.</span></button>}
                           {!isSuperior && isBuzon && !isPase && !isGuarda && <button onClick={() => handleAcquire(c.id)} className="bg-primary hover:bg-blue-600 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all"><span className="material-symbols-outlined text-[16px]">person_add</span><span className="font-bold uppercase text-[9px]">Tomar</span></button>}
-                          {!isSuperior && canMove && <button onClick={() => { setEditingExp(c); setIsMovimientoModalOpen(true); }} className="bg-slate-800 hover:bg-slate-700 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all"><span className="material-symbols-outlined text-[16px]">sync_alt</span><span className="font-bold uppercase text-[9px]">Actividad</span></button>}
+                          {!isSuperior && canMove && <button onClick={() => { 
+                            setEditingExp(c); 
+                            setMovData({ tipo: '', detalle: '', destino: '', nroDisposicion: '', vencimiento: '', nroPlan: '', documentacionExtra: '', nroPlanilla: '', notificado: false, isTask: false }); 
+                            setIsMovimientoModalOpen(true); 
+                          }} className="bg-slate-800 hover:bg-slate-700 text-white px-2 py-1.5 rounded flex items-center gap-1.5 shadow-sm transition-all"><span className="material-symbols-outlined text-[16px]">sync_alt</span><span className="font-bold uppercase text-[9px]">Actividad</span></button>}
                           
                           {!isSuperior && canAdmin && (
                             <div className="flex gap-1 border-l pl-2 border-slate-200 dark:border-slate-700">
@@ -1102,34 +1211,39 @@ export const Expedientes: React.FC = () => {
               </div>
               <div className="col-span-2 md:col-span-1">
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa / Titular</label>
-                <div className="relative">
-                  <input 
-                    required 
-                    className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary uppercase font-bold" 
-                    value={editingExp?.empresa || ''} 
-                    onChange={e => {
-                      const val = e.target.value;
-                      setEditingExp({...editingExp, empresa: val, planId: ''}); // Reset planId if typing manually
-                    }}
-                    placeholder="BUSCAR O ESCRIBIR NUEVA..."
-                    list="planes-list"
-                  />
-                  <datalist id="planes-list">
-                    {planes.map(p => (
-                      <option key={p.id} value={p.empresa}>{p.anexo.replace('_', ' ').toUpperCase()}</option>
-                    ))}
-                    {derrames.map(d => (
-                      <option key={d.id} value={d.empresa}>CONTROL DERRAMES</option>
-                    ))}
-                  </datalist>
-                  <div className="absolute right-2 top-2 flex gap-1">
-                    {planes.find(p => p.empresa.toUpperCase() === (editingExp?.empresa || '').toUpperCase()) || derrames.find(d => d.empresa.toUpperCase() === (editingExp?.empresa || '').toUpperCase()) ? (
-                      <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded font-black uppercase">Existente</span>
-                    ) : (
-                      <span className="text-[9px] bg-blue-100 text-blue-700 px-1 rounded font-black uppercase">Nueva</span>
-                    )}
-                  </div>
+                <div className="flex items-center gap-2">
+                    <div className={`flex-1 px-3 py-2 text-sm border rounded font-bold uppercase truncate ${editingExp?.empresa ? 'bg-slate-50 border-slate-300 dark:bg-slate-800 dark:border-slate-700 text-slate-900 dark:text-white' : 'bg-slate-100 border-dashed border-slate-300 dark:bg-slate-800/50 dark:border-slate-600 text-slate-400'}`}>
+                        {editingExp?.empresa || 'NO SELECCIONADA'}
+                    </div>
+                    <button 
+                        type="button"
+                        onClick={() => setIsCompanyModalOpen(true)}
+                        className="bg-primary hover:bg-blue-600 text-white px-3 py-2 rounded text-[10px] font-black uppercase tracking-widest shadow-sm transition-colors whitespace-nowrap"
+                    >
+                        {editingExp?.empresa ? 'Cambiar' : 'Buscar'}
+                    </button>
                 </div>
+                {(() => {
+                  if (!editingExp?.id && editingExp?.empresa && editingExp.empresa.trim().length > 2) {
+                    const activeExpedientes = cases.filter(c => 
+                        c.empresa.toUpperCase() === editingExp.empresa.trim().toUpperCase() && 
+                        c.instancia !== 'guarda'
+                    );
+                    if (activeExpedientes.length > 0) {
+                        return (
+                            <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700/50 rounded flex flex-col gap-1 text-[10px]">
+                                <strong className="text-yellow-700 dark:text-yellow-400 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">warning</span> ¡Atención! Expedientes activos encontrados:</strong>
+                                {activeExpedientes.map(ae => (
+                                    <span key={ae.id} className="text-yellow-800 dark:text-yellow-500 font-mono">
+                                        - {ae.numero} (Asignado a: {ae.asignadoANombre})
+                                    </span>
+                                ))}
+                            </div>
+                        );
+                    }
+                  }
+                  return null;
+                })()}
                 {/* Botón para vincular si se encontró coincidencia exacta */}
                 {(() => {
                   const foundPlan = planes.find(p => p.empresa.toUpperCase() === (editingExp?.empresa || '').toUpperCase());
@@ -1159,12 +1273,19 @@ export const Expedientes: React.FC = () => {
                   <option value="Actualización">Actualización</option>
                   <option value="Convalidación/Actualización">Convalidación/Actualización</option>
                   <option value="Cambio de Categoria">Cambio de Categoria</option>
+                  <option value="STS">STS</option>
                   <option value="Otros">Otros</option>
                 </select>
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Ordenanza</label>
-                <input className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingExp?.ordenanza || ''} onChange={e => setEditingExp({...editingExp, ordenanza: e.target.value})} placeholder="Ej: 125/20..." />
+                <select className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none" value={editingExp?.ordenanza || ''} onChange={e => setEditingExp({...editingExp, ordenanza: e.target.value})}>
+                  <option value="">-- SELECCIONE ORDENANZA --</option>
+                  <option value="8/98">8/98</option>
+                  <option value="5/99">5/99</option>
+                  <option value="STS">STS</option>
+                  <option value="Otros">Otros</option>
+                </select>
               </div>
               <div className="col-span-2">
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Anexo / Categoría</label>
@@ -1285,7 +1406,9 @@ export const Expedientes: React.FC = () => {
                   <optgroup label="Análisis y Resultado">
                     <option value="PlanillaOK">Planilla (Satisfactoria)</option>
                     <option value="PlanillaObs">⚠️ Planilla (Observada)</option>
-                    <option value="Encuesta">⚠️ Encuesta / Inspección (Carga)</option>
+                    <option value="EnvioEncuesta">⚠️ Envío de Encuesta</option>
+                    <option value="CargaInspeccion">Carga de Inspección</option>
+                    <option value="InformeElevacion">⚠️ Informe de Elevación</option>
                     <option value="Conclusiones">⚠️ Resultado de Conclusiones (A Firma)</option>
                     <option value="EmisionDispo">✅ Emisión / Renovación de Disposición</option>
                   </optgroup>
@@ -1351,19 +1474,32 @@ export const Expedientes: React.FC = () => {
                 </div>
               )}
 
+              {(movData.tipo === 'PlanillaObs' || movData.tipo === 'PlanillaOK') && (
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nº de Planilla</label>
+                  <input required={movData.tipo === 'PlanillaObs'} placeholder="Ej: 123/24" className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-mono" value={movData.nroPlanilla} onChange={e => setMovData({...movData, nroPlanilla: e.target.value})} />
+                </div>
+              )}
+              {movData.tipo === 'PlanillaOK' && (
+                <div className="flex items-center gap-2 mb-2 p-2 bg-slate-50 dark:bg-slate-800 rounded border border-slate-100 dark:border-slate-700">
+                  <input type="checkbox" id="notificado" checked={movData.notificado} onChange={e => setMovData({...movData, notificado: e.target.checked})} className="size-4" />
+                  <label htmlFor="notificado" className="text-xs font-bold text-slate-700 dark:text-slate-300">¿Se notificó al usuario la planilla satisfactoria?</label>
+                </div>
+              )}
+
               <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Detalle / Nota</label>
-                <textarea required className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-24" value={movData.detalle} onChange={e => setMovData({...movData, detalle: e.target.value})} placeholder={movData.tipo === 'Tarea' ? "Qué queda pendiente por hacer?" : "Breve explicación..."}></textarea>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">{movData.tipo === 'PlanillaObs' ? 'Descripción de la Planilla' : 'Detalle / Nota'}</label>
+                <textarea required={movData.tipo !== 'PlanillaOK'} className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none h-24" value={movData.detalle} onChange={e => setMovData({...movData, detalle: e.target.value})} placeholder={movData.tipo === 'Tarea' ? "Qué queda pendiente por hacer?" : "Breve explicación..."}></textarea>
               </div>
               
               {/* Mensajes Informativos según Selección */}
-              {(movData.tipo === 'PlanillaObs' || movData.tipo === 'Encuesta' || movData.tipo === 'Conclusiones' || movData.tipo === 'Firma') && (
+              {(movData.tipo === 'PlanillaObs' || movData.tipo === 'EnvioEncuesta' || movData.tipo === 'InformeElevacion' || movData.tipo === 'Conclusiones' || movData.tipo === 'Firma') && (
                   <p className="text-[10px] text-orange-600 bg-orange-50 p-2 rounded border border-orange-200">
                       ℹ️ Esta acción generará automáticamente una <strong>TAREA PENDIENTE</strong> para seguimiento hasta su resolución/firma.
                   </p>
               )}
 
-              <button type="submit" className={`w-full py-3 ${(movData.tipo.includes('Obs') || movData.tipo === 'Encuesta' || movData.tipo === 'Conclusiones' || movData.tipo === 'Firma' || movData.tipo === 'Tarea') ? 'bg-orange-600' : 'bg-slate-900'} text-white text-xs font-black uppercase rounded shadow-lg transition-all`}>
+              <button type="submit" className={`w-full py-3 ${(movData.tipo.includes('Obs') || movData.tipo === 'EnvioEncuesta' || movData.tipo === 'InformeElevacion' || movData.tipo === 'Conclusiones' || movData.tipo === 'Firma' || movData.tipo === 'Tarea') ? 'bg-orange-600' : 'bg-slate-900'} text-white text-xs font-black uppercase rounded shadow-lg transition-all`}>
                 Confirmar Actividad
               </button>
             </form>
@@ -1566,6 +1702,193 @@ export const Expedientes: React.FC = () => {
                 </div>
             </div>
         </div>
+      )}
+      {/* MODAL BUSCADOR DE EMPRESAS */}
+      {isCompanyModalOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] border border-slate-200 dark:border-slate-800 flex flex-col">
+                  <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shrink-0">
+                      <span className="text-xs font-black uppercase tracking-widest">Seleccionar o Crear Empresa</span>
+                      <button onClick={() => { setIsCompanyModalOpen(false); setCompanySearchTerm(''); }}><span className="material-symbols-outlined">close</span></button>
+                  </div>
+                  <div className="p-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+                      <div className="relative">
+                          <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400">search</span>
+                          <input 
+                              autoFocus
+                              className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-primary dark:text-white uppercase font-bold"
+                              placeholder="BUSCAR EMPRESA EXISTENTE..."
+                              value={companySearchTerm}
+                              onChange={(e) => setCompanySearchTerm(e.target.value)}
+                          />
+                      </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 bg-slate-50 dark:bg-slate-900/50">
+                      {(() => {
+                          const lowerSearch = companySearchTerm.toLowerCase().trim();
+                          
+                          // Combinar empresas de planes y derrames, evitando duplicados en el listado visual
+                          const combinedCompanies: any[] = [];
+                          planes.forEach(p => combinedCompanies.push({...p, source: 'planes'}));
+                          derrames.forEach(d => combinedCompanies.push({...d, source: 'derrames', anexo: 'CONTROL DERRAMES'}));
+                          
+                          const filtered = combinedCompanies.filter(c => c.empresa.toLowerCase().includes(lowerSearch));
+                          
+                          if (filtered.length > 0) {
+                              return (
+                                  <div className="grid grid-cols-1 gap-2">
+                                      {filtered.map((c, idx) => (
+                                          <button 
+                                              key={idx}
+                                              type="button"
+                                              onClick={() => {
+                                                  setEditingExp({
+                                                      ...editingExp, 
+                                                      empresa: c.empresa, 
+                                                      planId: c.id, 
+                                                      categoria: c.source === 'derrames' ? 'derrames' : (editingExp?.categoria || '')
+                                                  });
+                                                  setIsCompanyModalOpen(false);
+                                                  setCompanySearchTerm('');
+                                              }}
+                                              className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 hover:border-primary dark:hover:border-primary hover:shadow-md transition-all text-left group"
+                                          >
+                                              <div className="flex flex-col">
+                                                  <span className="font-black uppercase text-slate-900 dark:text-white group-hover:text-primary transition-colors">{c.empresa}</span>
+                                                  <span className="text-[10px] text-slate-500 font-bold uppercase">{c.anexo.replace('_', ' ')} | ID: {c.id.slice(0,6)}</span>
+                                              </div>
+                                              <span className="material-symbols-outlined text-slate-300 group-hover:text-primary">arrow_forward_ios</span>
+                                          </button>
+                                      ))}
+                                  </div>
+                              );
+                          } else if (lowerSearch.length > 2) {
+                              return (
+                                  <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                                      <div className="size-16 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center mb-4">
+                                          <span className="material-symbols-outlined text-[32px] text-slate-400">domain_disabled</span>
+                                      </div>
+                                      <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">
+                                          No se encontraron empresas que coincidan con "<strong>{companySearchTerm.toUpperCase()}</strong>".
+                                      </p>
+                                      <button 
+                                          type="button"
+                                          onClick={() => {
+                                              setNewCompanyData({
+                                                  ...newCompanyData,
+                                                  empresa: companySearchTerm.toUpperCase()
+                                              });
+                                              setIsNewCompanyModalOpen(true);
+                                          }}
+                                          className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-black uppercase text-xs shadow-lg transition-all flex items-center gap-2"
+                                      >
+                                          <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                                          Cargar como Nueva Empresa
+                                      </button>
+                                  </div>
+                              );
+                          } else {
+                              return (
+                                  <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                                      <span className="material-symbols-outlined text-[40px] mb-2 opacity-50">search</span>
+                                      <span className="text-xs font-bold uppercase tracking-widest">Escriba para buscar</span>
+                                  </div>
+                              );
+                          }
+                      })()}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* MODAL CREAR NUEVA EMPRESA */}
+      {isNewCompanyModalOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800">
+                  <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+                      <span className="text-xs font-black uppercase tracking-widest">Crear Empresa en Trámite</span>
+                      <button onClick={() => setIsNewCompanyModalOpen(false)}><span className="material-symbols-outlined">close</span></button>
+                  </div>
+                  <form onSubmit={handleCreateNewCompany} className="p-6 grid grid-cols-1 gap-4">
+                      <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded border border-blue-200 dark:border-blue-800 mb-2">
+                          <p className="text-[10px] text-blue-800 dark:text-blue-300">
+                              Esta empresa se guardará en la base de datos de Planes de Emergencia como <strong>"EN TRÁMITE"</strong>. Podrás completar el resto de los datos (Disposición, Convalidaciones) desde el módulo de Planes más adelante.
+                          </p>
+                      </div>
+
+                      <div>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa / Razón Social</label>
+                          <input 
+                              required 
+                              readOnly
+                              className="w-full px-3 py-2 text-sm border rounded bg-slate-100 dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold"
+                              value={newCompanyData.empresa}
+                          />
+                      </div>
+                      
+                      <div>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Categoría / Anexo</label>
+                          <select 
+                              required
+                              className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none"
+                              value={newCompanyData.anexo}
+                              onChange={e => setNewCompanyData({...newCompanyData, anexo: e.target.value as any})}
+                          >
+                              {ANEXOS.map(a => (
+                                  <option key={a.id} value={a.id}>{a.label}</option>
+                              ))}
+                          </select>
+                      </div>
+
+                      <div>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Jurisdicción / Dependencia</label>
+                          <input 
+                              required
+                              className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase"
+                              placeholder="Ej: PREFECTURA BUENOS AIRES"
+                              value={newCompanyData.dependencia}
+                              onChange={e => setNewCompanyData({...newCompanyData, dependencia: e.target.value.toUpperCase()})}
+                          />
+                      </div>
+
+                      <div>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Domicilio / Ubicación</label>
+                          <input 
+                              className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none"
+                              placeholder="Calle, Número, Localidad..."
+                              value={newCompanyData.domicilio}
+                              onChange={e => setNewCompanyData({...newCompanyData, domicilio: e.target.value})}
+                          />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                          <div>
+                              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Email de Contacto</label>
+                              <input 
+                                  type="email"
+                                  className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none"
+                                  placeholder="correo@empresa.com"
+                                  value={newCompanyData.email}
+                                  onChange={e => setNewCompanyData({...newCompanyData, email: e.target.value})}
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Teléfono</label>
+                              <input 
+                                  className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none"
+                                  placeholder="Ej: 11-1234-5678"
+                                  value={newCompanyData.telefono}
+                                  onChange={e => setNewCompanyData({...newCompanyData, telefono: e.target.value})}
+                              />
+                          </div>
+                      </div>
+
+                      <button type="submit" className="w-full mt-4 py-3 bg-primary text-white font-black uppercase rounded hover:bg-blue-600 transition-colors">
+                          Crear Empresa y Continuar
+                      </button>
+                  </form>
+              </div>
+          </div>
       )}
     </div>
   );
