@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export type InstanciaId = 'analisis' | 'obs' | 'notificacion' | 'p_insp' | 'p_dispo' | 'pase' | 'guarda';
+export type InstanciaId = 'analisis' | 'analisis_ok' | 'obs' | 'notificacion' | 'p_insp' | 'p_dispo' | 'pase' | 'guarda';
 
 export interface Instancia {
   id: InstanciaId;
@@ -9,7 +9,7 @@ export interface Instancia {
   color: string;
 }
 
-export type AnexoTipo = 'anexo_15' | 'anexo_16' | 'anexo_17' | 'anexo_18' | 'anexo_19' | 'anexo_20' | 'derrames';
+export type AnexoTipo = 'anexo_15' | 'anexo_16' | 'anexo_17' | 'anexo_18' | 'anexo_19' | 'anexo_20' | 'derrames' | 'sts' | 'otros';
 
 export const ANEXOS: { id: AnexoTipo; label: string }[] = [
   { id: 'anexo_15', label: 'ANEXO 15' },
@@ -18,7 +18,9 @@ export const ANEXOS: { id: AnexoTipo; label: string }[] = [
   { id: 'anexo_18', label: 'ANEXO 18' },
   { id: 'anexo_19', label: 'ANEXO 19' },
   { id: 'anexo_20', label: 'ANEXO 20' },
-  { id: 'derrames', label: 'CONTROL DE DERRAMES' }
+  { id: 'derrames', label: 'CONTROL DE DERRAMES' },
+  { id: 'sts', label: 'STS' },
+  { id: 'otros', label: 'OTROS' }
 ];
 
 export interface Case {
@@ -38,6 +40,7 @@ export interface Case {
   ultimaModificacion: string;
   fechaAdquisicion?: string;
   fechaNotificacion?: string;
+  fechaPlanillaObs?: string | null;
   destinoExterno?: string;
   isInternal: boolean;
 }
@@ -213,7 +216,7 @@ export interface PlanEmergencia {
   disposicion: string; // Número de disposición de aprobación
   vencimiento: string; // Fecha de vencimiento (YYYY-MM-DD)
   formatoDisposicion?: 'digital' | 'papel' | ''; // Aplica a la disposición y sus convalidaciones
-  estado?: 'vigente' | 'desafectado'; // Estado del plan
+  estado?: 'vigente' | 'desafectado' | 'en_tramite'; // Estado del plan
   convalidaciones: {
     anio1?: string;
     anio2?: string;
@@ -381,7 +384,7 @@ export interface EmpresaControlDerrame {
   disposicion: string; // Número de disposición de habilitación
   vencimiento: string; // Vencimiento (3 años)
   formatoDisposicion?: 'digital' | 'papel' | '';
-  estado?: 'vigente' | 'desafectado';
+  estado?: 'vigente' | 'desafectado' | 'en_tramite';
   convalidacionesDetalle?: {
     anio1?: ConvalidacionDetalle;
     anio2?: ConvalidacionDetalle;
