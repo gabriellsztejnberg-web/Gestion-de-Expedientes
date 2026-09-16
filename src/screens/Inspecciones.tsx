@@ -4,7 +4,7 @@ import { useLocation } from 'react-router';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, getDoc, getDocs, where } from 'firebase/firestore';
-import { Inspeccion, Case, Auditor, User, ResultadoInspeccion, TimelineEvent, PlanEmergencia, EmpresaControlDerrame } from '../types';
+import { Inspeccion, Case, Auditor, User, ResultadoInspeccion, TimelineEvent, PlanEmergencia, EmpresaControlDerrame, ANEXOS } from '../types';
 import { draftTechnicalReport } from '../services/geminiService'; // Importamos el servicio IA
 
 export const Inspecciones: React.FC = () => {
@@ -25,6 +25,19 @@ export const Inspecciones: React.FC = () => {
   const [subsanarAuditorId, setSubsanarAuditorId] = useState('');
   const [isHistorialModalOpen, setIsHistorialModalOpen] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<Inspeccion | null>(null);
+
+  // States for Company Selection / Creation
+  const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
+  const [companySearchTerm, setCompanySearchTerm] = useState('');
+  const [isNewCompanyModalOpen, setIsNewCompanyModalOpen] = useState(false);
+  const [newCompanyData, setNewCompanyData] = useState({
+    empresa: '',
+    anexo: 'anexo_15',
+    dependencia: '',
+    email: '',
+    telefono: '',
+    domicilio: ''
+  });
   
   // Estado para Loading de IA
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -148,6 +161,51 @@ export const Inspecciones: React.FC = () => {
       
       setEditingInsp({ ...editingInsp, observaciones: improvedText });
       setIsAiLoading(false);
+  };
+
+  const handleCreateNewCompany = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+        const isDerrame = newCompanyData.anexo === 'derrames';
+        const collectionName = isDerrame ? 'empresas_derrames' : 'planes';
+        
+        let initialData: any = {
+            empresa: newCompanyData.empresa,
+            anexo: newCompanyData.anexo,
+            dependencia: newCompanyData.dependencia,
+            email: newCompanyData.email,
+            telefono: newCompanyData.telefono,
+            domicilio: newCompanyData.domicilio,
+            estado: 'en_tramite',
+            disposicion: '',
+            vencimiento: '',
+            ultimaActualizacion: new Date().toISOString()
+        };
+
+        if (isDerrame) {
+            initialData.basesOperativas = [];
+        } else {
+            initialData.convalidaciones = {};
+        }
+
+        const docRef = await addDoc(collection(db, collectionName), initialData);
+        
+        setEditingInsp({
+            ...editingInsp,
+            ubicacion: newCompanyData.empresa,
+            planId: docRef.id,
+            anexo: isDerrame ? 'derrames' : newCompanyData.anexo as any,
+            baseId: '',
+            baseNombre: ''
+        });
+        
+        setIsNewCompanyModalOpen(false);
+        setIsCompanyModalOpen(false);
+        setCompanySearchTerm('');
+    } catch (err) {
+        console.error(err);
+        alert('Error al crear la nueva empresa.');
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -372,12 +430,14 @@ export const Inspecciones: React.FC = () => {
       const textoAuditor = isSameAuditor ? `(Mismo Inspector: ${nombreAuditorResponsable})` : `(Re-inspección por: ${nombreAuditorResponsable})`;
       
       // CREAR NUEVO REGISTRO EN LUGAR DE ACTUALIZAR (Para no perder el historial de fallos)
+      const isConvalidacion = subsanarTarget.tipo === 'CONVALIDACIÓN ANUAL';
+      
       const dataNuevaInspec = {
           ...subsanarTarget,
           id: undefined, // nuevo doc
           fecha: new Date().toISOString().split('T')[0],
           resultado: 'APROBADO',
-          nroCertificado: certSubsanacion.toUpperCase(),
+          nroCertificado: isConvalidacion ? certSubsanacion.toUpperCase() : '',
           nroInforme: planillaSubsanacion.toUpperCase(),
           tipo: `SUBSANACIÓN (${subsanarTarget.tipo})`,
           observaciones: `LEVANTAMIENTO DE PENDIENTES DE LA INSPECCIÓN DEL ${formatDateSafe(subsanarTarget.fecha)}. ${textoAuditor}`,
@@ -454,7 +514,9 @@ export const Inspecciones: React.FC = () => {
       await addDoc(collection(db, 'movimientos'), {
         usuario: currentUser.name,
         fecha: new Date().toISOString(),
-        texto: `Se subsanaron los pendientes. Se emitió CERTIFICADO: ${certSubsanacion} y PLANILLA DE ANÁLISIS: ${planillaSubsanacion}. Inspección APROBADA. Responsable: ${nombreAuditorResponsable}.`,
+        texto: isConvalidacion 
+            ? `Se subsanaron los pendientes. Se emitió CERTIFICADO: ${certSubsanacion.toUpperCase()} y PLANILLA DE ANÁLISIS: ${planillaSubsanacion.toUpperCase()}. Inspección APROBADA. Responsable: ${nombreAuditorResponsable}.`
+            : `Se subsanaron los pendientes. Se emitió PLANILLA DE ANÁLISIS: ${planillaSubsanacion.toUpperCase()}. Inspección APROBADA. Responsable: ${nombreAuditorResponsable}.`,
         expedienteId: subsanarTarget.expedienteId || 'SIN_EXPEDIENTE',
         inspeccionId: newId,
         tipoAccion: 'Resolución',
@@ -692,49 +754,16 @@ export const Inspecciones: React.FC = () => {
                   <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                        <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Vincular con Registro de la Empresa</label>
-                       <select 
-                          className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold"
-                          value={`${editingInsp.anexo === 'derrames' ? 'derrame' : 'plan'}_${editingInsp.planId || ''}`}
-                          onChange={e => {
-                            const [type, id] = e.target.value.split('_');
-                            if (!id) {
-                              setEditingInsp({...editingInsp, planId: '', anexo: undefined, ubicacion: '', baseId: '', baseNombre: ''});
-                              return;
-                            }
-                            
-                            let name = '';
-                            let anexoVal = undefined;
-                            
-                            if (type === 'plan') {
-                              const plan = planes.find(p => p.id === id);
-                              if (plan) { name = plan.empresa; anexoVal = plan.anexo; }
-                            } else if (type === 'derrame') {
-                              const derrame = derrames.find(d => d.id === id);
-                              if (derrame) { name = derrame.empresa; anexoVal = 'derrames'; }
-                            }
-
-                            setEditingInsp({
-                              ...editingInsp, 
-                              planId: id,
-                              anexo: anexoVal,
-                              ubicacion: name || (editingInsp.ubicacion || ''),
-                              baseId: '',
-                              baseNombre: ''
-                            });
-                          }}
-                       >
-                          <option value="_">-- SELECCIONAR EMPRESA --</option>
-                          <optgroup label="PLANES DE EMERGENCIA">
-                            {planes.map(p => (
-                              <option key={`plan_${p.id}`} value={`plan_${p.id}`}>{p.empresa} ({p.anexo.replace('anexo_', 'A')})</option>
-                            ))}
-                          </optgroup>
-                          <optgroup label="CONTROL DE DERRAMES">
-                            {derrames.map(d => (
-                              <option key={`derrame_${d.id}`} value={`derrame_${d.id}`}>{d.empresa} (EMCODECON)</option>
-                            ))}
-                          </optgroup>
-                       </select>
+                       <div className="relative">
+                           <input 
+                               readOnly 
+                               onClick={() => setIsCompanyModalOpen(true)}
+                               className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold cursor-pointer bg-slate-50 dark:bg-slate-900/50 pr-10 hover:border-primary transition-colors"
+                               value={editingInsp.ubicacion || 'SELECCIONAR EMPRESA...'}
+                               placeholder="SELECCIONAR EMPRESA..."
+                           />
+                           <span className="material-symbols-outlined absolute right-3 top-2 text-slate-400 pointer-events-none">search</span>
+                       </div>
                     </div>
 
                     {editingInsp.anexo === 'derrames' && (
@@ -906,13 +935,15 @@ export const Inspecciones: React.FC = () => {
                     </div>
 
                     <div>
-                        <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nº Planilla de Análisis</label>
+                        <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nº Planilla / Informe de Auditoría</label>
                         <input required className="w-full px-3 py-2 text-sm font-bold border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase" value={planillaSubsanacion} onChange={e => setPlanillaSubsanacion(e.target.value)} placeholder="INF-..." />
                     </div>
-                    <div>
-                        <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nº Certificado Otorgado</label>
-                        <input required className="w-full px-3 py-3 text-lg font-bold border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase text-center tracking-widest" value={certSubsanacion} onChange={e => setCertSubsanacion(e.target.value)} placeholder="CER-..." />
-                    </div>
+                    {subsanarTarget.tipo === 'CONVALIDACIÓN ANUAL' && (
+                        <div>
+                            <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nº Certificado Otorgado</label>
+                            <input required className="w-full px-3 py-3 text-lg font-bold border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase text-center tracking-widest" value={certSubsanacion} onChange={e => setCertSubsanacion(e.target.value)} placeholder="CER-..." />
+                        </div>
+                    )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 mt-6">
@@ -952,6 +983,196 @@ export const Inspecciones: React.FC = () => {
           </div>
         </div>
       )}
+      {/* MODAL BUSCADOR DE EMPRESAS */}
+      {isCompanyModalOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] border border-slate-200 dark:border-slate-800 flex flex-col">
+                  <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shrink-0">
+                      <span className="text-xs font-black uppercase tracking-widest">Seleccionar o Crear Empresa</span>
+                      <button onClick={() => { setIsCompanyModalOpen(false); setCompanySearchTerm(''); }}><span className="material-symbols-outlined">close</span></button>
+                  </div>
+                  <div className="p-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+                      <div className="relative">
+                          <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400">search</span>
+                          <input 
+                              autoFocus
+                              className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-primary dark:text-white uppercase font-bold"
+                              placeholder="BUSCAR EMPRESA EXISTENTE..."
+                              value={companySearchTerm}
+                              onChange={(e) => setCompanySearchTerm(e.target.value)}
+                          />
+                      </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 bg-slate-50 dark:bg-slate-900/50">
+                      {(() => {
+                          const lowerSearch = companySearchTerm.toLowerCase().trim();
+                          
+                          // Combinar empresas de planes y derrames, evitando duplicados en el listado visual
+                          const combinedCompanies: any[] = [];
+                          planes.forEach(p => combinedCompanies.push({...p, source: 'planes'}));
+                          derrames.forEach(d => combinedCompanies.push({...d, source: 'derrames', anexo: 'CONTROL DERRAMES'}));
+                          
+                          const filtered = combinedCompanies.filter(c => c.empresa.toLowerCase().includes(lowerSearch));
+                          
+                          if (filtered.length > 0) {
+                              return (
+                                  <div className="grid grid-cols-1 gap-2">
+                                      {filtered.map((c, idx) => (
+                                          <button 
+                                              key={idx}
+                                              type="button"
+                                              onClick={() => {
+                                                  setEditingInsp({
+                                                      ...editingInsp, 
+                                                      ubicacion: c.empresa, 
+                                                      planId: c.id, 
+                                                      anexo: c.source === 'derrames' ? 'derrames' : c.anexo,
+                                                      baseId: '',
+                                                      baseNombre: ''
+                                                  });
+                                                  setIsCompanyModalOpen(false);
+                                                  setCompanySearchTerm('');
+                                              }}
+                                              className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 hover:border-primary dark:hover:border-primary hover:shadow-md transition-all text-left group"
+                                          >
+                                              <div className="flex flex-col">
+                                                  <span className="font-black uppercase text-slate-900 dark:text-white group-hover:text-primary transition-colors">{c.empresa}</span>
+                                                  <span className="text-[10px] text-slate-500 font-bold uppercase">{c.anexo.replace('_', ' ')} | ID: {c.id.slice(0,6)}</span>
+                                              </div>
+                                              <span className="material-symbols-outlined text-slate-300 group-hover:text-primary">arrow_forward_ios</span>
+                                          </button>
+                                      ))}
+                                  </div>
+                              );
+                          } else if (lowerSearch.length > 2) {
+                              return (
+                                  <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                                      <div className="size-16 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center mb-4">
+                                          <span className="material-symbols-outlined text-[32px] text-slate-400">domain_disabled</span>
+                                      </div>
+                                      <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">
+                                          No se encontraron empresas que coincidan con "<strong>{companySearchTerm.toUpperCase()}</strong>".
+                                      </p>
+                                      <button 
+                                          type="button"
+                                          onClick={() => {
+                                              setNewCompanyData({
+                                                  ...newCompanyData,
+                                                  empresa: companySearchTerm.toUpperCase()
+                                              });
+                                              setIsNewCompanyModalOpen(true);
+                                          }}
+                                          className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-black uppercase text-xs shadow-lg transition-all flex items-center gap-2"
+                                      >
+                                          <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                                          Cargar como Nueva Empresa
+                                      </button>
+                                  </div>
+                              );
+                          } else {
+                              return (
+                                  <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                                      <span className="material-symbols-outlined text-[40px] mb-2 opacity-50">search</span>
+                                      <span className="text-xs font-bold uppercase tracking-widest">Escriba para buscar</span>
+                                  </div>
+                              );
+                          }
+                      })()}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* MODAL CREAR NUEVA EMPRESA */}
+      {isNewCompanyModalOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800">
+                  <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+                      <span className="text-xs font-black uppercase tracking-widest">Crear Empresa en Trámite</span>
+                      <button onClick={() => setIsNewCompanyModalOpen(false)}><span className="material-symbols-outlined">close</span></button>
+                  </div>
+                  <form onSubmit={handleCreateNewCompany} className="p-6 grid grid-cols-1 gap-4">
+                      <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded border border-blue-200 dark:border-blue-800 mb-2">
+                          <p className="text-[10px] text-blue-800 dark:text-blue-300">
+                              Esta empresa se guardará en la base de datos de Planes de Emergencia como <strong>"EN TRÁMITE"</strong>. Podrás completar el resto de los datos (Disposición, Convalidaciones) desde el módulo de Planes más adelante.
+                          </p>
+                      </div>
+
+                      <div>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Empresa / Razón Social</label>
+                          <input 
+                              required 
+                              readOnly
+                              className="w-full px-3 py-2 text-sm border rounded bg-slate-100 dark:bg-slate-800 dark:border-slate-700 outline-none uppercase font-bold"
+                              value={newCompanyData.empresa}
+                          />
+                      </div>
+                      
+                      <div>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Categoría / Anexo</label>
+                          <select 
+                              required
+                              className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none"
+                              value={newCompanyData.anexo}
+                              onChange={e => setNewCompanyData({...newCompanyData, anexo: e.target.value as any})}
+                          >
+                              {ANEXOS.map(a => (
+                                  <option key={a.id} value={a.id}>{a.label}</option>
+                              ))}
+                          </select>
+                      </div>
+
+                      <div>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Jurisdicción / Dependencia</label>
+                          <input 
+                              required
+                              className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none uppercase"
+                              placeholder="Ej: PREFECTURA BUENOS AIRES"
+                              value={newCompanyData.dependencia}
+                              onChange={e => setNewCompanyData({...newCompanyData, dependencia: e.target.value.toUpperCase()})}
+                          />
+                      </div>
+
+                      <div>
+                          <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Domicilio / Ubicación</label>
+                          <input 
+                              className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none"
+                              placeholder="Calle, Número, Localidad..."
+                              value={newCompanyData.domicilio}
+                              onChange={e => setNewCompanyData({...newCompanyData, domicilio: e.target.value})}
+                          />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                          <div>
+                              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Email de Contacto</label>
+                              <input 
+                                  type="email"
+                                  className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none"
+                                  placeholder="correo@empresa.com"
+                                  value={newCompanyData.email}
+                                  onChange={e => setNewCompanyData({...newCompanyData, email: e.target.value})}
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Teléfono</label>
+                              <input 
+                                  className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none"
+                                  placeholder="Ej: 11-1234-5678"
+                                  value={newCompanyData.telefono}
+                                  onChange={e => setNewCompanyData({...newCompanyData, telefono: e.target.value})}
+                              />
+                          </div>
+                      </div>
+
+                      <button type="submit" className="w-full mt-4 py-3 bg-primary text-white font-black uppercase rounded hover:bg-blue-600 transition-colors">
+                          Crear Empresa y Continuar
+                      </button>
+                  </form>
+              </div>
+          </div>
+      )}
+
     </div>
   );
 };
