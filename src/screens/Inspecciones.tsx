@@ -432,9 +432,10 @@ export const Inspecciones: React.FC = () => {
       // CREAR NUEVO REGISTRO EN LUGAR DE ACTUALIZAR (Para no perder el historial de fallos)
       const isConvalidacion = subsanarTarget.tipo === 'CONVALIDACIÓN ANUAL';
       
+      const { id: _, ...targetWithoutId } = subsanarTarget;
+
       const dataNuevaInspec = {
-          ...subsanarTarget,
-          id: undefined, // nuevo doc
+          ...targetWithoutId,
           fecha: new Date().toISOString().split('T')[0],
           resultado: 'APROBADO',
           nroCertificado: isConvalidacion ? certSubsanacion.toUpperCase() : '',
