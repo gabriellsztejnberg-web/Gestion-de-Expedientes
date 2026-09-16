@@ -82,6 +82,13 @@ export interface User {
   objetivoSemanalTareas?: number;
 }
 
+export interface PizarraNote {
+  id: string;
+  texto: string;
+  creadoPor: string;
+  creadoEn: string;
+}
+
 // --- TIPOS PARA AUDITORES ---
 
 export interface Curso {
