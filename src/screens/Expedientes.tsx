@@ -16,7 +16,7 @@ import {
   where,
   getDoc
 } from 'firebase/firestore';
-import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI, PlanEmergencia, EmpresaControlDerrame, AnexoTipo, ANEXOS } from '../types';
+import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI, PlanEmergencia, EmpresaControlDerrame, AnexoTipo, ANEXOS, PizarraNote } from '../types';
 import { analyzeExpedienteHistory } from '../services/geminiService'; // Importamos servicio IA
 
 const INSTANCIAS: Instancia[] = [
@@ -96,6 +96,10 @@ export const Expedientes: React.FC = () => {
     domicilio: ''
   });
 
+  // Pizarra State
+  const [pizarraNotes, setPizarraNotes] = useState<PizarraNote[]>([]);
+  const [newPizarraNote, setNewPizarraNote] = useState('');
+
   const currentUser: User = JSON.parse(localStorage.getItem('currentUser') || '{"id":"temp","name":"Usuario","role":"operador"}');
   const role = (currentUser.role || '').toLowerCase();
   const isJefe = role === 'jefe' || role === 'admin' || role === 'administrator';
@@ -174,6 +178,14 @@ export const Expedientes: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const q = query(collection(db, 'pizarra'), orderBy('creadoEn', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setPizarraNotes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PizarraNote)));
+    });
+    return () => unsubscribe();
+  }, []);
+
   const getFullTimestamp = () => {
     const now = new Date();
     return now.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -231,6 +243,31 @@ export const Expedientes: React.FC = () => {
     
     setEditingExp({ ...editingExp, observaciones: newObs });
     setIsAiAnalyzing(false);
+  };
+
+  // --- PIZARRA LOGIC ---
+  const handleAddPizarraNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPizarraNote.trim()) return;
+    try {
+        await addDoc(collection(db, 'pizarra'), {
+            texto: newPizarraNote,
+            creadoPor: currentUser.name,
+            creadoEn: new Date().toISOString()
+        });
+        setNewPizarraNote('');
+    } catch(err) {
+        alert("Error al guardar la nota en la pizarra.");
+    }
+  };
+
+  const handleDeletePizarraNote = async (id: string) => {
+    if (!window.confirm("¿Eliminar esta anotación de la pizarra?")) return;
+    try {
+        await deleteDoc(doc(db, 'pizarra', id));
+    } catch(err) {
+        alert("Error al eliminar la nota.");
+    }
   };
 
   // --- MAIL LOGIC ---
@@ -940,6 +977,47 @@ export const Expedientes: React.FC = () => {
                   </button>
                 )}
             </div>
+          </div>
+
+          {/* PIZARRA DE ALERTAS INTEGRADA */}
+          <div className="mb-4 shrink-0 bg-yellow-50/50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-700/50 rounded-xl p-3 flex flex-col gap-3">
+              <div className="flex justify-between items-center">
+                  <h3 className="text-[10px] font-black uppercase text-yellow-800 dark:text-yellow-500 tracking-widest flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">push_pin</span> 
+                      Pizarra de Alertas y Novedades del Equipo
+                  </h3>
+              </div>
+              
+              <div className="flex gap-3 overflow-x-auto pb-2 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:bg-yellow-300 dark:[&::-webkit-scrollbar-thumb]:bg-yellow-700 [&::-webkit-scrollbar-track]:bg-transparent">
+                  {/* Formulario rápido para nueva alerta */}
+                  <form onSubmit={handleAddPizarraNote} className="shrink-0 w-64 bg-white dark:bg-slate-800 border border-yellow-300 dark:border-yellow-700 rounded-lg p-3 flex flex-col justify-between shadow-sm">
+                      <textarea 
+                          className="w-full text-xs outline-none bg-transparent dark:text-white resize-none"
+                          rows={2}
+                          placeholder="Escribir alerta para todos..."
+                          value={newPizarraNote}
+                          onChange={e => setNewPizarraNote(e.target.value)}
+                      />
+                      <button type="submit" disabled={!newPizarraNote.trim()} className="mt-2 w-full flex items-center justify-center gap-1 text-[10px] font-black uppercase bg-yellow-400 hover:bg-yellow-500 text-yellow-900 py-1.5 px-2 rounded transition-colors disabled:opacity-50">
+                          <span className="material-symbols-outlined text-[14px]">add</span>
+                          Fijar
+                      </button>
+                  </form>
+
+                  {/* Listado de Notas */}
+                  {pizarraNotes.map(note => (
+                      <div key={note.id} className="shrink-0 w-64 bg-yellow-100 dark:bg-slate-800 border border-yellow-200 dark:border-slate-700 rounded-lg p-3 flex flex-col shadow-sm relative group">
+                          <button onClick={() => handleDeletePizarraNote(note.id)} className="absolute top-2 right-2 text-yellow-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <span className="material-symbols-outlined text-[14px]">delete</span>
+                          </button>
+                          <p className="text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap flex-1 pr-4">{note.texto}</p>
+                          <div className="mt-3 flex justify-between items-center border-t border-yellow-200 dark:border-slate-700 pt-2">
+                              <span className="text-[9px] font-black uppercase text-yellow-700 dark:text-yellow-600 truncate mr-2">{note.creadoPor}</span>
+                              <span className="text-[8px] font-bold text-yellow-600/70 whitespace-nowrap">{new Date(note.creadoEn).toLocaleDateString()}</span>
+                          </div>
+                      </div>
+                  ))}
+              </div>
           </div>
 
           <div className="flex border-b border-slate-200 dark:border-slate-800 mb-6 gap-2 shrink-0 overflow-x-auto no-scrollbar">
