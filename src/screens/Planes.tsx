@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import Papa from 'papaparse';
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { 
@@ -19,7 +19,7 @@ import {
   getDocs,
   writeBatch
 } from 'firebase/firestore';
-import { PlanEmergencia, AnexoTipo, User, Case, Inspeccion, TimelineEvent, ANEXOS, EmpresaControlDerrame } from '../types';
+import { PlanEmergencia, AnexoTipo, User, Case, Inspeccion, TimelineEvent, ANEXOS, EmpresaControlDerrame, PuntoPlan } from '../types';
 import { extractPlanesFromPDF } from '../services/geminiService';
 
 // Fix for default marker icon in Leaflet
@@ -29,6 +29,57 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
+
+// Helper component to auto fit map bounds
+const MapFitBounds: React.FC<{ points: [number, number][] }> = ({ points }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (!points || points.length === 0) return;
+    if (points.length === 1) {
+      map.setView(points[0], 11);
+      return;
+    }
+    const bounds = L.latLngBounds(points);
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [35, 35], maxZoom: 14 });
+    }
+  }, [points, map]);
+  return null;
+};
+
+// Custom icons generator for map points
+const getPuntoIcon = (tipo?: string, anexo?: string) => {
+  let color = '#2563eb'; // blue default
+  let symbol = 'location_on';
+
+  const t = (tipo || '').toLowerCase();
+  if (t.includes('plataforma') || anexo === 'anexo_20') {
+    color = '#0891b2'; // cyan-600
+    symbol = 'oil_barrel';
+  } else if (t.includes('pozo')) {
+    color = '#4f46e5'; // indigo-600
+    symbol = 'water_drop';
+  } else if (t.includes('monoboya') || t.includes('boya') || anexo === 'anexo_17') {
+    color = '#ea580c'; // orange-600
+    symbol = 'anchor';
+  } else if (t.includes('oleoducto') || t.includes('tuberia')) {
+    color = '#dc2626'; // red-600
+    symbol = 'timeline';
+  } else if (t.includes('terminal') || t.includes('puerto')) {
+    color = '#16a34a'; // green-600
+    symbol = 'dock';
+  }
+
+  return L.divIcon({
+    className: 'custom-punto-icon',
+    html: `<div style="background-color: ${color}; width: 28px; height: 28px; border-radius: 50%; border: 2.5px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; color: white;">
+      <span class="material-symbols-outlined" style="font-size: 16px;">${symbol}</span>
+    </div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14]
+  });
+};
 
 // Helper to parse coordinates
 const parseCoordinates = (coordStr?: string): [number, number][] => {
@@ -169,6 +220,11 @@ export const Planes: React.FC = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PlanEmergencia | null>(null);
 
+  // Modal de Puntos Geográficos / Instalaciones (Plataformas, Pozos, Monoboyas, Oleoductos)
+  const [isPuntoModalOpen, setIsPuntoModalOpen] = useState(false);
+  const [editingPunto, setEditingPunto] = useState<Partial<PuntoPlan> | null>(null);
+  const [isSavingPunto, setIsSavingPunto] = useState(false);
+
   useEffect(() => {
     if (location.state?.openPlanId && planes.length > 0) {
       const plan = planes.find(p => p.id === location.state.openPlanId);
@@ -261,6 +317,11 @@ export const Planes: React.FC = () => {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlanEmergencia));
       setPlanes(docs);
+      setSelectedPlan(prev => {
+        if (!prev) return null;
+        const updated = docs.find(d => d.id === prev.id);
+        return updated || prev;
+      });
       setIsLoading(false);
     });
     return () => unsubscribe();
@@ -434,6 +495,105 @@ export const Planes: React.FC = () => {
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  // --- GESTIÓN DE PUNTOS E INSTALACIONES (PLATAFORMAS, POZOS, MONOBOYAS, OLEODUCTOS) ---
+  const handleOpenNewPunto = () => {
+    if (!selectedPlan) return;
+    const defaultTipo = selectedPlan.anexo === 'anexo_20' ? 'plataforma' : (selectedPlan.anexo === 'anexo_17' ? 'monoboya' : 'instalacion');
+    setEditingPunto({
+      id: '',
+      nombre: '',
+      tipo: defaultTipo,
+      coordenadas: '',
+      descripcion: '',
+      identificador: '',
+      estadoOperativo: 'activo'
+    });
+    setIsPuntoModalOpen(true);
+  };
+
+  const handleOpenEditPunto = (punto: PuntoPlan) => {
+    setEditingPunto({ ...punto });
+    setIsPuntoModalOpen(true);
+  };
+
+  const handleSavePunto = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPlan || !editingPunto) return;
+    if (!editingPunto.nombre?.trim()) {
+      alert("El nombre de la instalación o punto es obligatorio.");
+      return;
+    }
+    if (!editingPunto.coordenadas?.trim()) {
+      alert("Las coordenadas geográficas son obligatorias.");
+      return;
+    }
+
+    const parsed = parseCoordinates(editingPunto.coordenadas);
+    if (parsed.length === 0) {
+      if (!confirm("No se pudieron interpretar las coordenadas en un formato estándar reconocible. ¿Desea guardar de todos modos?")) {
+        return;
+      }
+    }
+
+    setIsSavingPunto(true);
+    try {
+      const currentPuntos = [...(selectedPlan.puntos || [])];
+      let updatedPuntos: PuntoPlan[];
+
+      if (editingPunto.id) {
+        updatedPuntos = currentPuntos.map(p => p.id === editingPunto.id ? ({ ...editingPunto } as PuntoPlan) : p);
+      } else {
+        const newPunto: PuntoPlan = {
+          id: 'punto_' + Date.now().toString(),
+          nombre: editingPunto.nombre.trim().toUpperCase(),
+          tipo: editingPunto.tipo || 'instalacion',
+          coordenadas: editingPunto.coordenadas.trim(),
+          descripcion: editingPunto.descripcion || '',
+          identificador: editingPunto.identificador || '',
+          estadoOperativo: editingPunto.estadoOperativo || 'activo'
+        };
+        updatedPuntos = [...currentPuntos, newPunto];
+      }
+
+      await updateDoc(doc(db, 'planes', selectedPlan.id), {
+        puntos: updatedPuntos,
+        ultimaActualizacion: new Date().toISOString()
+      });
+
+      const updatedPlan = { ...selectedPlan, puntos: updatedPuntos, ultimaActualizacion: new Date().toISOString() };
+      setSelectedPlan(updatedPlan);
+      setPlanes(prev => prev.map(p => p.id === selectedPlan.id ? updatedPlan : p));
+
+      setIsPuntoModalOpen(false);
+      setEditingPunto(null);
+    } catch (err: any) {
+      console.error("Error guardando punto:", err);
+      alert("Error al guardar el punto: " + (err.message || 'Error desconocido'));
+    } finally {
+      setIsSavingPunto(false);
+    }
+  };
+
+  const handleDeletePunto = async (puntoId: string) => {
+    if (!selectedPlan) return;
+    if (!confirm("¿Está seguro de eliminar esta instalación/punto del plan?")) return;
+
+    try {
+      const updatedPuntos = (selectedPlan.puntos || []).filter(p => p.id !== puntoId);
+      await updateDoc(doc(db, 'planes', selectedPlan.id), {
+        puntos: updatedPuntos,
+        ultimaActualizacion: new Date().toISOString()
+      });
+
+      const updatedPlan = { ...selectedPlan, puntos: updatedPuntos };
+      setSelectedPlan(updatedPlan);
+      setPlanes(prev => prev.map(p => p.id === selectedPlan.id ? updatedPlan : p));
+    } catch (err: any) {
+      console.error("Error eliminando punto:", err);
+      alert("Error al eliminar el punto.");
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -858,6 +1018,7 @@ export const Planes: React.FC = () => {
                 documentacionExtra: observaciones || existingPlan?.documentacionExtra || '',
                 anexo: activeTab,
                 estado: isDesafectado ? 'desafectado' : (existingPlan?.estado || 'vigente'),
+                puntos: existingPlan?.puntos || [],
                 convalidaciones: {
                   anio1: anio1Date || existingPlan?.convalidaciones?.anio1 || '',
                   anio2: anio2Date || existingPlan?.convalidaciones?.anio2 || '',
@@ -2073,7 +2234,7 @@ export const Planes: React.FC = () => {
                   <div className="flex items-center gap-3 mb-1">
                     <h2 className="text-lg font-black uppercase tracking-tight leading-none">{selectedPlan.empresa}</h2>
                     <span className="bg-primary/20 text-primary px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest border border-primary/30 print:border-slate-300 print:text-slate-600 print:bg-transparent">
-                      {selectedPlan.anexo.replace('_', ' ')}
+                      {(selectedPlan.anexo || 'S/D').replace('_', ' ')}
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest print:text-slate-600">Perfil Consolidado de la Empresa</p>
@@ -2264,27 +2425,241 @@ export const Planes: React.FC = () => {
                   )}
                 </div>
 
-                {/* Columna Historial / Timeline */}
+                {/* Columna Historial / Timeline / Puntos */}
                 <div className="md:col-span-2 print:col-span-1 space-y-6">
-                  {parseCoordinates(selectedPlan.coordenadas).length > 0 && (
-                    <section className="mb-6 print:break-inside-avoid">
-                      <h3 className="text-[10px] font-black uppercase text-primary mb-3 border-b border-primary/20 pb-1">Ubicación Geográfica</h3>
-                      <div className="h-48 w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 z-0 relative">
-                        <MapContainer 
-                          center={parseCoordinates(selectedPlan.coordenadas)[0]} 
-                          zoom={12} 
-                          style={{ height: '100%', width: '100%', zIndex: 0 }}
-                          zoomControl={false}
-                          attributionControl={false}
-                        >
-                          <TileLayer url="https://wms.ign.gob.ar/geoserver/gwc/service/tms/1.0.0/capabaseargenmap@EPSG%3A3857@png/{z}/{x}/{-y}.png" />
-                          {parseCoordinates(selectedPlan.coordenadas).map((coord, idx) => (
-                            <Marker key={idx} position={coord} />
-                          ))}
-                        </MapContainer>
-                      </div>
-                    </section>
-                  )}
+                  {/* SECCIÓN DE INSTALACIONES Y PUNTOS GEOGRÁFICOS */}
+                  {selectedPlan.anexo !== 'anexo_15' && (() => {
+                    const planPuntos = selectedPlan.puntos || [];
+                    const pointsWithCoords = planPuntos.flatMap(p => {
+                      const coords = parseCoordinates(p.coordenadas);
+                      return coords.map(c => ({ punto: p, coords: c }));
+                    });
+                    const rootCoords = parseCoordinates(selectedPlan.coordenadas).map(c => ({
+                      punto: { 
+                        id: 'root', 
+                        nombre: `${selectedPlan.empresa} (Sede / Base)`, 
+                        tipo: selectedPlan.anexo === 'anexo_20' ? 'plataforma' : selectedPlan.anexo === 'anexo_17' ? 'monoboya' : 'instalacion', 
+                        coordenadas: selectedPlan.coordenadas || '',
+                        estadoOperativo: 'activo'
+                      } as PuntoPlan,
+                      coords: c
+                    }));
+                    const allMapPoints = [
+                      ...pointsWithCoords,
+                      ...rootCoords.filter(rc => !pointsWithCoords.some(pc => Math.abs(pc.coords[0] - rc.coords[0]) < 0.0001 && Math.abs(pc.coords[1] - rc.coords[1]) < 0.0001))
+                    ];
+
+                    return (
+                      <section className="bg-white dark:bg-slate-800/80 p-4 rounded-xl border border-slate-200 dark:border-slate-700 print:break-inside-avoid shadow-xs">
+                        <div className="flex flex-wrap justify-between items-center gap-3 mb-3 pb-3 border-b border-slate-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`p-2 rounded-xl text-white shadow-xs flex items-center justify-center ${
+                              selectedPlan.anexo === 'anexo_20' ? 'bg-cyan-600' :
+                              selectedPlan.anexo === 'anexo_17' ? 'bg-orange-600' : 'bg-blue-600'
+                            }`}>
+                              <span className="material-symbols-outlined text-[20px]">
+                                {selectedPlan.anexo === 'anexo_20' ? 'oil_barrel' : selectedPlan.anexo === 'anexo_17' ? 'anchor' : 'share_location'}
+                              </span>
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-black uppercase text-slate-800 dark:text-white tracking-tight flex items-center gap-2">
+                                {selectedPlan.anexo === 'anexo_20' ? 'Plataformas Offshore y Pozos de Extracción (Anexo 20)' :
+                                 selectedPlan.anexo === 'anexo_17' ? 'Monoboyas, Oleoductos e Instalaciones Costeras (Anexo 17)' :
+                                 'Puntos e Instalaciones Geográficas del Plan'}
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                  {planPuntos.length} {planPuntos.length === 1 ? 'instalación' : 'instalaciones'}
+                                </span>
+                              </h4>
+                              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
+                                {selectedPlan.anexo === 'anexo_20' ? 'Múltiples plataformas y pozos asociados al mismo plan de emergencia offshore' :
+                                 selectedPlan.anexo === 'anexo_17' ? 'Monoboyas, boyas y tramos de oleoductos cubiertos por este plan' :
+                                 'Puntos operativos georreferenciados vinculados a este plan'}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <button 
+                            type="button"
+                            onClick={handleOpenNewPunto}
+                            className={`text-white text-[11px] font-black uppercase px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer ${
+                              selectedPlan.anexo === 'anexo_20' ? 'bg-cyan-600 hover:bg-cyan-700' :
+                              selectedPlan.anexo === 'anexo_17' ? 'bg-orange-600 hover:bg-orange-700' : 'bg-primary hover:bg-blue-600'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[15px]">add_location_alt</span>
+                            Añadir Punto
+                          </button>
+                        </div>
+
+                        {/* Listado de Puntos / Instalaciones */}
+                        {planPuntos.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3">
+                            {planPuntos.map((punto) => {
+                              const coords = parseCoordinates(punto.coordenadas);
+                              const hasValidCoords = coords.length > 0;
+                              return (
+                                <div key={punto.id} className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/50 flex flex-col justify-between group shadow-xs hover:border-primary/50 transition-colors">
+                                  <div>
+                                    <div className="flex justify-between items-start gap-1 mb-1">
+                                      <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded tracking-wide ${
+                                        punto.tipo === 'plataforma' ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300' :
+                                        punto.tipo === 'pozo' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300' :
+                                        punto.tipo === 'monoboya' || punto.tipo === 'boya' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300' :
+                                        punto.tipo === 'oleoducto' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' :
+                                        'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
+                                      }`}>
+                                        {punto.tipo === 'plataforma' ? 'Plataforma Offshore' :
+                                         punto.tipo === 'pozo' ? 'Pozo de Extracción' :
+                                         punto.tipo === 'monoboya' ? 'Monoboya' :
+                                         punto.tipo === 'oleoducto' ? 'Oleoducto Costero' :
+                                         punto.tipo === 'boya' ? 'Boya de Amarre' :
+                                         punto.tipo === 'terminal' ? 'Terminal Marítima' :
+                                         punto.tipo === 'instalacion' ? 'Instalación' : (punto.tipo || 'Punto')}
+                                      </span>
+                                      
+                                      <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                                        <button 
+                                          type="button"
+                                          onClick={() => handleOpenEditPunto(punto)}
+                                          className="p-1 text-slate-400 hover:text-primary rounded hover:bg-slate-200 dark:hover:bg-slate-700"
+                                          title="Editar Punto"
+                                        >
+                                          <span className="material-symbols-outlined text-[15px]">edit</span>
+                                        </button>
+                                        <button 
+                                          type="button"
+                                          onClick={() => handleDeletePunto(punto.id)}
+                                          className="p-1 text-slate-400 hover:text-red-500 rounded hover:bg-slate-200 dark:hover:bg-slate-700"
+                                          title="Eliminar Punto"
+                                        >
+                                          <span className="material-symbols-outlined text-[15px]">delete</span>
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <h5 className="font-black text-slate-800 dark:text-white text-xs uppercase mb-1">
+                                      {punto.nombre}
+                                    </h5>
+
+                                    <p className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 mb-1">
+                                      <span className={`material-symbols-outlined text-[14px] ${hasValidCoords ? 'text-blue-500' : 'text-slate-400'}`}>
+                                        {hasValidCoords ? 'location_on' : 'location_off'}
+                                      </span>
+                                      {punto.coordenadas}
+                                    </p>
+
+                                    {punto.descripcion && (
+                                      <p className="text-[10px] text-slate-600 dark:text-slate-400 italic bg-white dark:bg-slate-800 p-1.5 rounded border border-slate-100 dark:border-slate-700 mb-1.5">
+                                        {punto.descripcion}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  <div className="flex justify-between items-center text-[8px] pt-1.5 border-t border-slate-100 dark:border-slate-700">
+                                    <span className={`font-black uppercase ${
+                                      punto.estadoOperativo === 'inactivo' ? 'text-red-500' :
+                                      punto.estadoOperativo === 'en_construccion' ? 'text-amber-500' : 'text-emerald-600'
+                                    }`}>
+                                      ● {punto.estadoOperativo === 'inactivo' ? 'Inactivo' : punto.estadoOperativo === 'en_construccion' ? 'En Perforación/Construcción' : 'Operativo / Activo'}
+                                    </span>
+                                    {punto.identificador && (
+                                      <span className="font-mono text-slate-400 font-bold">{punto.identificador}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-center py-4 px-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 mb-3">
+                            <span className="material-symbols-outlined text-slate-400 text-2xl mb-1">add_location</span>
+                            <p className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase">Sin instalaciones específicas cargadas</p>
+                            <p className="text-[10px] text-slate-500 max-w-sm mx-auto mt-0.5">
+                              {selectedPlan.anexo === 'anexo_20' 
+                                ? 'Haga clic en "+ Añadir Punto" para registrar cada una de las plataformas offshore o pozos de extracción de esta empresa.'
+                                : selectedPlan.anexo === 'anexo_17'
+                                ? 'Haga clic en "+ Añadir Punto" para registrar cada monoboya, campo de boyas o tramo de oleoducto costero.'
+                                : 'Haga clic en "+ Añadir Punto" para georreferenciar las distintas instalaciones que integran este plan.'}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Mini Mapa de Puntos del Plan */}
+                        {allMapPoints.length > 0 && (
+                          <div className="mt-3">
+                            <div className="flex justify-between items-center mb-1.5">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">Despliegue Territorial / Marítimo</span>
+                              <span className="text-[9px] font-mono font-bold text-slate-400">{allMapPoints.length} {allMapPoints.length === 1 ? 'punto en mapa' : 'puntos en mapa'}</span>
+                            </div>
+                            <div className="h-56 w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 relative z-0">
+                              <MapContainer 
+                                center={allMapPoints[0].coords} 
+                                zoom={10} 
+                                style={{ height: '100%', width: '100%', zIndex: 0 }}
+                                zoomControl={true}
+                              >
+                                <TileLayer 
+                                  attribution='&copy; IGN Argentina'
+                                  url="https://wms.ign.gob.ar/geoserver/gwc/service/tms/1.0.0/capabaseargenmap@EPSG%3A3857@png/{z}/{x}/{-y}.png" 
+                                />
+                                <MapFitBounds points={allMapPoints.map(p => p.coords)} />
+
+                                {/* Líneas finas conectando cada instalación con la cabecera */}
+                                {(() => {
+                                  const cabeceraCoords = rootCoords.length > 0 
+                                    ? rootCoords[0].coords 
+                                    : (pointsWithCoords.length > 1 ? pointsWithCoords[0].coords : null);
+
+                                  if (!cabeceraCoords) return null;
+
+                                  const targetPoints = rootCoords.length > 0 
+                                    ? pointsWithCoords 
+                                    : pointsWithCoords.slice(1);
+
+                                  const lineColor = selectedPlan.anexo === 'anexo_20' ? '#0891b2' : selectedPlan.anexo === 'anexo_17' ? '#ea580c' : '#2563eb';
+
+                                  return targetPoints.map((item, pIdx) => {
+                                    if (Math.abs(item.coords[0] - cabeceraCoords[0]) < 0.0001 && Math.abs(item.coords[1] - cabeceraCoords[1]) < 0.0001) return null;
+                                    return (
+                                      <Polyline
+                                        key={`profile_conn_${pIdx}`}
+                                        positions={[cabeceraCoords, item.coords]}
+                                        pathOptions={{
+                                          color: lineColor,
+                                          weight: 1.5,
+                                          opacity: 0.75,
+                                          dashArray: '4, 4'
+                                        }}
+                                      />
+                                    );
+                                  });
+                                })()}
+
+                                {allMapPoints.map((item, idx) => (
+                                  <Marker 
+                                    key={idx} 
+                                    position={item.coords}
+                                    icon={getPuntoIcon(item.punto.tipo, selectedPlan.anexo)}
+                                  >
+                                    <Popup>
+                                      <div className="p-1 min-w-[150px] text-slate-800">
+                                        <p className="text-[8px] font-black uppercase text-blue-600 mb-0.5">{item.punto.tipo || selectedPlan.anexo}</p>
+                                        <h5 className="text-xs font-black uppercase text-slate-900 leading-tight mb-1">{item.punto.nombre}</h5>
+                                        <p className="text-[9px] font-mono text-slate-500 mb-1">{item.punto.coordenadas}</p>
+                                        {item.punto.descripcion && (
+                                          <p className="text-[9px] text-slate-600 italic border-t pt-1">{item.punto.descripcion}</p>
+                                        )}
+                                      </div>
+                                    </Popup>
+                                  </Marker>
+                                ))}
+                              </MapContainer>
+                            </div>
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })()}
 
                   <section className="print:break-inside-avoid">
                     <div className="flex justify-between items-end mb-4 border-b border-primary/20 pb-1">
@@ -2535,6 +2910,150 @@ export const Planes: React.FC = () => {
             <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex justify-end shrink-0">
               <button onClick={() => setIsProfileOpen(false)} className="px-6 py-2 bg-slate-900 text-white text-[10px] font-black uppercase rounded-lg shadow-lg hover:bg-slate-800 transition-all">Cerrar Perfil</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Punto / Instalación Geográfica */}
+      {isPuntoModalOpen && editingPunto && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[100] animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 dark:border-slate-800">
+            <div className="flex justify-between items-center pb-4 mb-4 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-2xl">
+                  {selectedPlan?.anexo === 'anexo_20' ? 'oil_barrel' : selectedPlan?.anexo === 'anexo_17' ? 'anchor' : 'add_location'}
+                </span>
+                <div>
+                  <h3 className="text-base font-black uppercase text-slate-800 dark:text-white">
+                    {editingPunto.id ? 'Editar Punto / Instalación' : 'Añadir Punto / Instalación'}
+                  </h3>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">{selectedPlan?.empresa}</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => { setIsPuntoModalOpen(false); setEditingPunto(null); }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePunto} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Nombre de la Instalación o Punto *</label>
+                <input 
+                  type="text"
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-primary text-slate-800 dark:text-white"
+                  placeholder={selectedPlan?.anexo === 'anexo_20' ? 'Ej: PLATAFORMA ARIES / POZO HYDRA-2' : selectedPlan?.anexo === 'anexo_17' ? 'Ej: MONOBOYA PUNTA CIGÜEÑA / OLEODUCTO TRAMO A' : 'Ej: MONOBOYA / PLATAFORMA / POZO'}
+                  value={editingPunto.nombre || ''}
+                  onChange={e => setEditingPunto({ ...editingPunto, nombre: e.target.value })}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Tipo de Instalación</label>
+                  <select
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-primary text-slate-800 dark:text-white cursor-pointer"
+                    value={editingPunto.tipo || (selectedPlan?.anexo === 'anexo_20' ? 'plataforma' : selectedPlan?.anexo === 'anexo_17' ? 'monoboya' : 'instalacion')}
+                    onChange={e => setEditingPunto({ ...editingPunto, tipo: e.target.value })}
+                  >
+                    <option value="plataforma">Plataforma Offshore</option>
+                    <option value="pozo">Pozo de Extracción</option>
+                    <option value="monoboya">Monoboya</option>
+                    <option value="boya">Boya de Amarre/Carga</option>
+                    <option value="oleoducto">Oleoducto Costero</option>
+                    <option value="terminal">Terminal Marítima</option>
+                    <option value="instalacion">Instalación en Tierra</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Estado Operativo</label>
+                  <select
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-primary text-slate-800 dark:text-white cursor-pointer"
+                    value={editingPunto.estadoOperativo || 'activo'}
+                    onChange={e => setEditingPunto({ ...editingPunto, estadoOperativo: e.target.value })}
+                  >
+                    <option value="activo">Operativo / Activo</option>
+                    <option value="en_construccion">En Perforación / Construcción</option>
+                    <option value="inactivo">Inactivo / Stand-by</option>
+                    <option value="desafectado">Desafectado / Sellado</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+                  Coordenadas Geográficas (Latitud, Longitud) *
+                </label>
+                <input 
+                  type="text"
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-primary text-slate-800 dark:text-white"
+                  placeholder="Ej: -52.4560, -68.2340 o 52°27'21&quot;S 68°14'02&quot;W"
+                  value={editingPunto.coordenadas || ''}
+                  onChange={e => setEditingPunto({ ...editingPunto, coordenadas: e.target.value })}
+                />
+                {editingPunto.coordenadas && (
+                  <div className="mt-1 text-[10px]">
+                    {parseCoordinates(editingPunto.coordenadas).length > 0 ? (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[13px]">check_circle</span>
+                        Coordenadas reconocidas: {parseCoordinates(editingPunto.coordenadas)[0][0].toFixed(4)}, {parseCoordinates(editingPunto.coordenadas)[0][1].toFixed(4)}
+                      </span>
+                    ) : (
+                      <span className="text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[13px]">info</span>
+                        Formato admitido: decimal (-52.45, -68.23) o grados (52°27'S 68°14'W)
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Identificador / Tag (Opcional)</label>
+                <input 
+                  type="text"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono outline-none focus:ring-1 focus:ring-primary text-slate-800 dark:text-white uppercase"
+                  placeholder="Ej: AR-POZ-012 o TAG-MB-1"
+                  value={editingPunto.identificador || ''}
+                  onChange={e => setEditingPunto({ ...editingPunto, identificador: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Descripción / Observaciones Técnicas</label>
+                <textarea 
+                  rows={3}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none focus:ring-1 focus:ring-primary text-slate-800 dark:text-white resize-none"
+                  placeholder="Ej: Plataforma fija de 4 patas. Profundidad 65m. Válvula de seguridad submarina..."
+                  value={editingPunto.descripcion || ''}
+                  onChange={e => setEditingPunto({ ...editingPunto, descripcion: e.target.value })}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button 
+                  type="button"
+                  onClick={() => { setIsPuntoModalOpen(false); setEditingPunto(null); }}
+                  className="px-4 py-2 text-xs font-black uppercase text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isSavingPunto}
+                  className="px-5 py-2 text-xs font-black uppercase bg-primary hover:bg-blue-600 text-white rounded-lg transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingPunto ? 'Guardando...' : (editingPunto.id ? 'Guardar Cambios' : 'Añadir Punto')}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
