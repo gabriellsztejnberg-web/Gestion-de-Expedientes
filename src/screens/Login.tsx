@@ -33,6 +33,7 @@ export const Login: React.FC = () => {
     
     try {
       const provider = new GoogleAuthProvider();
+      // Usamos el entorno de popup (o redirect, popup is better but check environment)
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
       
@@ -65,13 +66,23 @@ export const Login: React.FC = () => {
       setNeedsLinking(true);
       
     } catch (err: any) {
-      if (err.code === 'auth/configuration-not-found') {
-          setError('⚠️ REPARACIÓN REQUERIDA POR EL ADMINISTRADOR: Debes entrar a console.firebase.google.com -> Proyecto gestion-de-expedientes-7ce57 -> "Authentication" -> "Sign-in method" -> Habilitar "Google". Usa el ingreso clásico aquí abajo.');
-          setUseClassicLogin(true);
+      const errorCode = err?.code || '';
+      const errorMessage = err?.message || '';
+
+      if (errorCode === 'auth/popup-closed-by-user' || errorCode === 'auth/cancelled-popup-request' || errorMessage.includes('popup-closed-by-user')) {
+        // El usuario cerró la ventana emergente intencionalmente o canceló el diálogo.
+        // No es un fallo del sistema, por lo que no se registra como error crítico de consola.
+        setError('El inicio de sesión fue cancelado. Puede volver a intentarlo cuando desee.');
+      } else if (errorCode === 'auth/popup-blocked') {
+        setError('La ventana emergente de inicio de sesión fue bloqueada por el navegador. Por favor habilite los popups o utilice el ingreso clásico.');
+      } else if (errorCode === 'auth/configuration-not-found') {
+        setError('⚠️ REPARACIÓN REQUERIDA POR EL ADMINISTRADOR: Debes entrar a console.firebase.google.com -> "Authentication" -> "Sign-in method" -> Habilitar "Google". Usa el ingreso clásico aquí abajo.');
+        setUseClassicLogin(true);
+        console.warn('Firebase Auth Configuration Not Found:', err);
       } else {
-          setError('Error al iniciar sesión con Google. ' + (err.code || err.message || ''));
+        setError('Error al iniciar sesión con Google: ' + (errorCode || errorMessage || 'Error desconocido'));
+        console.error('Error de autenticación con Google:', err);
       }
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -384,3 +395,4 @@ export const Login: React.FC = () => {
     </div>
   );
 };
+
