@@ -149,7 +149,7 @@ export const Reports: React.FC = () => {
       <div key={e.id} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700 mb-3 relative overflow-hidden group hover:shadow-md transition-all">
         <div className={`absolute top-0 left-0 w-1 h-full ${colorClass}`}></div>
         <div className="flex justify-between items-start mb-2">
-          <span className={`text-[10px] font-black uppercase ${colorClass.replace('bg-', 'text-')}`}>{exp?.numero || 'S/D'}</span>
+          <span className={`text-[10px] font-black uppercase ${(colorClass || '').replace('bg-', 'text-')}`}>{exp?.numero || 'S/D'}</span>
           <div className="flex items-center gap-1 text-slate-400">
             <span className="material-symbols-outlined text-[14px]">schedule</span>
             <span className="text-[10px] font-mono">{time}</span>
