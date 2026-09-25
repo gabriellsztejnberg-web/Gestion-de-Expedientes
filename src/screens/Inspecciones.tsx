@@ -448,7 +448,11 @@ export const Inspecciones: React.FC = () => {
           registradoPor: currentUser.name
       };
 
-      const docRef = await addDoc(collection(db, 'inspecciones'), dataNuevaInspec);
+      const cleanDataNuevaInspec = Object.fromEntries(
+        Object.entries(dataNuevaInspec).filter(([_, v]) => v !== undefined)
+      );
+
+      const docRef = await addDoc(collection(db, 'inspecciones'), cleanDataNuevaInspec);
       const newId = docRef.id;
 
       // Marcar la anterior como "CON PENDIENTES (SUBSANADA)" para claridad interna
@@ -539,9 +543,9 @@ export const Inspecciones: React.FC = () => {
       setSubsanarTarget(null);
       setCertSubsanacion('');
       setPlanillaSubsanacion('');
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert("Error al procesar la subsanación.");
+      alert("Error al procesar la subsanación: " + (error.message || JSON.stringify(error)));
     }
   };
 
@@ -1038,7 +1042,7 @@ export const Inspecciones: React.FC = () => {
                                           >
                                               <div className="flex flex-col">
                                                   <span className="font-black uppercase text-slate-900 dark:text-white group-hover:text-primary transition-colors">{c.empresa}</span>
-                                                  <span className="text-[10px] text-slate-500 font-bold uppercase">{c.anexo.replace('_', ' ')} | ID: {c.id.slice(0,6)}</span>
+                                                  <span className="text-[10px] text-slate-500 font-bold uppercase">{(c.anexo || 'S/D').replace('_', ' ')} | ID: {c.id.slice(0,6)}</span>
                                               </div>
                                               <span className="material-symbols-outlined text-slate-300 group-hover:text-primary">arrow_forward_ios</span>
                                           </button>
@@ -1177,3 +1181,4 @@ export const Inspecciones: React.FC = () => {
     </div>
   );
 };
+
