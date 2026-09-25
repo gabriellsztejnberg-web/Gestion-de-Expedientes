@@ -1833,7 +1833,7 @@ export const Expedientes: React.FC = () => {
                                           >
                                               <div className="flex flex-col">
                                                   <span className="font-black uppercase text-slate-900 dark:text-white group-hover:text-primary transition-colors">{c.empresa}</span>
-                                                  <span className="text-[10px] text-slate-500 font-bold uppercase">{c.anexo.replace('_', ' ')} | ID: {c.id.slice(0,6)}</span>
+                                                  <span className="text-[10px] text-slate-500 font-bold uppercase">{(c.anexo || 'S/D').replace('_', ' ')} | ID: {c.id.slice(0,6)}</span>
                                               </div>
                                               <span className="material-symbols-outlined text-slate-300 group-hover:text-primary">arrow_forward_ios</span>
                                           </button>
