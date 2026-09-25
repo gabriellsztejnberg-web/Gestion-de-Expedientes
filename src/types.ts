@@ -204,6 +204,16 @@ export interface MOI {
 
 // --- NUEVOS TIPOS PARA PLANES DE EMERGENCIA ---
 
+export interface PuntoPlan {
+  id: string;
+  nombre: string; // ej: "Plataforma Aries", "Pozo Hydra-1", "Monoboya Terminal"
+  tipo?: 'plataforma' | 'pozo' | 'monoboya' | 'oleoducto' | 'boya' | 'terminal' | 'instalacion' | 'otro' | string;
+  coordenadas: string; // Lat/Long decimal o GMS
+  descripcion?: string; // Observaciones, datos técnicos
+  identificador?: string; // Código de pozo, tag de plataforma, etc.
+  estadoOperativo?: 'activo' | 'inactivo' | 'en_construccion' | 'desafectado' | string;
+}
+
 export interface ConvalidacionDetalle {
   fecha?: string;
   auditorNombre?: string;
@@ -266,6 +276,7 @@ export interface PlanEmergencia {
   numeroPlan?: string;
   documentacionExtra?: string;
   coordenadas?: string;
+  puntos?: PuntoPlan[]; // Instalaciones/puntos geográficos múltiples (Plataformas, Pozos, Monoboyas, Oleoductos)
   responsablePlan?: string;
   contactoPlan?: string;
   tipoRespuesta?: 'propia' | 'terceros' | '';
@@ -418,3 +429,4 @@ export interface EmpresaControlDerrame {
   responsable?: string;
   contacto?: string;
 }
+
