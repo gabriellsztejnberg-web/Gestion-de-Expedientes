@@ -19,6 +19,7 @@ import {
 import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI, PlanEmergencia, EmpresaControlDerrame, AnexoTipo, ANEXOS, PizarraNote, PrioridadExpediente } from '../types';
 import { analyzeExpedienteHistory } from '../services/geminiService'; // Importamos servicio IA
 import { getEffectivePriority } from '../components/ExpedientesKpiCards';
+import { SelectiveBackupRestore } from '../components/SelectiveBackupRestore';
 
 const INSTANCIAS: Instancia[] = [
   { id: 'analisis', label: 'Análisis', color: 'bg-blue-100 text-blue-800 border-blue-200' },
@@ -78,6 +79,7 @@ export const Expedientes: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMovimientoModalOpen, setIsMovimientoModalOpen] = useState(false);
   const [isHistorialModalOpen, setIsHistorialModalOpen] = useState(false);
+  const [isSelectiveRestoreOpen, setIsSelectiveRestoreOpen] = useState(false);
   
   // Mail Modals
   const [isMailModalOpen, setIsMailModalOpen] = useState(false);
@@ -1141,7 +1143,7 @@ export const Expedientes: React.FC = () => {
                 )}
                 {!isSuperior && (
                   <button 
-                    onClick={() => navigate('/configuracion')} 
+                    onClick={() => setIsSelectiveRestoreOpen(true)} 
                     className="flex items-center gap-1.5 rounded-lg h-10 px-3 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold uppercase transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
                     title="Recuperar un expediente eliminado desde un archivo de backup semanal sin sobreescribir el resto"
                   >
@@ -2356,6 +2358,17 @@ export const Expedientes: React.FC = () => {
                   </form>
               </div>
           </div>
+      )}
+
+      {/* Modal de Recuperación Quirúrgica de Expediente desde Backup */}
+      {isSelectiveRestoreOpen && (
+        <SelectiveBackupRestore
+          isModal={true}
+          onClose={() => setIsSelectiveRestoreOpen(false)}
+          onCaseRestored={(restoredCase) => {
+            setCases(prev => [restoredCase, ...prev.filter(c => c.id !== restoredCase.id)]);
+          }}
+        />
       )}
     </div>
   );
