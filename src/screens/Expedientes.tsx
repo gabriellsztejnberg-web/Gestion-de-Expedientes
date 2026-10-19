@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { 
@@ -16,8 +16,9 @@ import {
   where,
   getDoc
 } from 'firebase/firestore';
-import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI, PlanEmergencia, EmpresaControlDerrame, AnexoTipo, ANEXOS, PizarraNote } from '../types';
+import { Case, Instancia, InstanciaId, TimelineEvent, User, Mail, MOI, PlanEmergencia, EmpresaControlDerrame, AnexoTipo, ANEXOS, PizarraNote, PrioridadExpediente } from '../types';
 import { analyzeExpedienteHistory } from '../services/geminiService'; // Importamos servicio IA
+import { getEffectivePriority } from '../components/ExpedientesKpiCards';
 
 const INSTANCIAS: Instancia[] = [
   { id: 'analisis', label: 'Análisis', color: 'bg-blue-100 text-blue-800 border-blue-200' },
@@ -34,6 +35,7 @@ type TabId = 'grupal' | 'individual' | 'usuarios' | 'pases' | 'guarda' | 'mails'
 
 export const Expedientes: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [cases, setCases] = useState<Case[]>([]);
   const [mails, setMails] = useState<Mail[]>([]);
   const [mois, setMois] = useState<MOI[]>([]);
@@ -44,6 +46,33 @@ export const Expedientes: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>('grupal');
   const [searchTerm, setSearchTerm] = useState('');
   const [cloudError, setCloudError] = useState<string | null>(null);
+
+  // Filtros Avanzados por Fecha, Prioridad, Instancia y Anexo
+  const [filterPriority, setFilterPriority] = useState<string>('todas');
+  const [filterDatePreset, setFilterDatePreset] = useState<string>('todas');
+  const [filterDateType, setFilterDateType] = useState<'ultimaModificacion' | 'creadoEn' | 'fechaPlanillaObs'>('ultimaModificacion');
+  const [filterDateStart, setFilterDateStart] = useState<string>('');
+  const [filterDateEnd, setFilterDateEnd] = useState<string>('');
+  const [filterInstancia, setFilterInstancia] = useState<string>('todas');
+  const [filterAnexo, setFilterAnexo] = useState<string>('todos');
+
+  // Sincronización con parámetros URL (?prioridad=..., ?instancia=..., ?tab=..., ?categoria=...)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const qPrioridad = params.get('prioridad');
+    const qInstancia = params.get('instancia');
+    const qTab = params.get('tab');
+    const qCategoria = params.get('categoria') || params.get('anexo');
+    const qSearch = params.get('search');
+
+    if (qPrioridad) setFilterPriority(qPrioridad);
+    if (qInstancia) setFilterInstancia(qInstancia);
+    if (qTab && ['grupal', 'individual', 'usuarios', 'pases', 'guarda', 'mails', 'mois'].includes(qTab)) {
+      setActiveTab(qTab as TabId);
+    }
+    if (qCategoria) setFilterAnexo(qCategoria);
+    if (qSearch) setSearchTerm(qSearch);
+  }, [location.search]);
   
   // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -869,7 +898,8 @@ export const Expedientes: React.FC = () => {
       asignadoA: assignedId,
       asignadoANombre: assignedName,
       observaciones: editingExp?.observaciones || '',
-      isInternal: true
+      isInternal: true,
+      prioridad: editingExp?.prioridad || 'media'
     };
 
     try {
@@ -905,6 +935,113 @@ export const Expedientes: React.FC = () => {
     }
   };
 
+  // Función para evaluar filtro por fechas
+  const checkDateFilter = (dateString?: string | null) => {
+    if (filterDatePreset === 'todas') return true;
+    if (!dateString) return false;
+
+    const targetDate = new Date(dateString);
+    if (isNaN(targetDate.getTime())) return false;
+
+    const now = new Date();
+    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const targetDay = startOfDay(targetDate);
+    const today = startOfDay(now);
+
+    switch (filterDatePreset) {
+      case 'hoy':
+        return targetDay === today;
+      case '7d': {
+        const diffDays = (today - targetDay) / (1000 * 3600 * 24);
+        return diffDays >= 0 && diffDays <= 7;
+      }
+      case '30d': {
+        const diffDays = (today - targetDay) / (1000 * 3600 * 24);
+        return diffDays >= 0 && diffDays <= 30;
+      }
+      case '90d': {
+        const diffDays = (today - targetDay) / (1000 * 3600 * 24);
+        return diffDays >= 0 && diffDays <= 90;
+      }
+      case 'este_mes':
+        return targetDate.getFullYear() === now.getFullYear() && targetDate.getMonth() === now.getMonth();
+      case 'este_anio':
+        return targetDate.getFullYear() === now.getFullYear();
+      case 'rango': {
+        if (filterDateStart && filterDateEnd) {
+          const start = new Date(filterDateStart + 'T00:00:00').getTime();
+          const end = new Date(filterDateEnd + 'T23:59:59').getTime();
+          const t = targetDate.getTime();
+          return t >= start && t <= end;
+        }
+        if (filterDateStart) {
+          const start = new Date(filterDateStart + 'T00:00:00').getTime();
+          return targetDate.getTime() >= start;
+        }
+        if (filterDateEnd) {
+          const end = new Date(filterDateEnd + 'T23:59:59').getTime();
+          return targetDate.getTime() <= end;
+        }
+        return true;
+      }
+      default:
+        return true;
+    }
+  };
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setFilterPriority('todas');
+    setFilterDatePreset('todas');
+    setFilterDateStart('');
+    setFilterDateEnd('');
+    setFilterInstancia('todas');
+    setFilterAnexo('todos');
+  };
+
+  const handleUpdatePriority = async (caseId: string, newPrio: PrioridadExpediente) => {
+    try {
+      const caseRef = doc(db, 'expedientes', caseId);
+      const nowIso = new Date().toISOString();
+      await updateDoc(caseRef, {
+        prioridad: newPrio,
+        ultimaModificacion: nowIso
+      });
+      await addHistoryEntry(caseId, `Prioridad modificada a ${newPrio.toUpperCase()} por ${currentUser.name}.`, 'Prioridad');
+    } catch (err) {
+      alert("Error al actualizar la prioridad del expediente.");
+    }
+  };
+
+  const getPriorityBadge = (prio: PrioridadExpediente) => {
+    switch (prio) {
+      case 'urgente':
+        return {
+          label: 'Urgente',
+          classes: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800',
+          dot: 'bg-rose-500'
+        };
+      case 'alta':
+        return {
+          label: 'Alta',
+          classes: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-400 dark:border-orange-800',
+          dot: 'bg-orange-500'
+        };
+      case 'media':
+        return {
+          label: 'Media',
+          classes: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-800',
+          dot: 'bg-blue-500'
+        };
+      case 'baja':
+        return {
+          label: 'Baja',
+          classes: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700',
+          dot: 'bg-slate-400'
+        };
+    }
+  };
+
   const filteredCases = cases.filter(c => {
     const isGuarda = c.instancia === 'guarda';
     const isPase = c.instancia === 'pase';
@@ -918,13 +1055,45 @@ export const Expedientes: React.FC = () => {
 
     if (!matchesTab) return false;
 
-    const lower = searchTerm.toLowerCase();
+    // Filtro por Prioridad
+    if (filterPriority !== 'todas') {
+      const effectivePrio = getEffectivePriority(c);
+      if (effectivePrio !== filterPriority) return false;
+    }
+
+    // Filtro por Instancia
+    if (filterInstancia !== 'todas') {
+      if (c.instancia !== filterInstancia) return false;
+    }
+
+    // Filtro por Anexo / Categoria
+    if (filterAnexo !== 'todos') {
+      if ((c.categoria || '').toLowerCase() !== filterAnexo.toLowerCase()) return false;
+    }
+
+    // Filtro por Fecha
+    if (filterDatePreset !== 'todas') {
+      const dateToCheck = 
+        filterDateType === 'creadoEn' 
+          ? c.creadoEn 
+          : filterDateType === 'fechaPlanillaObs' 
+          ? c.fechaPlanillaObs 
+          : c.ultimaModificacion;
+      if (!checkDateFilter(dateToCheck)) return false;
+    }
+
+    const lower = searchTerm.toLowerCase().trim();
+    if (!lower) return true;
+
     const searchMatch = 
         c.numero.toLowerCase().includes(lower) || 
         c.empresa.toLowerCase().includes(lower) ||
         (c.asignadoANombre || '').toLowerCase().includes(lower) ||
         (c.tramite || '').toLowerCase().includes(lower) ||
-        (c.ordenanza || '').toLowerCase().includes(lower);
+        (c.ordenanza || '').toLowerCase().includes(lower) ||
+        (c.categoria || '').toLowerCase().includes(lower) ||
+        (c.observaciones || '').toLowerCase().includes(lower) ||
+        (c.destinoExterno || '').toLowerCase().includes(lower);
 
     return searchMatch;
   });
@@ -971,7 +1140,17 @@ export const Expedientes: React.FC = () => {
                     </button>
                 )}
                 {!isSuperior && (
-                  <button onClick={() => { setEditingExp({ tramite: 'Iniciación', asignadoA: 'buzon' }); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
+                  <button 
+                    onClick={() => navigate('/configuracion')} 
+                    className="flex items-center gap-1.5 rounded-lg h-10 px-3 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold uppercase transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
+                    title="Recuperar un expediente eliminado desde un archivo de backup semanal sin sobreescribir el resto"
+                  >
+                    <span className="material-symbols-outlined text-[18px] text-emerald-600">settings_backup_restore</span>
+                    <span className="hidden sm:inline">Recuperar de Backup</span>
+                  </button>
+                )}
+                {!isSuperior && (
+                  <button onClick={() => { setEditingExp({ tramite: 'Iniciación', asignadoA: 'buzon', prioridad: 'media' }); setIsModalOpen(true); }} className="flex items-center gap-2 rounded-lg h-10 px-4 bg-primary text-white text-xs font-black uppercase shadow-lg hover:bg-blue-600 transition-all">
                   <span className="material-symbols-outlined text-[18px]">add_circle</span>
                   <span>Nuevo GDE</span>
                   </button>
@@ -1048,11 +1227,184 @@ export const Expedientes: React.FC = () => {
             ))}
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-lg p-3 border border-slate-200 dark:border-slate-800 mb-6 shrink-0 shadow-sm">
-            <div className="relative flex items-center">
-              <span className="absolute left-3 text-slate-400 material-symbols-outlined text-[20px]">search</span>
-              <input className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary" placeholder={activeTab === 'mails' ? "Buscar remitente o asunto..." : "Buscar por GDE, Empresa, Usuario, Trámite..."} value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
+          {/* BARRA DE BÚSQUEDA Y FILTROS AVANZADOS */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-3.5 border border-slate-200 dark:border-slate-800 mb-6 shrink-0 shadow-sm flex flex-col gap-3">
+            {/* Fila Principal de Búsqueda y Selectores Rápidos */}
+            <div className="flex flex-col lg:flex-row gap-2.5 items-stretch">
+              <div className="relative flex-1 flex items-center">
+                <span className="absolute left-3 text-slate-400 material-symbols-outlined text-[20px]">search</span>
+                <input 
+                  className="w-full pl-10 pr-9 py-2 text-sm bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-primary uppercase transition-all" 
+                  placeholder={activeTab === 'mails' ? "Buscar remitente o asunto..." : activeTab === 'mois' ? "Buscar por texto, origen o GFH..." : "Buscar por GDE, Empresa, Usuario, Trámite, Marco legal..."} 
+                  value={searchTerm} 
+                  onChange={e => setSearchTerm(e.target.value)}
+                />
+                {searchTerm && (
+                  <button 
+                    type="button"
+                    onClick={() => setSearchTerm('')} 
+                    className="absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    title="Limpiar búsqueda"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">close</span>
+                  </button>
+                )}
+              </div>
+
+              {activeTab !== 'mails' && activeTab !== 'mois' && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Filtro por Prioridad */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <span className="material-symbols-outlined text-[16px] text-slate-400">flag</span>
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Prioridad:</label>
+                    <select 
+                      value={filterPriority} 
+                      onChange={e => setFilterPriority(e.target.value)}
+                      className="text-xs font-bold uppercase bg-transparent text-slate-800 dark:text-slate-200 outline-none cursor-pointer"
+                    >
+                      <option value="todas">Todas</option>
+                      <option value="urgente">🔴 Urgente</option>
+                      <option value="alta">🟠 Alta</option>
+                      <option value="media">🔵 Media</option>
+                      <option value="baja">⚪ Baja</option>
+                    </select>
+                  </div>
+
+                  {/* Filtro por Fecha - Preset y Tipo */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <span className="material-symbols-outlined text-[16px] text-slate-400">calendar_today</span>
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Fecha:</label>
+                    <select 
+                      value={filterDatePreset} 
+                      onChange={e => setFilterDatePreset(e.target.value)}
+                      className="text-xs font-bold uppercase bg-transparent text-slate-800 dark:text-slate-200 outline-none cursor-pointer"
+                    >
+                      <option value="todas">Cualquiera</option>
+                      <option value="hoy">Hoy</option>
+                      <option value="7d">Últimos 7 días</option>
+                      <option value="30d">Últimos 30 días</option>
+                      <option value="90d">Últimos 90 días</option>
+                      <option value="este_mes">Este mes</option>
+                      <option value="este_anio">Este año</option>
+                      <option value="rango">Rango manual...</option>
+                    </select>
+
+                    {filterDatePreset !== 'todas' && (
+                      <select 
+                        value={filterDateType} 
+                        onChange={e => setFilterDateType(e.target.value as any)}
+                        className="text-[9px] font-bold uppercase bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded px-1.5 py-0.5 outline-none cursor-pointer ml-1"
+                        title="Campo de fecha a comparar"
+                      >
+                        <option value="ultimaModificacion">Últ. Modif.</option>
+                        <option value="creadoEn">Creación</option>
+                        <option value="fechaPlanillaObs">Planilla Obs</option>
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Filtro por Instancia */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <span className="material-symbols-outlined text-[16px] text-slate-400">filter_list</span>
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Instancia:</label>
+                    <select 
+                      value={filterInstancia} 
+                      onChange={e => setFilterInstancia(e.target.value)}
+                      className="text-xs font-bold uppercase bg-transparent text-slate-800 dark:text-slate-200 outline-none cursor-pointer max-w-[130px]"
+                    >
+                      <option value="todas">Todas</option>
+                      {INSTANCIAS.map(i => (
+                        <option key={i.id} value={i.id}>{i.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Filtro por Anexo */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Anexo:</label>
+                    <select 
+                      value={filterAnexo} 
+                      onChange={e => setFilterAnexo(e.target.value)}
+                      className="text-xs font-bold uppercase bg-transparent text-slate-800 dark:text-slate-200 outline-none cursor-pointer max-w-[120px]"
+                    >
+                      <option value="todos">Todos</option>
+                      {ANEXOS.map(a => (
+                        <option key={a.id} value={a.id}>{a.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* Fila Secundaria: Rango de Fechas Manual, Badges de Filtros Activos y Limpiar */}
+            {activeTab !== 'mails' && activeTab !== 'mois' && (
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 text-[10px]">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  {filterDatePreset === 'rango' && (
+                    <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/60 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <span className="font-bold uppercase text-slate-500">Desde:</span>
+                      <input 
+                        type="date" 
+                        value={filterDateStart} 
+                        onChange={e => setFilterDateStart(e.target.value)}
+                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-0.5 text-xs outline-none"
+                      />
+                      <span className="font-bold uppercase text-slate-500">Hasta:</span>
+                      <input 
+                        type="date" 
+                        value={filterDateEnd} 
+                        onChange={e => setFilterDateEnd(e.target.value)}
+                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-0.5 text-xs outline-none"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-1.5 text-slate-500 font-bold uppercase tracking-wider">
+                    <span>Mostrando</span>
+                    <span className="text-primary font-black">{filteredCases.length}</span>
+                    <span>de {cases.length} expedientes</span>
+                  </div>
+
+                  {/* Chips de filtros activos */}
+                  {filterPriority !== 'todas' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[9px] font-black uppercase text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                      Prioridad: {filterPriority}
+                      <button type="button" onClick={() => setFilterPriority('todas')} className="hover:text-red-500 font-bold">×</button>
+                    </span>
+                  )}
+                  {filterDatePreset !== 'todas' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[9px] font-black uppercase text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                      Fecha: {filterDatePreset === 'rango' ? `${filterDateStart || '...'} a ${filterDateEnd || '...'}` : filterDatePreset}
+                      <button type="button" onClick={() => { setFilterDatePreset('todas'); setFilterDateStart(''); setFilterDateEnd(''); }} className="hover:text-red-500 font-bold">×</button>
+                    </span>
+                  )}
+                  {filterInstancia !== 'todas' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[9px] font-black uppercase text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                      Instancia: {INSTANCIAS.find(i => i.id === filterInstancia)?.label || filterInstancia}
+                      <button type="button" onClick={() => setFilterInstancia('todas')} className="hover:text-red-500 font-bold">×</button>
+                    </span>
+                  )}
+                  {filterAnexo !== 'todos' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[9px] font-black uppercase text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                      Anexo: {ANEXOS.find(a => a.id === filterAnexo)?.label || filterAnexo}
+                      <button type="button" onClick={() => setFilterAnexo('todos')} className="hover:text-red-500 font-bold">×</button>
+                    </span>
+                  )}
+                </div>
+
+                {(searchTerm || filterPriority !== 'todas' || filterDatePreset !== 'todas' || filterInstancia !== 'todas' || filterAnexo !== 'todos') && (
+                  <button 
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="flex items-center gap-1 text-[10px] font-black uppercase text-primary hover:text-blue-700 hover:underline transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">rotate_left</span>
+                    <span>Restablecer Filtros</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-auto bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -1061,7 +1413,8 @@ export const Expedientes: React.FC = () => {
             <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm">
                 <tr className="border-b border-slate-200 dark:border-slate-700">
-                  <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Estado</th>
+                  <th className="px-3 py-3 font-black uppercase tracking-widest text-slate-500">Prioridad</th>
+                  <th className="px-3 py-3 font-black uppercase tracking-widest text-slate-500">Estado</th>
                   <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Nº GDE</th>
                   <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Empresa / Trámite / Marco Legal</th>
                   <th className="px-4 py-3 font-black uppercase tracking-widest text-slate-500">Asignado</th>
@@ -1073,6 +1426,8 @@ export const Expedientes: React.FC = () => {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredCases.length > 0 ? filteredCases.map((c) => {
                   const inst = INSTANCIAS.find(i => i.id === c.instancia) || INSTANCIAS[0];
+                  const effectivePrio = getEffectivePriority(c);
+                  const prioBadge = getPriorityBadge(effectivePrio);
                   const isOwner = c.asignadoA === currentUser.id;
                   const isBuzon = c.asignadoA === 'buzon';
                   const isPase = c.instancia === 'pase';
@@ -1096,8 +1451,29 @@ export const Expedientes: React.FC = () => {
                   }
 
                   return (
-                    <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="px-4 py-4"><span className={`inline-block px-2 py-0.5 rounded-full font-black uppercase text-[9px] border ${inst.color}`}>{inst.label}</span></td>
+                    <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group">
+                      <td className="px-3 py-4">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase border ${prioBadge.classes}`}>
+                            <span className={`size-1.5 rounded-full ${prioBadge.dot}`}></span>
+                            {prioBadge.label}
+                          </span>
+                          {!isSuperior && (
+                            <select 
+                              value={effectivePrio}
+                              onChange={(e) => handleUpdatePriority(c.id, e.target.value as PrioridadExpediente)}
+                              className="opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity text-[8px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 outline-none font-bold uppercase cursor-pointer"
+                              title="Cambiar prioridad"
+                            >
+                              <option value="urgente">Urgente</option>
+                              <option value="alta">Alta</option>
+                              <option value="media">Media</option>
+                              <option value="baja">Baja</option>
+                            </select>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-4"><span className={`inline-block px-2 py-0.5 rounded-full font-black uppercase text-[9px] border ${inst.color}`}>{inst.label}</span></td>
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-2" title={c.observaciones ? `Observaciones Iniciales: ${c.observaciones}` : 'Sin observaciones iniciales'}>
                             <button onClick={() => { setEditingExp(c); setIsHistorialModalOpen(true); }} className="font-bold text-slate-700 dark:text-slate-300 hover:text-primary hover:underline text-left uppercase">
@@ -1164,7 +1540,7 @@ export const Expedientes: React.FC = () => {
                       </td>
                     </tr>
                   );
-                }) : <tr><td colSpan={6} className="py-20 text-center text-slate-400 italic">No hay expedientes cargados.</td></tr>}
+                }) : <tr><td colSpan={8} className="py-20 text-center text-slate-400 italic">No hay expedientes que coincidan con los filtros seleccionados.</td></tr>}
               </tbody>
             </table>
             )}
@@ -1365,7 +1741,7 @@ export const Expedientes: React.FC = () => {
                   <option value="Otros">Otros</option>
                 </select>
               </div>
-              <div className="col-span-2">
+              <div className="col-span-2 md:col-span-1">
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Anexo / Categoría</label>
                 <select 
                   required
@@ -1377,6 +1753,19 @@ export const Expedientes: React.FC = () => {
                   {ANEXOS.map(a => (
                     <option key={a.id} value={a.id}>{a.label}</option>
                   ))}
+                </select>
+              </div>
+              <div className="col-span-2 md:col-span-1">
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Prioridad Operativa</label>
+                <select 
+                  className="w-full px-3 py-2 text-sm border rounded dark:bg-slate-800 dark:border-slate-700 outline-none font-bold uppercase" 
+                  value={editingExp?.prioridad || 'media'} 
+                  onChange={e => setEditingExp({...editingExp, prioridad: e.target.value as PrioridadExpediente})}
+                >
+                  <option value="urgente">🔴 URGENTE (Acción Inmediata)</option>
+                  <option value="alta">🟠 ALTA (Atención Requerida)</option>
+                  <option value="media">🔵 MEDIA (Trámite Estándar)</option>
+                  <option value="baja">⚪ BAJA (Sin Urgencia)</option>
                 </select>
               </div>
               
