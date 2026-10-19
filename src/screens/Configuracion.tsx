@@ -4,6 +4,7 @@ import { Sidebar } from '../components/Sidebar';
 import { db } from '../firebase';
 import { collection, getDocs, writeBatch, doc, deleteDoc } from 'firebase/firestore';
 import { Navigate } from 'react-router-dom';
+import { SelectiveBackupRestore } from '../components/SelectiveBackupRestore';
 
 const COLLECTIONS = [
   'expedientes',
@@ -219,15 +220,17 @@ export const Configuracion: React.FC = () => {
                 </button>
               </div>
 
-              {/* Card Importar */}
+              {/* Card Importar Completo */}
               <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
                 <div className="size-16 bg-orange-100 dark:bg-orange-900/30 text-orange-600 rounded-full flex items-center justify-center mb-6">
                   <span className="material-symbols-outlined text-4xl">upload</span>
                 </div>
-                <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase mb-2">Restaurar Datos</h3>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase mb-2">Restauración Total</h3>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">
-                  Sube un archivo de respaldo previamente descargado para restaurar la información. 
-                  <span className="text-red-500 font-bold block mt-2 underline">¡Cuidado! Esto puede sobrescribir datos actuales.</span>
+                  Sube un archivo de respaldo para restaurar <strong>toda la base de datos completa</strong>.
+                  <span className="text-red-500 font-bold block mt-2 text-xs">
+                    ¡Atención! Sobrescribe registros con los del archivo. Si solo perdiste un expediente, usa la herramienta de Recuperación Selectiva de abajo.
+                  </span>
                 </p>
                 
                 <div className="w-full relative">
@@ -245,7 +248,7 @@ export const Configuracion: React.FC = () => {
                   >
                     <span className="material-symbols-outlined text-slate-400">file_upload</span>
                     <span className="text-xs font-black uppercase text-slate-500">
-                      {isImporting ? 'Procesando...' : 'Seleccionar Archivo'}
+                      {isImporting ? 'Procesando...' : 'Restaurar Base Completa'}
                     </span>
                   </label>
                 </div>
@@ -257,6 +260,11 @@ export const Configuracion: React.FC = () => {
                 )}
               </div>
 
+            </div>
+
+            {/* HERRAMIENTA DE RECUPERACIÓN QUIRÚRGICA DE EXPEDIENTE INDIVIDUAL */}
+            <div className="mt-8">
+              <SelectiveBackupRestore />
             </div>
 
             <div className="mt-12 p-6 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-slate-800">
